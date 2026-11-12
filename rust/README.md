@@ -90,6 +90,6 @@ Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guar
 
 ## Important scope boundary
 
-The existing action layer was written against the previous Azalea API and must be migrated and compile-verified against Azalea 0.16.0 before its listed actions can be claimed as working on 26.1. The intended action surface includes chat, stop, follow, look, pathfinding, mining, block interaction, attacking, and hotbar selection; this list describes existing implementation intent, not verified 26.1 functionality.
+The core action layer now calls Azalea 0.16.0 APIs for chat, stop, follow, look, pathfinding, mining, block interaction, attacking, and hotbar selection. Mining and placement are deferred until the bot's crosshair confirms the requested block. These paths are implemented but not yet compile-verified or live-server tested on 26.1; do not treat them as verified gameplay until those checks pass.
 
 The durable specialist task queue supports role-based claims, two-minute leases, heartbeats, and completion, but task claims are not yet automatically tied to in-game execution. Remaining work includes recipe-based crafting, inventory transfers/container management, automatic eating/healing, advanced multi-step construction, autonomous exploration strategy, automated execution/completion of strategic tasks, per-agent role assignment, and full remote API hardening (TLS termination, rate limits, and per-agent authorization). Do not treat this branch as gameplay-ready until a local build and live 26.1 server verification succeed.
