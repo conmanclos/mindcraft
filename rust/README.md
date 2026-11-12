@@ -1,4 +1,4 @@
-# Mindcraft Native (Rust)
+# Mindcraft Native (Rust)\n\n## macOS desktop application\n\nA Tauri-based native macOS app now provides a first-run setup screen, persists non-secret settings in the app data directory, stores the AI provider key in macOS Keychain, starts/stops the bundled Rust runtime, and displays live connection telemetry plus teammate chat. The app is designed so users do not need Node.js or a Rust toolchain installed.\n\nBuild locally on a Mac with `bash build-macos.sh` from the `rust/` directory. This builds the Rust runtime, stages it inside the app bundle, and produces an `.app` and `.dmg`. The packaging flow is not yet verified; see `desktop/README.md` for prerequisites and current limitations.\n
 
 This is a Rust-native runtime being developed alongside the original JavaScript/Mineflayer project. Its target is **Minecraft Java Edition 26.1**, pinned to **Azalea 0.16.0+mc26.1**. The native runtime does not use Mineflayer or a JavaScript gameplay bridge.
 
