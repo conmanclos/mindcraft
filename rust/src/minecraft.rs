@@ -458,6 +458,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 }
                                 if mining_ticks.recv().await.is_err() { return; }
                             }
+                            cancel_active_mining(&client);
                             client.chat("Mining did not finish within 10 seconds; the block may be too hard, protected, or unreachable.");
                         });
                     }
