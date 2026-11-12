@@ -161,7 +161,7 @@ $("planTask").onclick=async()=>{
     $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". Use the live game state and choose one safe, supported next action.";
     $("message").focus();
     $("plan").click();
-  }catch(e){$("taskResult").textContent="Task lease check failed; claim the task again before planning. "+e.message}
+  }catch(e){$("taskResult").textContent="Task lease renewal failed; check the connection and retry. The current lease may expire if it cannot be renewed. "+e.message}
 };
 setInterval(()=>{if(token)connect().catch(()=>{})},5000);
 $("completeTask").onclick=async()=>{
