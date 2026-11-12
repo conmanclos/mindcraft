@@ -354,6 +354,15 @@ async fn build_schematic(
     Json(request): Json<SchematicBuildRequest>,
 ) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    state.brain.authorize_action(
+        &PlannedAction {
+            action: "build".into(),
+            target: None,
+            reason: "explicit authenticated schematic build request".into(),
+            risk: "high".into(),
+        },
+        true,
+    ).map_err(|error| (StatusCode::FORBIDDEN, error.to_string()))?;
     let document = SchematicDocument {
         blocks: request.blocks,
         rotation: request.rotation,
