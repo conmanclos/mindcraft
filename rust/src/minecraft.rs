@@ -724,8 +724,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("The target position is not a loaded air block; I won't overwrite it.");
                                 return;
                             }
-                            if !world.read().get_block_state(support).is_some_and(|block| !block.is_air()) {
-                                client.chat("I need a loaded solid support block directly below the target position.");
+                            if !world.read().get_block_state(support).is_some_and(|block| !block.is_collision_shape_empty()) {
+                                client.chat("I need a loaded support block with a collision shape directly below the target position.");
                                 return;
                             }
                             let chunk_storage = world.read().chunks.clone();
