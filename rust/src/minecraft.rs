@@ -524,14 +524,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(last) = &state.last_explore_repath { *last.lock().await = Instant::now() - Duration::from_secs(20); }
                     }
                     BotCommand::Craft(recipe, table) => {
-                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
-                        tokio::task::spawn_local(async move { execute_craft(client, recipe, table).await; });
+                        tokio::task::spawn_local(async move {
+                            execute_craft(client, recipe, table, generation_state, generation).await;
+                        });
                     }
                     BotCommand::ContainerTransfer(x, y, z, slot) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
@@ -686,7 +690,15 @@ fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'
     }
 }
 
-async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32)>) {
+async fn execute_craft(
+    bot: Client,
+    recipe: String,
+    table: Option<(i32, i32, i32)>,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     let Some((requires_table, result_name, ingredients)) = recipe_spec(&recipe) else {
         bot.chat("I don't have a safe recipe executor for that item yet.");
         return;
@@ -704,6 +716,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         bot.chat("I couldn't open the required crafting interface. Close other menus and move within reach of the table.");
         return;
     };
+    if cancelled() { drop(container); return; }
     let Some(menu) = container.menu().ok().flatten() else {
         bot.chat("The crafting interface closed before I could use it.");
         return;
@@ -754,9 +767,19 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         container.left_click(source_slot);
         placed_slots.push(*grid_slot);
         bot.wait_ticks(1).await;
+        if cancelled() {
+            for slot in &placed_slots { container.shift_click(*slot); }
+            bot.wait_ticks(2).await;
+            return;
+        }
     }
 
     bot.wait_ticks(1).await;
+    if cancelled() {
+        for slot in &placed_slots { container.shift_click(*slot); }
+        bot.wait_ticks(2).await;
+        return;
+    }
     let output_matches = container.slots()
         .and_then(|slots| slots.first().map(|item| {
             !item.is_empty() && item_name_matches(&format!("{item:?}"), result_name)
