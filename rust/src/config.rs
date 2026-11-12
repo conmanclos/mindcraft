@@ -120,14 +120,14 @@ fn validate_minecraft_server(value: &str) -> Result<()> {
         || value.chars().any(|character| character.is_control() || matches!(character, '/' | '\\' | '?' | '#' | '@')) {
         bail!("MINDCRAFT_MC_SERVER must be a host name or host:port without a URL scheme, path, or whitespace");
     }
-    let (host, port) = match value.rsplit_once(':') {
+    let host = match value.rsplit_once(':') {
         Some((host, port)) => {
-            if host.contains(':') || port.parse::<u16>().is_err() || port == "0" {
+            if host.contains(':') || !port.parse::<u16>().is_ok_and(|port| port > 0) {
                 bail!("MINDCRAFT_MC_SERVER must use a valid host:port (IPv6 literals are not supported by the pinned Azalea address parser)");
             }
-            (host, port)
+            host
         }
-        None => (value, "25565"),
+        None => value,
     };
     if host.is_empty() || !host.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')) {
         bail!("MINDCRAFT_MC_SERVER contains an invalid host name");
