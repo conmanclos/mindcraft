@@ -1098,6 +1098,8 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     let name = compact(debug_name);
     if selector == "log" {
         name.ends_with("log") || name.ends_with("stem")
+    } else if selector == "door" {
+        name.ends_with("door") && !name.ends_with("trapdoor")
     } else {
         name.ends_with(&selector)
     }
