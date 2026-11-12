@@ -27,6 +27,7 @@ struct BotState {
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     connected: Option<Arc<AtomicBool>>,
     last_reflex: Option<Arc<Mutex<Instant>>>,
+    last_auto_eat: Option<Arc<Mutex<Instant>>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
@@ -110,6 +111,7 @@ fn make_state(
         commands,
         connected: Some(Arc::new(AtomicBool::new(false))),
         last_reflex: Some(last_reflex),
+        last_auto_eat: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(30)))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
@@ -179,6 +181,32 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             inventory,
                         });
                     }
+                    }
+                }
+                // Autonomous survival may eat only recognized food already in the hotbar.
+                // Never consume arbitrary held items, potions, or items from an open container.
+                if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
+                    && hunger.food <= 12
+                    && !critical_health
+                {
+                    let should_eat = if let Some(last) = &state.last_auto_eat {
+                        let mut last = last.lock().await;
+                        if last.elapsed() >= Duration::from_secs(8) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_eat {
+                        let menu = bot.menu();
+                        if let Some((slot, _)) = best_safe_food_slot(&menu) {
+                            let hotbar = menu.hotbar_slots_range();
+                            if hotbar.contains(&slot) {
+                                let hotbar_index = (slot - *hotbar.start()) as u8;
+                                bot.set_selected_hotbar_slot(hotbar_index);
+                                bot.start_use_item();
+                                tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
+                            }
+                        }
                     }
                 }
                 if let Some(reflex_action) = crate::reflex::evaluate(health, hunger.food) {
@@ -423,4 +451,24 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         _ => {}
     }
     Ok(())
+}
+
+/// Return the best recognized, ordinary food item in the player's hotbar.
+/// Debug formatting is used only to identify the registry item name; unknown items fail closed.
+fn best_safe_food_slot(menu: &azalea::inventory::Menu) -> Option<(usize, u8)> {
+    let hotbar = menu.hotbar_slots_range();
+    hotbar.filter_map(|slot| {
+        let item = menu.slots().get(slot)?;
+        if item.is_empty() { return None; }
+        let name = format!("{item:?}").to_ascii_lowercase();
+        let priority = [
+            ("golden_carrot", 10), ("cooked_beef", 10), ("cooked_porkchop", 10),
+            ("golden_apple", 10), ("cooked_mutton", 8), ("cooked_rabbit", 8),
+            ("cooked_chicken", 8), ("cooked_cod", 8), ("cooked_salmon", 8),
+            ("bread", 7), ("pumpkin_pie", 7), ("baked_potato", 7),
+            ("cooked", 6), ("carrot", 4), ("potato", 4), ("apple", 3),
+            ("melon_slice", 3), ("sweet_berries", 3), ("glow_berries", 3),
+        ].iter().find_map(|(needle, score)| name.contains(needle).then_some(*score))?;
+        Some((slot, priority))
+    }).max_by_key(|(_, priority)| *priority)
 }
