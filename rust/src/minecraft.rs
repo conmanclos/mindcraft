@@ -17,6 +17,7 @@ pub enum BotCommand {
     Mine(i32, i32, i32),
     Place(i32, i32, i32),
     Plant(i32, i32, i32),
+    Harvest(i32, i32, i32),
     Build(Option<String>, Vec<(i32, i32, i32)>),
     Equip(u8),
     Explore(u16),
@@ -992,6 +993,26 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             execute_build(client, material, positions, generation_state, generation).await;
                         });
                     }
+                    BotCommand::Harvest(x, y, z) => {
+                        let position = BlockPos::new(x, y, z);
+                        let mature = bot.world().ok()
+                            .and_then(|world| world.read().get_block_state(position))
+                            .is_some_and(|block| is_mature_crop(&format!("{block:?}")));
+                        if !mature {
+                            bot.chat("Harvest only targets mature wheat, carrots, potatoes, beetroot, or nether wart crops; nothing was mined.");
+                        } else if let Some(status) = state.status.as_ref() {
+                            if let Some(sender) = status.command_tx.lock().await.clone() {
+                                if sender.send(AgentCommand {
+                                    target: Some(bot.username()),
+                                    command: BotCommand::Mine(x, y, z),
+                                }).is_err() {
+                                    bot.chat("The mining dispatcher is unavailable; the mature crop was left untouched.");
+                                }
+                            } else {
+                                bot.chat("The mining dispatcher is unavailable; the mature crop was left untouched.");
+                            }
+                        }
+                    }
                     BotCommand::Plant(x, y, z) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
@@ -1799,6 +1820,25 @@ async fn place_block_at(
         }
     }
     false
+}
+
+fn is_mature_crop(debug_name: &str) -> bool {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let max_age = if compact.contains("beetroots") || compact.contains("netherwart") {
+        3
+    } else if compact.contains("wheat") || compact.contains("carrots") || compact.contains("potatoes") {
+        7
+    } else {
+        return false;
+    };
+    let lower = debug_name.to_ascii_lowercase();
+    let Some(age_tail) = lower.split_once("age").map(|(_, tail)| tail) else { return false; };
+    let age_digits = age_tail.trim_start_matches(|character: char| !character.is_ascii_digit());
+    let age = age_digits.chars().take_while(char::is_ascii_digit).collect::<String>();
+    age.parse::<u8>().is_ok_and(|age| age >= max_age)
 }
 
 fn is_plantable_seed(debug_name: &str) -> bool {
