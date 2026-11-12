@@ -1683,8 +1683,8 @@ async fn execute_smelt(
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     if cancelled() { return; }
-    if !(1..=8).contains(&count) {
-        bot.chat("Batch smelting accepts 1 to 8 inputs per furnace operation.");
+    if !(1..=64).contains(&count) {
+        bot.chat("Batch smelting accepts 1 to 64 inputs per furnace operation.");
         return;
     }
     let Some(result_name) = smelt_spec(&input) else {
@@ -1749,8 +1749,8 @@ async fn execute_smelt(
         bot.chat("I couldn't read the furnace slots.");
         return;
     };
-    if slots.len() < 3 || !slots[0].is_empty() || !slots[2].is_empty() {
-        bot.chat("The furnace input or output slot is occupied. I won't mix with an existing smelting job.");
+    if slots.len() < 3 || !slots[0].is_empty() || !slots[1].is_empty() || !slots[2].is_empty() {
+        bot.chat("The furnace input, fuel, or output slot is occupied. I won't mix with an existing smelting job.");
         return;
     }
     let Some(input_source) = menu.player_slots_range().find(|slot| {
@@ -1790,56 +1790,50 @@ async fn execute_smelt(
         return;
     }
 
-    let fuel_slot_empty = container.slots()
-        .and_then(|slots| slots.get(1).map(|item| item.is_empty()))
-        .unwrap_or(true);
-    if fuel_slot_empty {
-        let fuel_source = container.slots().and_then(|slots| {
-            menu.player_slots_range().find(|slot| {
-                slots.get(*slot).is_some_and(|item| {
-                    !item.is_empty() && smelt_fuel_matches(&format!("{:?}", item.kind()))
-                })
-            })
-        });
-        let Some(fuel_source) = fuel_source else {
-            container.shift_click(0);
-            bot.wait_ticks(2).await;
-            bot.chat("I placed the input but found no coal, charcoal, blaze rod, or lava bucket. I returned the input to your inventory.");
-            return;
-        };
-        container.left_click(fuel_source);
+    let mut fuel_candidates = container.slots().map(|slots| {
+        menu.player_slots_range().filter_map(|slot| {
+            let item = slots.get(slot)?;
+            if item.is_empty() { return None; }
+            let capacity = smelt_fuel_capacity(&format!("{:?}", item.kind()))?;
+            let required = ((u16::from(count) + u16::from(capacity) - 1) / u16::from(capacity)) as u8;
+            if item.count() < required { return None; }
+            let excess_capacity = u16::from(required) * u16::from(capacity) - u16::from(count);
+            Some((slot, required, excess_capacity, capacity))
+        }).collect::<Vec<_>>()
+    }).unwrap_or_default();
+    fuel_candidates.sort_by_key(|(_, _, excess, capacity)| (*excess, *capacity));
+    let Some((fuel_source, required_fuel, _, _)) = fuel_candidates.first().copied() else {
+        container.shift_click(0);
+        bot.wait_ticks(2).await;
+        bot.chat(format!("I need enough coal, charcoal, blaze rods, or lava buckets to smelt {count} items. I returned the input."));
+        return;
+    };
+    container.left_click(fuel_source);
+    for _ in 0..required_fuel {
+        if cancelled() { drop(container); return; }
         container.right_click(1);
-        container.left_click(fuel_source);
-        let mut fuel_placed = false;
-        for _ in 0..5 {
-            bot.wait_ticks(1).await;
-            if cancelled() { drop(container); return; }
-            fuel_placed = container.slots()
-                .and_then(|slots| slots.get(1).map(|item| {
-                    !item.is_empty() && smelt_fuel_matches(&format!("{:?}", item.kind()))
-                }))
-                .unwrap_or(false);
-            if fuel_placed { break; }
-        }
-        if !fuel_placed {
-            container.shift_click(1);
-            container.shift_click(0);
-            bot.wait_ticks(2).await;
-            bot.chat("The server did not accept the selected fuel; I returned any accepted fuel and the input.");
-            return;
-        }
-    } else {
-        let existing_fuel_is_sufficient = container.slots()
+        bot.wait_ticks(1).await;
+    }
+    container.left_click(fuel_source);
+    let mut fuel_placed = false;
+    for _ in 0..5 {
+        bot.wait_ticks(1).await;
+        if cancelled() { drop(container); return; }
+        fuel_placed = container.slots()
             .and_then(|slots| slots.get(1).map(|item| {
-                !item.is_empty() && smelt_fuel_matches(&format!("{:?}", item.kind()))
+                !item.is_empty()
+                    && item.count() >= required_fuel
+                    && smelt_fuel_capacity(&format!("{:?}", item.kind())).is_some()
             }))
             .unwrap_or(false);
-        if !existing_fuel_is_sufficient {
-            container.shift_click(0);
-            bot.wait_ticks(2).await;
-            bot.chat("The furnace has an unrecognized or insufficient fuel item. I returned the input and left the existing fuel untouched.");
-            return;
-        }
+        if fuel_placed { break; }
+    }
+    if !fuel_placed {
+        container.shift_click(1);
+        container.shift_click(0);
+        bot.wait_ticks(2).await;
+        bot.chat("The server did not accept enough of the selected fuel; I returned any accepted fuel and the input.");
+        return;
     }
 
     bot.chat(format!("Started a batch of {count} {input}; waiting for {count} {result_name}."));
@@ -1890,9 +1884,20 @@ async fn execute_smelt(
     }
 }
 
+fn smelt_fuel_capacity(debug_name: &str) -> Option<u8> {
+    if item_name_matches(debug_name, "lava_bucket") {
+        Some(100)
+    } else if item_name_matches(debug_name, "blaze_rod") {
+        Some(12)
+    } else if item_name_matches(debug_name, "coal") || item_name_matches(debug_name, "charcoal") {
+        Some(8)
+    } else {
+        None
+    }
+}
+
 fn smelt_fuel_matches(debug_name: &str) -> bool {
-    ["coal", "charcoal", "blaze_rod", "lava_bucket"]
-        .iter().any(|fuel| item_name_matches(debug_name, fuel))
+    smelt_fuel_capacity(debug_name).is_some()
 }
 
 fn smelt_input_matches(debug_name: &str, selector: &str) -> bool {
@@ -1931,7 +1936,7 @@ mod smelt_recipe_tests {
 
 #[cfg(test)]
 mod smelt_input_tests {
-    use super::{smelt_fuel_matches, smelt_input_matches};
+    use super::{smelt_fuel_capacity, smelt_fuel_matches, smelt_input_matches};
 
     #[test]
     fn smelting_fuel_allowlist_includes_only_sufficient_safe_fuels() {
@@ -1939,6 +1944,9 @@ mod smelt_input_tests {
         assert!(smelt_fuel_matches("Charcoal"));
         assert!(smelt_fuel_matches("BlazeRod"));
         assert!(smelt_fuel_matches("LavaBucket"));
+        assert_eq!(smelt_fuel_capacity("Coal"), Some(8));
+        assert_eq!(smelt_fuel_capacity("BlazeRod"), Some(12));
+        assert_eq!(smelt_fuel_capacity("LavaBucket"), Some(100));
         assert!(!smelt_fuel_matches("Stick"));
         assert!(!smelt_fuel_matches("UnknownItem"));
     }
