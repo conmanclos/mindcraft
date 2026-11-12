@@ -94,19 +94,26 @@ impl Store {
         Ok(messages)
     }
 
-    /// Format recent conversation history within a character budget, keeping the newest messages.
-    pub fn recent_context(&self, limit: usize, max_chars: usize) -> Result<String> {
+    /// Format recent conversation history within a UTF-8 byte budget, keeping
+    /// the newest messages and the tail of any message that must be truncated.
+    pub fn recent_context(&self, limit: usize, max_bytes: usize) -> Result<String> {
         let history = self.recent_messages(limit)?;
         let mut selected = Vec::new();
-        let mut remaining = max_chars;
+        let mut remaining = max_bytes;
         for (role, content) in history.into_iter().rev() {
-            if remaining == 0 { break; }
             let prefix = format!("{role}: ");
-            let prefix_len = prefix.chars().count();
-            if remaining <= prefix_len { break; }
-            let body = content.chars().take(remaining - prefix_len).collect::<String>();
-            let line = format!("{prefix}{body}");
-            remaining = remaining.saturating_sub(line.chars().count() + 1);
+            if remaining <= prefix.len() + 1 { break; }
+            let body_budget = remaining - prefix.len() - 1;
+            let mut body_start = content.len();
+            for (index, character) in content.char_indices().rev() {
+                if content.len() - index > body_budget { break; }
+                body_start = index;
+                let _ = character;
+            }
+            let line = format!("{prefix}{}", &content[body_start..]);
+            let used = line.len() + 1;
+            if used > remaining { break; }
+            remaining -= used;
             selected.push(line);
         }
         selected.reverse();
@@ -252,6 +259,17 @@ impl Store {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn recent_context_respects_utf8_byte_budget_and_keeps_message_tail() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let message = "🙂".repeat(100);
+        store.append_message("user", &message).unwrap();
+        let context = store.recent_context(1, 40).unwrap();
+        assert!(context.len() <= 40);
+        assert!(context.starts_with("user: "));
+        assert!(context.ends_with(&"🙂".repeat(8)));
+    }
 
     #[test]
     fn recent_context_keeps_newest_messages_within_budget() {
