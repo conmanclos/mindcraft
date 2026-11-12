@@ -231,6 +231,18 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn recent_context_keeps_newest_messages_within_budget() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        store.append_message("user", &"old".repeat(20)).unwrap();
+        store.append_message("assistant", &"new".repeat(20)).unwrap();
+        let context = store.recent_context(12, 40).unwrap();
+        assert!(context.chars().count() <= 40);
+        assert!(context.contains("assistant:"));
+        assert!(context.contains("new"));
+        assert!(!context.contains("old"));
+    }
+
+    #[test]
     fn task_leases_are_owned_renewable_and_reclaimable_after_expiry() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let goal = store.create_goal("Gather supplies").unwrap();
