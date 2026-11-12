@@ -313,7 +313,7 @@ impl Store {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task = tx.query_row(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at
              FROM agent_tasks
              WHERE ((status='pending' AND available_at <= CURRENT_TIMESTAMP) OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
                AND (
@@ -339,6 +339,7 @@ impl Store {
                 params![agent_id, task.id],
             )?;
             task.status = "claimed".into();
+            task.attempts += 1;
             task.assigned_agent = Some(agent_id.to_owned());
             task.lease_until = tx.query_row("SELECT lease_until FROM agent_tasks WHERE id=?1", [task.id], |row| row.get(0))?;
             tx.commit()?;
@@ -429,7 +430,7 @@ impl Store {
     pub fn list_review_tasks(&self) -> Result<Vec<AgentTask>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at
              FROM agent_tasks WHERE status='review' ORDER BY priority DESC, id ASC"
         )?;
         let rows = statement.query_map([], |row| Ok(AgentTask {
