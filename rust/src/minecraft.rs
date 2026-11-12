@@ -85,7 +85,7 @@ pub async fn connect(
         let (command_tx, _) = broadcast::channel(128);
         *status.command_tx.lock().await = Some(command_tx.clone());
         // Chat throttling is shared because only the primary client answers chat.
-        let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
+        let shared_reply_cooldown = Arc::new(Mutex::new(instant_before(Duration::from_secs(10))));
 
         let mut builder = SwarmBuilder::new().set_handler(handle);
         for (index, account) in accounts_to_join.into_iter().enumerate() {
@@ -95,7 +95,7 @@ pub async fn connect(
             let command_receiver = Some(Arc::new(Mutex::new(command_tx.subscribe())));
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
-                Arc::new(Mutex::new(None)), Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20))), is_primary,
+                Arc::new(Mutex::new(None)), Arc::new(Mutex::new(instant_before(Duration::from_secs(20)))), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -109,6 +109,11 @@ pub async fn connect(
         tracing::warn!("Azalea swarm exited: {result:?}; reconnecting in 5 seconds");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
+}
+
+fn instant_before(duration: Duration) -> Instant {
+    let now = Instant::now();
+    now.checked_sub(duration).unwrap_or(now)
 }
 
 fn make_state(
@@ -127,15 +132,15 @@ fn make_state(
         commands,
         connected: Some(Arc::new(AtomicBool::new(false))),
         last_reflex: Some(last_reflex),
-        last_auto_eat: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(30)))),
+        last_auto_eat: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
-        last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
-        last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
+        last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
+        last_snapshot: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(2))))),
         is_exploring: Some(Arc::new(AtomicBool::new(false))),
         explore_radius: Some(Arc::new(AtomicUsize::new(32))),
         explore_step: Some(Arc::new(AtomicUsize::new(0))),
-        last_explore_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
+        last_explore_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(20))))),
         mine_generation: Some(Arc::new(AtomicUsize::new(0))),
         is_primary,
     }
@@ -408,7 +413,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         if let Some(target) = &state.follow_target { *target.lock().await = Some(username); }
                         if let Some(last) = &state.last_follow_repath {
-                            *last.lock().await = Instant::now() - Duration::from_secs(5);
+                            *last.lock().await = instant_before(Duration::from_secs(5));
                         }
                     }
                     BotCommand::Look(x, y, z) => {
@@ -601,7 +606,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(radius_state) = &state.explore_radius { radius_state.store(radius as usize, Ordering::Relaxed); }
                         if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
-                        if let Some(last) = &state.last_explore_repath { *last.lock().await = Instant::now() - Duration::from_secs(20); }
+                        if let Some(last) = &state.last_explore_repath { *last.lock().await = instant_before(Duration::from_secs(20)); }
                     }
                     BotCommand::Craft(recipe, table) => {
                         let generation = state.mine_generation.as_ref()
