@@ -14,14 +14,21 @@ use tokio::sync::{mpsc, Mutex};
 use tower_http::trace::TraceLayer;
 use std::time::Duration;
 
+#[derive(Clone, Serialize)]
+pub struct WorldSnapshot {
+    pub position: [f64; 3],
+    pub health: f32,
+}
+
 pub struct RuntimeStatus {
     pub minecraft_connected: AtomicBool,
     pub command_tx: Mutex<Option<mpsc::Sender<BotCommand>>>,
+    pub world: Mutex<Option<WorldSnapshot>>,
 }
 
 impl Default for RuntimeStatus {
     fn default() -> Self {
-        Self { minecraft_connected: AtomicBool::new(false), command_tx: Mutex::new(None) }
+        Self { minecraft_connected: AtomicBool::new(false), command_tx: Mutex::new(None), world: Mutex::new(None) }
     }
 }
 
@@ -63,6 +70,7 @@ struct StatusResponse {
     autonomy: String,
     provider: String,
     model: String,
+    world: Option<WorldSnapshot>,
 }
 
 pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, status: Arc<RuntimeStatus>) -> anyhow::Result<()> {
@@ -94,6 +102,7 @@ async fn health() -> Json<serde_json::Value> {
 
 async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Result<Json<StatusResponse>, StatusCode> {
     authorize(&state, &headers)?;
+    let world = state.status.world.lock().await.clone();
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
@@ -102,6 +111,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
         autonomy: state.config.mode.clone(),
         provider: state.config.provider.clone(),
         model: state.config.model.clone(),
+        world,
     }))
 }
 
