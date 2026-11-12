@@ -498,7 +498,26 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
             // every support face and stops if a span cannot be supported.
             for x in 0..7 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
         }
-        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, or bridge_7x3".into())),
+        "watchtower_3x3" => {
+            // Compact 3x3 tower with a two-block doorway and a full roof.
+            for x in 0..3 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
+            for y in 1..=2 {
+                for x in 0..3 {
+                    for z in 0..3 {
+                        let perimeter = x == 0 || x == 2 || z == 0 || z == 2;
+                        let doorway = z == 0 && x == 1;
+                        if perimeter && !doorway { positions.push((ox + x, oy + y, oz + z)); }
+                    }
+                }
+            }
+            for x in 0..3 { for z in 0..3 {
+                if x == 0 || x == 2 || z == 0 || z == 2 {
+                    positions.push((ox + x, oy + 3, oz + z));
+                }
+            }}
+            for x in 0..3 { for z in 0..3 { positions.push((ox + x, oy + 4, oz + z)); } }
+        }
+        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, bridge_7x3, or watchtower_3x3".into())),
     }
     positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
     if positions.len() > 64 {
