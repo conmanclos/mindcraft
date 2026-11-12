@@ -38,38 +38,40 @@ pub async fn connect(
     status: Arc<RuntimeStatus>,
 ) -> Result<()> {
     tracing::info!(%server, account_count = accounts.len(), auth_mode = %auth_mode, "starting Minecraft agent swarm");
+    loop {
+        let accounts_to_join = if auth_mode == "microsoft" {
+            let email = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
+            tracing::info!("starting Azalea Microsoft device-code authentication");
+            vec![Account::microsoft(email).await?]
+        } else {
+            accounts.iter().cloned().map(Account::offline).collect::<Vec<_>>()
+        };
+        if accounts_to_join.is_empty() {
+            anyhow::bail!("at least one Minecraft account is required");
+        }
 
-    let accounts_to_join = if auth_mode == "microsoft" {
-        let email = microsoft_email.ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
-        tracing::info!("starting Azalea Microsoft device-code authentication");
-        vec![Account::microsoft(email.as_str()).await?]
-    } else {
-        accounts.into_iter().map(Account::offline).collect::<Vec<_>>()
-    };
-    if accounts_to_join.is_empty() {
-        anyhow::bail!("at least one Minecraft account is required");
+        let (command_tx, command_rx) = mpsc::channel(64);
+        *status.command_tx.lock().await = Some(command_tx);
+        let shared_receiver = Arc::new(Mutex::new(command_rx));
+        let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
+        let shared_follow_target = Arc::new(Mutex::new(None));
+
+        let mut builder = SwarmBuilder::new().set_handler(handle);
+        for account in accounts_to_join {
+            let state = make_state(
+                brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(), shared_follow_target.clone(),
+            );
+            builder = builder.add_account_with_state(account, state);
+        }
+
+        let result = builder.join_delay(Duration::from_millis(500)).start(server.as_str()).await;
+        status.minecraft_connected.store(false, Ordering::Relaxed);
+        status.connected_agents.store(0, Ordering::Relaxed);
+        *status.command_tx.lock().await = None;
+        *status.world.lock().await = None;
+        tracing::warn!("Azalea swarm exited: {result:?}; reconnecting in 5 seconds");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
-
-    let (command_tx, command_rx) = mpsc::channel(64);
-    *status.command_tx.lock().await = Some(command_tx);
-    let shared_receiver = Arc::new(Mutex::new(command_rx));
-    let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
-    let shared_follow_target = Arc::new(Mutex::new(None));
-
-    let mut builder = SwarmBuilder::new().set_handler(handle);
-    for account in accounts_to_join {
-        let state = make_state(
-            brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(), shared_follow_target.clone(),
-        );
-        builder = builder.add_account_with_state(account, state);
-    }
-
-    let result = builder.join_delay(Duration::from_millis(500)).start(server.as_str()).await;
-    status.minecraft_connected.store(false, Ordering::Relaxed);
-    status.connected_agents.store(0, Ordering::Relaxed);
-    *status.command_tx.lock().await = None;
-    tracing::warn!("Azalea swarm stopped: {result:?}");
-    Ok(())
 }
 
 fn make_state(
@@ -114,7 +116,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                 }
             }
-            tracing::warn!(username = %bot.username(), "Minecraft agent disconnected; Azalea reconnect policy will handle retry");
+            tracing::warn!(username = %bot.username(), "Minecraft agent disconnected; restarting the swarm");
+            bot.exit();
         }
         Event::Tick => {
             if let Some(status) = &state.status {
