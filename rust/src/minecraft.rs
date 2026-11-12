@@ -113,20 +113,36 @@ pub async fn connect(
     }
     loop {
         let accounts_to_join = if auth_mode == "microsoft" {
-            let email = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
-            tracing::info!("starting Azalea Microsoft device-code authentication");
-            let auth_opts = MicrosoftAccountOpts {
-                cache_file: std::env::var_os("MINDCRAFT_AZALEA_AUTH_CACHE").map(std::path::PathBuf::from),
-                ..Default::default()
-            };
-            match Account::microsoft_with_opts(email, auth_opts).await {
-                Ok(account) => vec![account],
-                Err(error) => {
-                    tracing::error!(%error, "Microsoft authentication failed; dashboard remains available and login will retry in 30 seconds");
-                    tokio::time::sleep(Duration::from_secs(30)).await;
-                    continue;
+            let emails = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?
+                .split(',').map(str::trim).filter(|email| !email.is_empty()).collect::<Vec<_>>();
+            if emails.len() != accounts.len() {
+                anyhow::bail!("Microsoft authentication requires one email for each configured Minecraft bot username");
+            }
+            let cache_base = std::env::var_os("MINDCRAFT_AZALEA_AUTH_CACHE").map(std::path::PathBuf::from);
+            let mut authenticated = Vec::with_capacity(emails.len());
+            let mut authentication_failed = false;
+            for (index, email) in emails.iter().enumerate() {
+                tracing::info!(account_index = index, "starting Azalea Microsoft device-code authentication");
+                let cache_file = cache_base.as_ref().map(|base| {
+                    let stem = base.file_stem().and_then(|value| value.to_str()).unwrap_or("azalea-auth");
+                    let extension = base.extension().and_then(|value| value.to_str()).unwrap_or("json");
+                    base.with_file_name(format!("{stem}-{index}.{extension}"))
+                });
+                let auth_opts = MicrosoftAccountOpts { cache_file, ..Default::default() };
+                match Account::microsoft_with_opts(email, auth_opts).await {
+                    Ok(account) => authenticated.push(account),
+                    Err(error) => {
+                        tracing::error!(account_index = index, %error, "Microsoft authentication failed; dashboard remains available and login will retry in 30 seconds");
+                        authentication_failed = true;
+                        break;
+                    }
                 }
             }
+            if authentication_failed {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                continue;
+            }
+            authenticated
         } else {
             accounts.iter().cloned().map(Account::offline).collect::<Vec<_>>()
         };
