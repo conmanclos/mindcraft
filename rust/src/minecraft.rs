@@ -51,6 +51,7 @@ struct BotState {
     last_explore_repath: Option<Arc<Mutex<Instant>>>,
     mine_generation: Option<Arc<AtomicUsize>>,
     trusted_chat_players: Option<Arc<HashSet<String>>>,
+    role: Option<String>,
     is_primary: bool,
 }
 
@@ -104,7 +105,7 @@ pub async fn connect(
             let state = make_state(
                 brain.clone(), status.clone(), store.clone(), command_receiver, shared_reply_cooldown.clone(),
                 Arc::new(Mutex::new(None)), Arc::new(Mutex::new(instant_before(Duration::from_secs(20)))),
-                trusted_chat_players.clone(), is_primary,
+                trusted_chat_players.clone(), role_for_agent_index(index).to_owned(), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -117,6 +118,28 @@ pub async fn connect(
         status.agents.lock().await.clear();
         tracing::warn!("Azalea swarm exited: {result:?}; reconnecting in 5 seconds");
         tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+fn role_for_agent_index(index: usize) -> &'static str {
+    const ROLES: [&str; 6] = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
+    ROLES[index % ROLES.len()]
+}
+
+#[cfg(test)]
+mod role_assignment_tests {
+    use super::role_for_agent_index;
+
+    #[test]
+    fn configured_team_members_receive_a_stable_specialist_role() {
+        assert_eq!(role_for_agent_index(0), "planner");
+        assert_eq!(role_for_agent_index(1), "scout");
+        assert_eq!(role_for_agent_index(2), "gatherer");
+        assert_eq!(role_for_agent_index(3), "builder");
+        assert_eq!(role_for_agent_index(4), "crafter");
+        assert_eq!(role_for_agent_index(5), "guardian");
+        assert_eq!(role_for_agent_index(6), "planner");
+        assert_eq!(role_for_agent_index(7), "scout");
     }
 }
 
@@ -134,6 +157,7 @@ fn make_state(
     follow_target: Arc<Mutex<Option<String>>>,
     last_reflex: Arc<Mutex<Instant>>,
     trusted_chat_players: Arc<HashSet<String>>,
+    role: String,
     is_primary: bool,
 ) -> BotState {
     BotState {
@@ -156,6 +180,7 @@ fn make_state(
         last_explore_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(20))))),
         mine_generation: Some(Arc::new(AtomicUsize::new(0))),
         trusted_chat_players: Some(trusted_chat_players),
+        role: Some(role),
         is_primary,
     }
 }
@@ -218,6 +243,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 .collect::<Vec<_>>();
                             let snapshot = crate::api::WorldSnapshot {
                                 agent: bot.username(),
+                                role: state.role.clone().unwrap_or_else(|| "planner".into()),
                                 position: [position.x as f64, position.y as f64, position.z as f64],
                                 health,
                                 food: hunger.food,
