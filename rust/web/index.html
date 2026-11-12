@@ -86,10 +86,10 @@ $("plan").onclick=async()=>{
     if(!message)throw Error("Describe the action you want planned in the message box.");
     $("plan").disabled=true;
     const r=await api("/api/plan",{message});
-    lastPlan=r.proposed_action;
-    $("execute").disabled=false;
+    lastPlan=r.auto_queued?null:r.proposed_action;
+    $("execute").disabled=!!r.auto_queued;
     $("proposal").style.display="block";
-    $("proposal").textContent=JSON.stringify(lastPlan,null,2)+"\\n"+r.execution;
+    $("proposal").textContent=JSON.stringify(r.proposed_action,null,2)+"\\n"+r.execution;
   }catch(e){
     lastPlan=null;
     $("execute").disabled=true;
