@@ -1971,7 +1971,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "glistering_melon_slice" => Some((true, "glistering_melon_slice", &[(1, "gold_nugget"), (2, "gold_nugget"), (3, "gold_nugget"), (4, "gold_nugget"), (5, "melon_slice"), (6, "gold_nugget"), (7, "gold_nugget"), (8, "gold_nugget"), (9, "gold_nugget")])),
         "magma_cream" => Some((false, "magma_cream", &[(1, "blaze_powder"), (2, "slime_ball")])),
         "fermented_spider_eye" => Some((false, "fermented_spider_eye", &[(1, "spider_eye"), (2, "brown_mushroom"), (3, "sugar")])),
-        "fire_charge" => Some((false, "fire_charge", &[(1, "gunpowder"), (2, "blaze_powder"), (3, "coal")])),
+        "fire_charge" => Some((false, "fire_charge", &[(1, "gunpowder"), (2, "blaze_powder"), (3, "coal_or_charcoal")])),
         "hopper" => Some((true, "hopper", &[(1, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "chest"), (6, "iron_ingot"), (8, "iron_ingot")])),
         "dropper" => Some((true, "dropper", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (5, "redstone"), (6, "cobblestone"), (7, "cobblestone"), (8, "cobblestone"), (9, "cobblestone")])),
         "dispenser" => Some((true, "dispenser", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (5, "bow"), (6, "cobblestone"), (7, "cobblestone"), (8, "redstone"), (9, "cobblestone")])),
@@ -3240,6 +3240,8 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
         name.ends_with("slab")
     } else if selector == "wool" {
         name.ends_with("wool")
+    } else if selector == "coalorcharcoal" {
+        name == "coal" || name == "charcoal"
     } else if selector == "woodenslab" {
         ["oakslab", "spruceslab", "birchslab", "jungleslab", "acaciaslab", "darkoakslab",
          "mangroveslab", "cherryslab", "bambooslab", "bamboomosaicslab", "crimsonslab",
