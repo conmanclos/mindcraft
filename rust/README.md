@@ -2,9 +2,9 @@
 
 ## macOS desktop application
 
-A Tauri-based native macOS app now provides a first-run setup screen, persists non-secret settings in the app data directory, stores the AI provider key in macOS Keychain, starts/stops the bundled Rust runtime, and displays live connection telemetry plus teammate chat. The app is designed so users do not need Node.js or a Rust toolchain installed.
+A Tauri-based native macOS app now provides a first-run setup screen, persists non-secret settings in the app data directory, stores the AI provider key in the operating system credential store, starts/stops the bundled Rust runtime, and displays live connection telemetry plus teammate chat. The app is designed so users do not need Node.js or a Rust toolchain installed.
 
-Build locally on a Mac with `bash build-macos.sh` from the `rust/` directory. This builds the Rust runtime, stages it inside the app bundle, and produces an `.app` and `.dmg`. The packaging flow is not yet verified; see `desktop/README.md` for prerequisites and current limitations.
+Build on the target operating system with `bash build-desktop.sh` on macOS/Linux or `./build-desktop.ps1` in PowerShell on Windows. These scripts build and stage the matching Rust runtime binary before Tauri packaging; they do not run tests. The macOS-specific `build-macos.sh` remains available for `.app`/`.dmg` packaging. See `desktop/README.md` for platform prerequisites and current limitations.
 
 
 This is a Rust-native runtime being developed alongside the original JavaScript/Mineflayer project. Its target is **Minecraft Java Edition 26.1**, pinned to **Azalea 0.16.0+mc26.1**. The native runtime does not use Mineflayer or a JavaScript gameplay bridge.
