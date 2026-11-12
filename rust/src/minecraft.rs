@@ -1969,6 +1969,8 @@ fn recipe_output_count(recipe: &str) -> u32 {
         "trapdoor" => 2,
         "glass_pane" => 16,
         "cookie" => 8,
+        "iron_nuggets" | "gold_nuggets" | "wheat_from_hay" => 9,
+        "bone_meal" => 3,
         _ => 1,
     }
 }
