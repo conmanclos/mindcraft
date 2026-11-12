@@ -804,7 +804,7 @@ async fn open_target_container(bot: &mut Client, position: BlockPos) -> Result<C
         Ok(Some(handle)) => Ok(handle),
         Ok(None) => anyhow::bail!("no openable container exists at the requested position"),
         Err(_) => {
-            bot.ecs.lock().entity_mut(bot.entity)
+            let _ = bot.ecs.lock().entity_mut(bot.entity)
                 .remove::<azalea::container::WaitingForInventoryOpen>();
             anyhow::bail!("container did not open before the timeout");
         }
@@ -1189,7 +1189,7 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
 }
 
 fn clear_mining_stop_marker(bot: &Client) {
-    bot.ecs.lock().entity_mut(bot.entity).remove::<MiningStopRequested>();
+    let _ = bot.ecs.lock().entity_mut(bot.entity).remove::<MiningStopRequested>();
 }
 
 fn stop_mining(bot: &Client) {
@@ -1200,7 +1200,7 @@ fn stop_mining(bot: &Client) {
             ecs.send_event(StopMiningBlockEvent { entity: bot.entity });
         }
     } else {
-        ecs.entity_mut(bot.entity).remove::<MiningStopRequested>();
+        let _ = ecs.entity_mut(bot.entity).remove::<MiningStopRequested>();
     }
 }
 
