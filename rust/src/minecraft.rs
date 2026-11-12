@@ -398,7 +398,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         tokio::task::spawn_local(async move {
                             if autonomous {
                                 let action_request = format!(
-                                    "Player request: {content}\\nCurrent Minecraft state:{world_context}"
+                                    "Player request: {content}\nCurrent Minecraft state:{world_context}"
                                 );
                                 match brain.plan(&action_request).await {
                                     Ok(action) if brain.authorize_action(&action, false).is_ok() => {
