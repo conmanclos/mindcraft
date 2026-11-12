@@ -1177,6 +1177,7 @@ mod food_tests {
         assert!(super::item_name_matches("ItemStack { kind: CraftingTable }", "crafting_table"));
         assert!(super::item_name_matches("ItemStack { kind: IronPickaxe }", "iron_pickaxe"));
         assert!(super::item_name_matches("ItemStack { kind: OakTrapdoor }", "trapdoor"));
+        assert!(!super::item_name_matches("ItemStack { kind: OakTrapdoor }", "door"));
         assert!(super::item_name_matches("ItemStack { kind: OakSlab }", "slab"));
         assert!(super::item_name_matches("ItemStack { kind: Charcoal }", "coal"));
         assert!(super::item_name_matches("ItemStack { kind: CrimsonStem }", "log"));
