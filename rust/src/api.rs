@@ -207,7 +207,7 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
     let command = command_from_action(request.action)?;
     let sender = state.status.command_tx.lock().await.clone()
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
-    sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
+    sender.try_send(command).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is full or disconnected".into()))?;
     Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
 }
 
