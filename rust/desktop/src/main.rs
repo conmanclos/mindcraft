@@ -256,7 +256,11 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
     *child = None;
 
     let data = app_data(&app)?;
-    let runtime = app.path().resource_dir().map_err(|e| e.to_string())?.join("mindcraft");
+    #[cfg(target_os = "windows")]
+    let runtime_name = "mindcraft.exe";
+    #[cfg(not(target_os = "windows"))]
+    let runtime_name = "mindcraft";
+    let runtime = app.path().resource_dir().map_err(|e| e.to_string())?.join(runtime_name);
     if !runtime.is_file() {
         return Err(format!("The bundled Rust runtime was not found at {}. The release packager must place the compiled mindcraft binary in the app resources.", runtime.display()));
     }
