@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -2923,8 +2923,8 @@ async fn execute_armor_upgrade(bot: Client) {
         bot.chat("Close the open container before optimizing armor.");
         return;
     }
-    let Some((source_slot, target_slot, rank, needs_swap)) = best_armor_upgrade(&menu) else {
-        bot.chat("No recognized higher-tier armor upgrade is available; worn gear was left unchanged.");
+    let Some((source_slot, target_slot, score, needs_swap)) = best_armor_upgrade(&menu) else {
+        bot.chat("No recognized armor upgrade with a better material, durability, or enchantment score is available; worn gear was left unchanged.");
         return;
     };
     let Ok(inventory) = bot.get_inventory() else {
@@ -2947,13 +2947,13 @@ async fn execute_armor_upgrade(bot: Client) {
             if item.is_empty() { None } else {
                 armor_item_target(&format!("{:?}", item.kind()))
                     .filter(|(slot, _)| *slot == target_slot)
-                    .map(|(_, rank)| rank)
+                    .map(|(_, rank)| armor_quality_score(item, &format!("{:?}", item.kind()), rank))
             }
         }))
         .flatten();
-    if equipped_rank.is_some_and(|actual| actual >= rank) {
+    if equipped_rank.is_some_and(|actual| actual >= score) {
         bot.chat(if needs_swap {
-            "Armor upgrade confirmed. The weaker piece was returned to its original inventory slot."
+            "Armor upgrade confirmed. The lower-scoring piece was returned to its original inventory slot."
         } else {
             "Armor upgrade confirmed in the empty armor slot."
         });
@@ -3710,28 +3710,87 @@ fn best_empty_armor_slot(menu: &azalea_inventory::Menu) -> Option<(usize, usize,
 
 /// Find the strongest recognized armor upgrade. Unknown equipped items and
 /// equal-or-better armor are preserved; weaker recognized armor may be swapped.
-fn best_armor_upgrade(menu: &azalea_inventory::Menu) -> Option<(usize, usize, u8, bool)> {
+fn best_armor_upgrade(menu: &azalea_inventory::Menu) -> Option<(usize, usize, i64, bool)> {
     menu.try_as_player()?;
     let slots = menu.slots();
-    let mut best: Option<(usize, usize, u8, bool)> = None;
+    let mut best: Option<(usize, usize, i64, bool)> = None;
     for source_slot in menu.player_slots_range() {
         let Some(item) = slots.get(source_slot) else { continue; };
         if item.is_empty() { continue; }
-        let Some((target_slot, rank)) = armor_item_target(&format!("{:?}", item.kind())) else { continue; };
+        let name = format!("{:?}", item.kind());
+        let Some((target_slot, rank)) = armor_item_target(&name) else { continue; };
+        let candidate_score = armor_quality_score(item, &name, rank);
         let equipped = slots.get(target_slot)?;
-        let (equipped_rank, needs_swap) = if equipped.is_empty() {
+        let (equipped_score, needs_swap) = if equipped.is_empty() {
             (0, false)
         } else {
-            let Some((equipped_slot, equipped_rank)) = armor_item_target(&format!("{:?}", equipped.kind())) else { continue; };
+            let equipped_name = format!("{:?}", equipped.kind());
+            let Some((equipped_slot, equipped_rank)) = armor_item_target(&equipped_name) else { continue; };
             if equipped_slot != target_slot { continue; }
-            (equipped_rank, true)
+            (armor_quality_score(equipped, &equipped_name, equipped_rank), true)
         };
-        if rank <= equipped_rank { continue; }
-        if best.map_or(true, |(_, _, best_rank, _)| rank > best_rank) {
-            best = Some((source_slot, target_slot, rank, needs_swap));
+        if candidate_score <= equipped_score { continue; }
+        if best.map_or(true, |(_, _, best_score, _)| candidate_score > best_score) {
+            best = Some((source_slot, target_slot, candidate_score, needs_swap));
         }
     }
     best
+}
+
+/// Score armor by material tier, remaining durability, and useful enchantments.
+/// Unrecognized or custom items remain protected by the caller's allowlist.
+fn armor_quality_score(item: &azalea_inventory::ItemStack, debug_name: &str, material_rank: u8) -> i64 {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let fallback_max = armor_max_durability(&compact);
+    let damage = item.get_component::<Damage>().map_or(0, |component| component.amount.max(0) as u32);
+    let max_damage = item.get_component::<MaxDamage>()
+        .map_or(fallback_max, |component| component.amount.max(1) as u32)
+        .max(1);
+    let remaining = max_damage.saturating_sub(damage).min(max_damage);
+    let durability_score = (remaining as i64 * 100) / max_damage as i64;
+    let enchantment_score = item.get_component::<Enchantments>().map_or(0, |component| {
+        component.levels.iter().map(|(enchantment, level)| {
+            let name = format!("{enchantment:?}").to_ascii_lowercase();
+            let weight = if name.contains("mending") { 30 }
+                else if name.contains("protection") && !name.contains("fire") && !name.contains("blast") && !name.contains("projectile") { 24 }
+                else if name.contains("unbreaking") { 18 }
+                else if name.contains("feather_falling") { 12 }
+                else if name.contains("respiration") || name.contains("depth_strider") || name.contains("aqua_affinity") || name.contains("soul_speed") || name.contains("swift_sneak") || name.contains("frost_walker") { 8 }
+                else if name.contains("fire_protection") || name.contains("blast_protection") || name.contains("projectile_protection") { 7 }
+                else if name.contains("thorns") { 2 }
+                else { 0 };
+            weight * (*level as i64).clamp(0, 10)
+        }).sum::<i64>()
+    });
+    material_rank as i64 * 10_000 + durability_score * 10 + enchantment_score
+}
+
+fn armor_max_durability(name: &str) -> u32 {
+    let slot = if name.ends_with("helmet") || name.ends_with("turtlehelmet") { "helmet" }
+        else if name.ends_with("chestplate") { "chestplate" }
+        else if name.ends_with("leggings") { "leggings" }
+        else if name.ends_with("boots") { "boots" }
+        else { return 1; };
+    let material = if name.contains("netherite") { "netherite" }
+        else if name.contains("diamond") { "diamond" }
+        else if name.contains("iron") { "iron" }
+        else if name.contains("chainmail") { "chainmail" }
+        else if name.contains("golden") || name.contains("gold") { "gold" }
+        else if name.contains("leather") { "leather" }
+        else if name.contains("turtle") { "turtle" }
+        else { return 1; };
+    match (material, slot) {
+        ("leather", "helmet") => 55, ("leather", "chestplate") => 80, ("leather", "leggings") => 75, ("leather", "boots") => 65,
+        ("gold", "helmet") => 77, ("gold", "chestplate") => 112, ("gold", "leggings") => 105, ("gold", "boots") => 91,
+        ("chainmail" | "iron", "helmet") => 165, ("chainmail" | "iron", "chestplate") => 240, ("chainmail" | "iron", "leggings") => 225, ("chainmail" | "iron", "boots") => 195,
+        ("diamond", "helmet") => 363, ("diamond", "chestplate") => 528, ("diamond", "leggings") => 495, ("diamond", "boots") => 429,
+        ("netherite", "helmet") => 407, ("netherite", "chestplate") => 592, ("netherite", "leggings") => 555, ("netherite", "boots") => 481,
+        ("turtle", "helmet") => 275,
+        _ => 1,
+    }
 }
 
 #[cfg(test)]
