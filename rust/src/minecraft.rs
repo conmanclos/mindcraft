@@ -445,6 +445,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     }
                     BotCommand::AttackPlayer(username) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
@@ -577,6 +578,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }.get())?;
                     }
                     BotCommand::UseItem => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(hit) = bot.get_component::<HitResultComponent>() {
                             if !hit.miss {
                                 bot.stop_pathfinding();
@@ -610,6 +612,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     }
                     BotCommand::Craft(recipe) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         bot.stop_pathfinding();
                         stop_walking(&bot);
                         if let Some(busy_flag) = state.is_using_item.clone() {
@@ -630,6 +633,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     }
                     BotCommand::Deposit(x, y, z) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         bot.stop_pathfinding();
                         stop_walking(&bot);
                         if let Some(busy_flag) = state.is_using_item.clone() {
@@ -651,6 +655,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     }
                     BotCommand::Withdraw(x, y, z, item_name) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         bot.stop_pathfinding();
                         stop_walking(&bot);
                         if let Some(busy_flag) = state.is_using_item.clone() {
