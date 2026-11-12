@@ -760,7 +760,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             String::new()
                         };
                         let prompt = format!(
-                            "Recent conversation:\n{history_context}\nA Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action.{world_context} Message: {content}"
+                            "Recent conversation:\n{history_context}\nA Minecraft player addressed you in server chat. Respond as a concise teammate to the latest message above. Do not claim to have performed any in-game action.{world_context}"
                         );
                         // Provider work runs outside the tick handler so it cannot stall
                         // movement, keep-alives, or the Minecraft event loop.
