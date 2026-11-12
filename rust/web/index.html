@@ -170,15 +170,43 @@ $("createGoal").onclick=async()=>{
 
 async function refreshGoals(){
   const goals=await api("/api/goals");
-  if(!goals.length){$("goalList").textContent="No saved goals yet.";return;}
-  const entries=await Promise.all(goals.slice(0,20).map(async goal=>{
+  const root=$("goalList");
+  root.replaceChildren();
+  if(!goals.length){root.textContent="No saved goals yet.";return;}
+  for(const goal of goals.slice(0,20)){
+    const section=document.createElement("section");
+    section.style.marginBottom="14px";
+    const heading=document.createElement("div");
+    heading.textContent="Goal #"+goal.id+" · "+goal.status;
+    const description=document.createElement("div");
+    description.textContent=goal.description;
+    section.append(heading,description);
+    if(goal.status==="active"){
+      const cancel=document.createElement("button");
+      cancel.className="secondary";
+      cancel.textContent="Cancel goal";
+      cancel.style.marginTop="6px";
+      cancel.onclick=async()=>{
+        if(!confirm("Cancel this goal and revoke all of its pending or claimed tasks?"))return;
+        cancel.disabled=true;
+        try{await api("/api/goals/"+goal.id+"/cancel",{});await refreshGoals()}
+        catch(error){cancel.disabled=false;alert("Could not cancel goal: "+error.message)}
+      };
+      section.append(cancel);
+    }
     try{
       const tasks=await api("/api/goals/"+goal.id+"/tasks");
-      const lines=tasks.map(task=>"  ["+task.status+"] "+task.role+" · attempt "+task.attempts+"/5"+(task.last_error?" · last failure: "+task.last_error:"")+" · "+task.description);
-      return "Goal #"+goal.id+" · "+goal.status+"\n"+goal.description+"\n"+(lines.join("\n")||"  No tasks");
-    }catch(error){return "Goal #"+goal.id+" · "+goal.status+"\n"+goal.description+"\n  Task load failed: "+error.message;}
-  }));
-  $("goalList").textContent=entries.join("\n\n");
+      for(const task of tasks){
+        const line=document.createElement("div");
+        line.className="muted";
+        line.style.whiteSpace="pre-wrap";
+        line.textContent="  ["+task.status+"] "+task.role+" · attempt "+task.attempts+"/5"+(task.last_error?" · last failure: "+task.last_error:"")+" · "+task.description;
+        section.append(line);
+      }
+      if(!tasks.length){const empty=document.createElement("div");empty.textContent="No tasks";section.append(empty)}
+    }catch(error){const failure=document.createElement("div");failure.textContent="Task load failed: "+error.message;section.append(failure)}
+    root.append(section);
+  }
 }
 $("refreshGoals").onclick=async()=>{try{if(!token)await connect();await refreshGoals()}catch(error){$("goalList").textContent="Could not load saved goals: "+error.message}};
 async function refreshReviewQueue(){
