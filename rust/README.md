@@ -20,12 +20,12 @@ This is a Rust-native runtime being developed alongside the original JavaScript/
 - Tactical single-action planner and strategic goal decomposition are separate provider-backed paths.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Drop remains blocked; attack is restricted to a visible crosshair target within 3.5 blocks and always requires explicit approval.
 - Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/hunger/inventory telemetry, and AI chat replies when players mention `Mindcraft`. The desktop app supplies an app-scoped Azalea auth-cache path so Microsoft sign-in data stays with Mindcraft's application data.
-- A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, `place x,y,z` (right-click only when that exact block is visibly in the crosshair, using the selected item), `attack crosshair` (visible entity within 3.5 blocks; always requires explicit approval), and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
+- A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, `place x,y,z` (right-click only when that exact block is visibly in the crosshair, using the selected item), `attack crosshair` (visible entity within 3.5 blocks; always requires explicit approval), and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; in Autonomous mode, supported plans submitted through the planner are queued without a click. Autonomous mode does not yet invent or pursue long-term goals on its own. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
 ## Minecraft 26.1 migration
 
-Azalea 0.16.0 is the version-specific dependency for Minecraft 26.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The dependency pin and target declarations have been moved to 26.1, but the gameplay integration must be migrated against the 0.16 API and compiled before this branch can be considered buildable. Do not downgrade the target or silently substitute another protocol version to avoid migration work.
+Azalea 0.16.0 is the version-specific dependency for Minecraft 26.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The gameplay integration has been updated to the 0.16 API, including the new Microsoft auth options and connection-failure event. However, the code has not yet passed a native compile, and it must not be considered buildable until `cargo test` and `cargo build --release` succeed on the target toolchain. Do not downgrade the target or silently substitute another protocol version to avoid migration work.
 
 ## Build
 
@@ -37,7 +37,7 @@ cp .env.example .env
 cargo build --release
 ```
 
-A successful build has not yet been verified after the 26.1 dependency migration. Treat the runtime as in development until the 26.1 API migration compiles and it joins a live 26.1 server.
+A successful build has not yet been verified in this environment. Treat the runtime as in development until the Rust unit tests and release build pass, then the bot joins a live 26.1 server. For the complete Mac app bundle, use `bash build-macos.sh` as documented in `desktop/README.md`.
 
 ## Configure
 
