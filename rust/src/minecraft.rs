@@ -233,7 +233,23 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let goal = bot.player_uuid_by_username(&username)
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
                         .map(|entity| entity.position())
-                        .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
+                        .map(|target| {
+                            // Stand one block away on the side facing our current position.
+                            // A fixed +X offset makes every follower crowd the same side.
+                            let own = bot.position();
+                            let dx = own.x - target.x;
+                            let dz = own.z - target.z;
+                            let (offset_x, offset_z) = if dx.abs() >= dz.abs() {
+                                (if dx >= 0.0 { 1 } else { -1 }, 0)
+                            } else {
+                                (0, if dz >= 0.0 { 1 } else { -1 })
+                            };
+                            BlockPos::new(
+                                target.x.floor() as i32 + offset_x,
+                                target.y.floor() as i32,
+                                target.z.floor() as i32 + offset_z,
+                            )
+                        });
                     if let Some(goal) = goal {
                         bot.start_goto(BlockPosGoal(goal));
                         if let Some(following) = &state.is_following { following.store(true, Ordering::Relaxed); }
