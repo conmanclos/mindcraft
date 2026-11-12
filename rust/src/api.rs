@@ -113,6 +113,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
         .route("/api/tasks/claim", post(claim_task))
         .route("/api/tasks/:task_id/complete", post(complete_task))
+        .route("/api/tasks/:task_id/heartbeat", post(heartbeat_task))
         .with_state(state)
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(TraceLayer::new_for_http());
@@ -283,6 +284,19 @@ async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(requ
     let task = state.store.claim_task(&request.agent_id, &request.role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(ClaimResponse { task }))
+}
+
+async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must contain 1-64 bytes".into()));
+    }
+    let renewed = state.store.renew_task_lease(task_id, &request.agent_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !renewed {
+        return Err((StatusCode::CONFLICT, "task lease is no longer owned by this agent".into()));
+    }
+    Ok(Json(CompleteResponse { completed: false }))
 }
 
 async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
