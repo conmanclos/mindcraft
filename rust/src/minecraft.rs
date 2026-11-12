@@ -82,9 +82,8 @@ pub async fn connect(
 
         let (command_tx, _) = broadcast::channel(128);
         *status.command_tx.lock().await = Some(command_tx.clone());
+        // Chat throttling is shared because only the primary client answers chat.
         let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
-        let shared_reflex_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)));
-        let shared_follow_target = Arc::new(Mutex::new(None));
 
         let mut builder = SwarmBuilder::new().set_handler(handle);
         for (index, account) in accounts_to_join.into_iter().enumerate() {
@@ -94,7 +93,7 @@ pub async fn connect(
             let command_receiver = Some(Arc::new(Mutex::new(command_tx.subscribe())));
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
-                shared_follow_target.clone(), shared_reflex_cooldown.clone(), is_primary,
+                Arc::new(Mutex::new(None)), Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20))), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
