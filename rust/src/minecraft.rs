@@ -1598,6 +1598,89 @@ async fn execute_craft(
     }
 }
 
+fn placement_face_point(support: BlockPos, face: Direction) -> azalea::Vec3 {
+    let mut point = support.center();
+    match face {
+        Direction::Up => point.y += 0.49,
+        Direction::Down => point.y -= 0.49,
+        Direction::North => point.z -= 0.49,
+        Direction::South => point.z += 0.49,
+        Direction::East => point.x += 0.49,
+        Direction::West => point.x -= 0.49,
+    }
+    point
+}
+
+/// Place one selected block into an air position using any adjacent full-collision support face.
+/// The server raycast must confirm the exact support block and face before interaction.
+async fn place_block_at(
+    bot: &Client,
+    target: BlockPos,
+    generation_state: &Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() || !bot.exists() { return false; }
+    let Ok(world) = bot.world() else { return false; };
+    if !world.read().get_block_state(target).is_some_and(|block| block.is_air()) {
+        return false;
+    }
+    let supports = [
+        (target.down(1), Direction::Up),
+        (target.north(1), Direction::South),
+        (target.south(1), Direction::North),
+        (target.west(1), Direction::East),
+        (target.east(1), Direction::West),
+        (target.up(1), Direction::Down),
+    ];
+    for (support, face) in supports {
+        if cancelled() || !bot.exists() { return false; }
+        if !world.read().get_block_state(support).is_some_and(|block| block.is_collision_shape_full()) {
+            continue;
+        }
+        let chunk_storage = world.read().chunks.clone();
+        if !goto_cancellable(
+            bot,
+            ReachBlockPosGoal::new(support, chunk_storage),
+            generation_state,
+            generation,
+        ).await {
+            if cancelled() { return false; }
+            bot.stop_pathfinding();
+            bot.walk(WalkDirection::None);
+            continue;
+        }
+        if cancelled() { return false; }
+        if !bot.exists() || !bot.is_goto_target_reached() {
+            bot.stop_pathfinding();
+            bot.walk(WalkDirection::None);
+            continue;
+        }
+        bot.look_at(placement_face_point(support, face));
+        bot.wait_updates(1).await;
+        if cancelled() { return false; }
+        match bot.hit_result() {
+            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == face => {
+                bot.block_interact(support);
+                for _ in 0..10 {
+                    if cancelled() { return false; }
+                    if world.read().get_block_state(target).is_some_and(|block| !block.is_air()) {
+                        return true;
+                    }
+                    bot.wait_ticks(1).await;
+                }
+                return false;
+            }
+            _ => {
+                bot.stop_pathfinding();
+                bot.walk(WalkDirection::None);
+            }
+        }
+    }
+    false
+}
+
 async fn execute_build(
     bot: Client,
     material: Option<String>,
@@ -1701,58 +1784,11 @@ async fn execute_build(
     for (index, (x, y, z)) in positions.iter().copied().enumerate() {
         if cancelled() || !bot.exists() { return; }
         let target = BlockPos::new(x, y, z);
-        let support = target.down(1);
-        let Ok(world) = bot.world() else {
-            bot.chat("I can't read the loaded world to continue this build.");
-            return;
-        };
-        if !world.read().get_block_state(target).is_some_and(|block| block.is_air()) {
-            bot.chat(format!("Build stopped at block {}: target {}, {}, {} is not loaded air.", index + 1, x, y, z));
-            return;
-        }
-        if !world.read().get_block_state(support).is_some_and(|block| block.is_collision_shape_full()) {
-            bot.chat(format!("Build stopped at block {}: target {}, {}, {} needs a full-collision support block below it.", index + 1, x, y, z));
-            return;
-        }
-        let chunk_storage = world.read().chunks.clone();
-        if !goto_cancellable(
-            &bot,
-            ReachBlockPosGoal::new(support, chunk_storage),
-            &generation_state,
-            generation,
-        ).await {
-            if !cancelled() { bot.chat(format!("Build stopped at block {} because navigation failed.", index + 1)); }
-            return;
-        }
-        if cancelled() { return; }
-        if !bot.exists() || !bot.is_goto_target_reached() {
-            bot.chat(format!("Build stopped at block {} because the support position was not reached.", index + 1));
-            return;
-        }
-        bot.look_at(support.center().up(0.49));
-        bot.wait_updates(1).await;
-        if cancelled() { return; }
-        match bot.hit_result() {
-            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == Direction::Up => {
-                bot.block_interact(support);
-                let mut placed = false;
-                for _ in 0..10 {
-                    if cancelled() { return; }
-                    if world.read().get_block_state(target).is_some_and(|block| !block.is_air()) {
-                        placed = true;
-                        break;
-                    }
-                    bot.wait_ticks(1).await;
-                }
-                if !placed {
-                    bot.chat(format!("Build stopped at block {}: the server did not confirm placement. Check the selected block stack.", index + 1));
-                    return;
-                }
+        if !place_block_at(&bot, target, &generation_state, generation).await {
+            if !cancelled() {
+                bot.chat(format!("Build stopped at block {} of {} ( {}, {}, {} ): placement was not confirmed. Check support, reach, line of sight, and the selected block stack.", index + 1, positions.len(), x, y, z));
             }
-            _ => {
-                bot.chat(format!("Build stopped at block {}: no clear view of the support block's top face.", index + 1));
-                return;
-            }
+            return;
         }
     }
     if !cancelled() {
