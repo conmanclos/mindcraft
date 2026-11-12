@@ -674,6 +674,9 @@ async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<u32> 
         }
     }
 
+    if moved_items == 0 {
+        anyhow::bail!("no main-inventory items could be moved; check container space and inventory contents");
+    }
     Ok(moved_items)
 }
 
