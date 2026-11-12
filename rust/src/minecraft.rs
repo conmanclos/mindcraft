@@ -99,6 +99,7 @@ pub async fn connect(
     if brain.is_autonomous() {
         let goal_brain = brain.clone();
         let goal_store = store.clone();
+        let goal_status = status.clone();
         tokio::spawn(async move {
             const DEFAULT_GOAL: &str =
                 "Maintain safe survival, gather sustainable food and basic materials, and establish a compact shelter near spawn.";
@@ -107,7 +108,15 @@ pub async fn connect(
                     Ok(true) => {},
                     Ok(false) => {
                         let memory = goal_store.relevant_memory_context(DEFAULT_GOAL, 3_000).unwrap_or_default();
-                        let context = format!("{DEFAULT_GOAL}\n{memory}");
+                        let connected_agents = goal_status.agents.lock().await.values()
+                            .map(|agent| format!("{} ({})", agent.agent, agent.role))
+                            .collect::<Vec<_>>();
+                        let team_context = format!(
+                            "Connected Minecraft team ({}): {}.",
+                            connected_agents.len(),
+                            if connected_agents.is_empty() { "none".to_owned() } else { connected_agents.join(", ") }
+                        );
+                        let context = format!("{DEFAULT_GOAL}\n{team_context}\n{memory}");
                         match tokio::time::timeout(Duration::from_secs(50), goal_brain.decompose_goal(&context)).await {
                             Ok(Ok(drafts)) => {
                                 let tasks = drafts.iter().map(|draft| {
