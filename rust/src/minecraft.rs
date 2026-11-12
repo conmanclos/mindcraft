@@ -16,7 +16,7 @@ pub enum BotCommand {
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
     Place(i32, i32, i32),
-    Build(Vec<(i32, i32, i32)>),
+    Build(Option<String>, Vec<(i32, i32, i32)>),
     Equip(u8),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, u16),
@@ -833,7 +833,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                         });
                     }
-                    BotCommand::Build(positions) => {
+                    BotCommand::Build(material, positions) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
                         let generation_state = state.mine_generation.clone();
@@ -844,7 +844,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            execute_build(client, positions, generation_state, generation).await;
+                            execute_build(client, material, positions, generation_state, generation).await;
                         });
                     }
                     BotCommand::Place(x, y, z) => {
@@ -1600,6 +1600,7 @@ async fn execute_craft(
 
 async fn execute_build(
     bot: Client,
+    material: Option<String>,
     positions: Vec<(i32, i32, i32)>,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
@@ -1609,6 +1610,32 @@ async fn execute_build(
     if positions.is_empty() || positions.len() > 32 {
         bot.chat("A build plan must contain between 1 and 32 block positions.");
         return;
+    }
+    if let Some(material) = material {
+        let Ok(menu) = bot.menu() else {
+            bot.chat("I can't inspect the hotbar to select the requested build material.");
+            return;
+        };
+        if menu.try_as_player().is_none() {
+            bot.chat("Close the open container before starting a material-specific build.");
+            return;
+        }
+        let Some(slot) = menu.hotbar_slots_range().find(|slot| {
+            menu.slot(*slot).is_some_and(|item| {
+                !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
+            })
+        }) else {
+            bot.chat(format!("I couldn't find {material} in the hotbar. Move the requested block stack into a hotbar slot first."));
+            return;
+        };
+        let hotbar_start = *menu.hotbar_slots_range().start();
+        let hotbar_index = (slot - hotbar_start) as u8;
+        bot.set_selected_hotbar_slot(hotbar_index);
+        bot.wait_updates(1).await;
+        if bot.selected_hotbar_slot().ok() != Some(hotbar_index) {
+            bot.chat("The server did not confirm the requested build material selection.");
+            return;
+        }
     }
     for (index, (x, y, z)) in positions.iter().copied().enumerate() {
         if cancelled() || !bot.exists() { return; }
@@ -1983,6 +2010,17 @@ mod smelt_input_tests {
 }
 
 /// Match registry/debug item names without depending on Rust enum casing or separators.
+fn item_name_matches_exact(debug_name: &str, selector: &str) -> bool {
+    let compact = |value: &str| -> String {
+        value.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let selector = compact(selector);
+    !selector.is_empty() && compact(debug_name) == selector
+}
+
 fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     let compact = |value: &str| -> String {
         value.chars()
