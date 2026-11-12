@@ -204,4 +204,17 @@ mod tests {
         let action = PlannedAction { action:"drop".into(), target:Some("diamond".into()), reason:String::new(), risk:"high".into() };
         assert!(brain("autonomous").authorize_action(&action, true).is_err());
     }
+
+    #[test]
+    fn planner_rejects_actions_without_runtime_executors() {
+        for name in ["status", "inspect", "craft", "use_item", "drop"] {
+            let action = PlannedAction {
+                action: name.into(),
+                target: None,
+                reason: String::new(),
+                risk: "low".into(),
+            };
+            assert!(brain("autonomous").validate_action(&action).is_err(), "{name} must not be advertised before an executor exists");
+        }
+    }
 }
