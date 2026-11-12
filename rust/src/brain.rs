@@ -217,7 +217,7 @@ mod tests {
         };
         assert!(brain.validate_action(&invalid_risk).is_err());
         let control_target = PlannedAction {
-            action: "say".into(), target: Some("hello\\n/stop".into()),
+            action: "say".into(), target: Some("hello\n/stop".into()),
             reason: String::new(), risk: "low".into(),
         };
         assert!(brain.validate_action(&control_target).is_err());
