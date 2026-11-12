@@ -543,6 +543,16 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             Ok(BotCommand::Smelt(input, (parsed[0], parsed[1], parsed[2]), count))
         }
+        "container_deposit" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z for a container deposit".into()))?;
+            let parsed = raw.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "container deposit target must be integer x,y,z coordinates".into()))?;
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+                || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "container deposit requires valid world coordinates".into()));
+            }
+            Ok(BotCommand::ContainerDeposit(parsed[0], parsed[1], parsed[2]))
+        }
         "container_transfer" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot, start-end, or all".into()))?;
             let mut parts = coordinates.split(',');
