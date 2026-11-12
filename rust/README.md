@@ -9,7 +9,8 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - Provider adapters for OpenAI-compatible endpoints (including Ollama), Anthropic Messages, and Google Gemini.
 - SQLite conversation persistence using WAL mode.
 - Explicit Assisted / Balanced / Autonomous policy gate for planned actions. Assisted blocks destructive actions; high-risk actions are blocked outside Autonomous. Attack/drop remain blocked until target-aware execution is implemented.
-- Azalea offline-account connection for local/offline-mode servers and chat event logging.
+- Azalea offline-account connection for local/offline-mode servers, spawn/disconnect state, and AI chat replies when players mention `Mindcraft` or whisper to it.
+- A bounded in-process command queue. Explicitly approved `say`, `stop`, `goto x,y,z`, and `mine x,y,z` commands are dispatched on Minecraft ticks. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
 ## Build
