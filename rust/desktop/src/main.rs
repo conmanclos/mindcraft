@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use keyring::Entry;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io,
@@ -12,6 +12,13 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 
 struct RuntimeProcess(Mutex<Option<Child>>);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedSetup {
+    server: String, username: String, auth: String, microsoft_email: String,
+    provider: String, model: String, base_url: String, autonomy: String,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
