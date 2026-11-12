@@ -330,7 +330,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 if should_repath {
                     let step = state.explore_step.as_ref().map(|value| value.fetch_add(1, Ordering::Relaxed)).unwrap_or(0);
                     let base_radius = state.explore_radius.as_ref().map(|value| value.load(Ordering::Relaxed)).unwrap_or(32).clamp(8, 128) as i32;
-                    let radius = base_radius + ((step / 8) % 3) as i32 * 8;
+                    let radius = (base_radius + ((step / 8) % 3) as i32 * 8).min(128);
                     let offsets = [(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1),(0,-1),(1,-1)];
                     let (dx,dz) = offsets[step % offsets.len()];
                     if let Ok(position) = bot.position() {
