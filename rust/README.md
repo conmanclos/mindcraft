@@ -13,7 +13,7 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - Tactical single-action planner and strategic goal decomposition are separate provider-backed paths.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Attack/drop remain blocked until target-aware execution is implemented.
 - Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/inventory telemetry, and AI chat replies when players mention `Mindcraft`.
-- A bounded in-process command queue. `say`, `stop`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, `place x,y,z` (right-click a target block with the selected item), and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
+- A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, `place x,y,z` (right-click a target block with the selected item), and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
 ## Build
