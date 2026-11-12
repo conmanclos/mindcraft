@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
+use azalea::{account::microsoft::MicrosoftAccountOpts, pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
 use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{mpsc, Mutex};
 
@@ -45,7 +45,11 @@ pub async fn connect(
         let accounts_to_join = if auth_mode == "microsoft" {
             let email = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
             tracing::info!("starting Azalea Microsoft device-code authentication");
-            match Account::microsoft(email).await {
+            let auth_opts = MicrosoftAccountOpts {
+                cache_file: std::env::var_os("MINDCRAFT_AZALEA_AUTH_CACHE").map(std::path::PathBuf::from),
+                ..Default::default()
+            };
+            match Account::microsoft_with_opts(email, auth_opts).await {
                 Ok(account) => vec![account],
                 Err(error) => {
                     tracing::error!(%error, "Microsoft authentication failed; dashboard remains available and login will retry in 30 seconds");
