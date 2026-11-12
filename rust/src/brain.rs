@@ -64,7 +64,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, explore, mine, place, container_transfer, equip, attack, jump, use_item. Use only these actions. Attack target must be exactly crosshair.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, explore, mine, place, container_transfer, equip, attack, jump, use_item. Use only these actions. For explore, target is an optional radius from 8 to 128 blocks. For container_transfer, target must be x,y,z,slot for a nearby container and slot index. Attack target must be exactly crosshair. Container transfers always require explicit approval. risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
