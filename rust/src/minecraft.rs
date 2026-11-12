@@ -280,7 +280,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
-                        bot.start_mining(BlockPos::new(x, y, z));
+                        let position = BlockPos::new(x, y, z);
+                        match bot.hit_result() {
+                            HitResult::Block(hit) if !hit.miss && hit.block_pos == position => bot.start_mining(position),
+                            _ => bot.chat("I can only mine a block that is currently in my crosshair."),
+                        }
                     }
                     BotCommand::Place(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
