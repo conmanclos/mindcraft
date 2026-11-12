@@ -102,7 +102,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             tracing::info!(sender = ?sender, %content, "Minecraft chat");
 
             let from_self = sender.as_deref() == state.bot_name.as_deref();
-            let addressed_to_bot = message.is_whisper() || content.to_lowercase().contains("mindcraft");
+            let addressed_to_bot = message.is_whisper()
+                || (sender.is_some() && content.to_lowercase().contains("mindcraft"));
             if !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
                     let mut last = cooldown.lock().await;
@@ -120,7 +121,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         match brain.reply(&prompt).await {
                             Ok(reply) => {
                                 let safe_reply: String = reply.chars().take(240).collect();
-                                if !safe_reply.trim().is_empty() { bot.chat(safe_reply); }
+                                if !safe_reply.trim().is_empty()
+                                    && !safe_reply.trim_start().starts_with('/')
+                                    && !safe_reply.chars().any(|c| c.is_control()) {
+                                    bot.chat(safe_reply);
+                                }
                             }
                             Err(error) => {
                                 tracing::error!(%error, "AI chat response failed");
