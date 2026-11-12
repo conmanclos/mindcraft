@@ -51,25 +51,35 @@ impl Brain {
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
         let end = raw.rfind('}').ok_or_else(|| anyhow!("planner returned incomplete JSON"))?;
         let action: PlannedAction = serde_json::from_str(&raw[start..=end])?;
-        self.authorize_action(&action)?;
+        self.validate_action(&action)?;
         Ok(action)
     }
 
-    pub fn authorize_action(&self, action: &PlannedAction) -> Result<()> {
+    pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
+        let action_name = action.action.to_lowercase();
+        let supported = ["look", "follow", "stop", "say", "status", "inspect", "goto", "mine", "place", "equip", "craft", "use_item", "attack", "drop"];
+        if !supported.contains(&action_name.as_str()) {
+            bail!("unknown action '{}'", action.action);
+        }
+        Ok(())
+    }
+
+    pub fn authorize_action(&self, action: &PlannedAction, explicit_approval: bool) -> Result<()> {
+        self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
         let safe = ["look", "follow", "stop", "say", "status", "inspect", "goto"];
         let destructive = ["attack", "mine", "place", "drop", "equip", "craft", "use_item"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
-        if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) {
+        if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) && !explicit_approval {
             bail!("assisted mode requires explicit approval for '{}'", action.action);
         }
         if action_name == "drop" || action_name == "attack" {
             bail!("'{}' is disabled until a target-aware execution adapter is active", action.action);
         }
-        if self.config.mode != "autonomous" && action.risk.eq_ignore_ascii_case("high") {
-            bail!("high-risk action blocked by {} autonomy profile", self.config.mode);
+        if self.config.mode != "autonomous" && action.risk.eq_ignore_ascii_case("high") && !explicit_approval {
+            bail!("high-risk action requires explicit approval in {} mode", self.config.mode);
         }
         Ok(())
     }
@@ -130,13 +140,14 @@ mod tests {
     #[test]
     fn assisted_mode_blocks_destructive_actions() {
         let action = PlannedAction { action:"mine".into(), target:None, reason:String::new(), risk:"low".into() };
-        assert!(brain("assisted").authorize_action(&action).is_err());
-        assert!(brain("autonomous").authorize_action(&action).is_ok());
+        assert!(brain("assisted").authorize_action(&action, false).is_err());
+        assert!(brain("assisted").authorize_action(&action, true).is_ok());
+        assert!(brain("autonomous").authorize_action(&action, false).is_ok());
     }
 
     #[test]
     fn drop_is_blocked_until_executor_exists() {
         let action = PlannedAction { action:"drop".into(), target:Some("diamond".into()), reason:String::new(), risk:"high".into() };
-        assert!(brain("autonomous").authorize_action(&action).is_err());
+        assert!(brain("autonomous").authorize_action(&action, true).is_err());
     }
 }
