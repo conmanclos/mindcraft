@@ -1,11 +1,10 @@
-use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::BotCommand, store::Store};
+use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::BotCommand, store::{AgentTask, Goal, Store}};
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, StatusCode},
     response::Html,
     routing::{get, post},
     Json, Router,
-    extract::DefaultBodyLimit,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -28,7 +27,11 @@ pub struct RuntimeStatus {
 
 impl Default for RuntimeStatus {
     fn default() -> Self {
-        Self { minecraft_connected: AtomicBool::new(false), command_tx: Mutex::new(None), world: Mutex::new(None) }
+        Self {
+            minecraft_connected: AtomicBool::new(false),
+            command_tx: Mutex::new(None),
+            world: Mutex::new(None),
+        }
     }
 }
 
@@ -43,11 +46,20 @@ struct ApiState {
 #[derive(Deserialize)]
 pub struct ChatRequest { pub message: String }
 
-#[derive(Serialize)]
-struct ChatResponse { reply: String }
+#[derive(Deserialize)]
+struct GoalRequest { description: String }
+
+#[derive(Deserialize)]
+struct AgentClaimRequest { agent_id: String, role: String }
+
+#[derive(Deserialize)]
+struct CompleteTaskRequest { agent_id: String }
 
 #[derive(Deserialize)]
 struct ExecuteRequest { action: PlannedAction }
+
+#[derive(Serialize)]
+struct ChatResponse { reply: String }
 
 #[derive(Serialize)]
 struct PlanResponse {
@@ -59,6 +71,16 @@ struct PlanResponse {
 struct ExecuteResponse {
     accepted: bool,
     message: &'static str,
+}
+
+#[derive(Serialize)]
+struct ClaimResponse {
+    task: Option<AgentTask>,
+}
+
+#[derive(Serialize)]
+struct CompleteResponse {
+    completed: bool,
 }
 
 #[derive(Serialize)]
@@ -82,6 +104,10 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/chat", post(chat))
         .route("/api/plan", post(plan))
         .route("/api/execute", post(execute))
+        .route("/api/goals", get(list_goals).post(create_goal))
+        .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
+        .route("/api/tasks/claim", post(claim_task))
+        .route("/api/tasks/:task_id/complete", post(complete_task))
         .with_state(state)
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(TraceLayer::new_for_http());
@@ -125,7 +151,9 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let history = state.store.recent_messages(12)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let context = history.into_iter().map(|(role, text)| format!("{role}: {text}")).collect::<Vec<_>>().join("\n");
-    let prompt = format!("Recent conversation:\n{context}\n\nRespond to the latest user message.");
+    let world = state.status.world.lock().await.clone();
+    let world_context = world.map(|w| format!("\nCurrent bot state: position {:?}, health {}/20.", w.position, w.health)).unwrap_or_default();
+    let prompt = format!("Recent conversation:\n{context}{world_context}\n\nRespond to the latest user message.");
     let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -177,6 +205,61 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
     sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
     Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
+}
+
+async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<GoalRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if request.description.trim().is_empty() || request.description.len() > 4_000 {
+        return Err((StatusCode::BAD_REQUEST, "goal must contain 1-4000 bytes".into()));
+    }
+    let drafts = tokio::time::timeout(Duration::from_secs(50), state.brain.decompose_goal(&request.description))
+        .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "strategic planner timed out".into()))?
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let goal_id = state.store.create_goal(&request.description)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mut tasks = Vec::with_capacity(drafts.len());
+    for draft in drafts {
+        let id = state.store.add_task(goal_id, &draft.role, &draft.description, draft.priority)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        tasks.push(serde_json::json!({"id":id,"role":draft.role,"description":draft.description,"priority":draft.priority,"status":"pending"}));
+    }
+    Ok(Json(serde_json::json!({"goal_id":goal_id,"description":request.description,"tasks":tasks})))
+}
+
+async fn list_goals(State(state): State<ApiState>, headers: HeaderMap) -> Result<Json<Vec<Goal>>, StatusCode> {
+    authorize(&state, &headers)?;
+    let goals = state.store.list_goals().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(goals))
+}
+
+async fn list_goal_tasks(State(state): State<ApiState>, headers: HeaderMap, Path(goal_id): Path<i64>) -> Result<Json<Vec<AgentTask>>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    let tasks = state.store.list_tasks(goal_id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(tasks))
+}
+
+async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    let roles = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
+    if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 || !roles.contains(&request.role.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 bytes and role must be a supported specialist role".into()));
+    }
+    let task = state.store.claim_task(&request.agent_id, &request.role)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(ClaimResponse { task }))
+}
+
+async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must contain 1-64 bytes".into()));
+    }
+    let completed = state.store.complete_task(task_id, &request.agent_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !completed {
+        return Err((StatusCode::CONFLICT, "task is not claimed by this agent or is already complete".into()));
+    }
+    Ok(Json(CompleteResponse { completed }))
 }
 
 fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
