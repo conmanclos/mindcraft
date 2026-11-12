@@ -342,8 +342,17 @@ async fn run_specialist_task(
         Ok::<(), anyhow::Error>(())
     }.await;
     if let Err(error) = result {
-        let _ = store.release_task(task.id, &agent_id);
-        bot.chat(format!("I couldn't safely execute specialist task #{}: {}. The task was returned to the pending queue.", task.id, error));
+        let reason = error.to_string().chars().take(900).collect::<String>();
+        let disposition = match store.fail_task(task.id, &agent_id, &reason) {
+            Ok(Some(status)) if status == "retry_scheduled" => "A retry has been scheduled with backoff.",
+            Ok(Some(_)) => "The task reached its retry limit and its goal was stopped.",
+            Ok(None) => "The task had already left this worker's active lease.",
+            Err(store_error) => {
+                tracing::error!(task_id = task.id, %store_error, "could not persist specialist task failure");
+                "The failure could not be persisted; inspect the task queue before retrying."
+            }
+        };
+        bot.chat(format!("I couldn't safely execute specialist task #{}: {}. {}", task.id, error, disposition));
         return Err(error);
     }
     Ok(())
