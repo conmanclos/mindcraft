@@ -224,21 +224,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::AttackCrosshair => {
                         if !bot.has_attack_cooldown() {
                             if let azalea::HitResult::Entity(hit) = bot.hit_result() {
-                                if !hit.miss {
-                                    let target = bot.entity_ref_for(hit.entity);
-                                    let target_position = target.position();
-                                    let own_position = bot.position();
-                                    let dx = target_position.x - own_position.x;
-                                    let dy = target_position.y - own_position.y;
-                                    let dz = target_position.z - own_position.z;
-                                    if dx * dx + dy * dy + dz * dz <= 12.25 {
-                                        bot.look_at(target_position);
-                                        bot.attack(hit.entity);
-                                    } else {
-                                        bot.chat("Target is outside safe melee range.");
-                                    }
+                                let target = bot.entity_ref_for(hit.entity);
+                                let target_position = target.position();
+                                let own_position = bot.position();
+                                let dx = target_position.x - own_position.x;
+                                let dy = target_position.y - own_position.y;
+                                let dz = target_position.z - own_position.z;
+                                if dx * dx + dy * dy + dz * dz <= 12.25 {
+                                    bot.look_at(target_position);
+                                    bot.attack(hit.entity);
                                 } else {
-                                    bot.chat("No visible entity is in my crosshair.");
+                                    bot.chat("Target is outside safe melee range.");
                                 }
                             } else {
                                 bot.chat("No visible entity is in my crosshair.");
