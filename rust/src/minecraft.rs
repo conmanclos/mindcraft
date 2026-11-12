@@ -675,8 +675,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
 
 /// Abort the current server-side block-destroy action when a newer command supersedes mining.
 fn cancel_active_mining(client: &Client) {
-    if client.is_mining() {
-        client.ecs.write().write_message(azalea::mining::StopMiningBlockEvent {
+    let mut ecs = client.ecs.write();
+    if ecs.get::<azalea::mining::Mining>(client.entity).is_some() {
+        ecs.write_message(azalea::mining::StopMiningBlockEvent {
             entity: client.entity,
         });
     }
