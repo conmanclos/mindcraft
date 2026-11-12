@@ -64,6 +64,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             tracing::warn!("Minecraft connection lost; Azalea reconnect policy will handle retry");
         }
         Event::Tick => {
+            if let Some(status) = &state.status {
+                if let (Ok(position), Ok(health)) = (bot.position(), bot.health()) {
+                    *status.world.lock().await = Some(crate::api::WorldSnapshot {
+                        position: [position.x as f64, position.y as f64, position.z as f64],
+                        health,
+                    });
+                }
+            }
             let mut queued = Vec::new();
             if let Some(receiver) = &state.commands {
                 let mut receiver = receiver.lock().await;
