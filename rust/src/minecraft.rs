@@ -468,6 +468,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("That block is still outside the 4.5-block mining reach.");
                                 return;
                             }
+                            if let Some(block_state) = world.read().get_block_state(position) {
+                                if let Ok(best_tool) = client.best_tool_in_hotbar_for_block(block_state) {
+                                    client.set_selected_hotbar_slot(best_tool.index as u8);
+                                    client.wait_updates(1).await;
+                                }
+                            }
                             client.look_at(target_position);
                             client.wait_updates(1).await;
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
