@@ -1582,6 +1582,10 @@ async fn execute_smelt(
     loop {
         if cancelled() { return; }
         if !bot.exists() { return; }
+        if container.menu().ok().flatten().is_none() {
+            bot.chat("The furnace menu closed before smelting finished; the input and fuel remain server-side.");
+            return;
+        }
         output_ready = container.slots()
             .and_then(|slots| slots.get(2).map(|item| {
                 !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
