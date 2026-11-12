@@ -1823,7 +1823,7 @@ async fn execute_smelt(
             .and_then(|slots| slots.get(1).map(|item| {
                 !item.is_empty()
                     && item.count() >= required_fuel
-                    && smelt_fuel_capacity(&format!("{:?}", item.kind())).is_some()
+                    && smelt_fuel_matches(&format!("{:?}", item.kind()))
             }))
             .unwrap_or(false);
         if fuel_placed { break; }
