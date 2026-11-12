@@ -18,7 +18,7 @@ This is a Rust-native runtime being developed alongside the original JavaScript/
 
 ## Minecraft 26.1 migration
 
-Azalea 0.16.0 is the version-specific dependency for Minecraft 26.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The dependency pin and target declarations have been moved to 26.1, but the gameplay integration must be migrated against the 0.16 API and compiled before this branch can be considered buildable. Do not downgrade the target or silently substitute another protocol version to avoid migration work.
+Azalea 0.16.0 is the version-specific dependency for Minecraft 26.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The runtime's client, entity, pathfinder, inventory snapshot, hit-result, attack, and block-interaction paths have been updated against the 0.16 API surface. The branch still requires an actual `cargo build` and live-server verification before it can be considered buildable or gameplay-ready. Do not downgrade the target or silently substitute another protocol version to avoid migration work.
 
 ## Build
 
