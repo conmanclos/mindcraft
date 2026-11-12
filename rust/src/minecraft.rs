@@ -21,6 +21,7 @@ struct BotState {
     last_reply: Option<Arc<Mutex<Instant>>>,
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     connected: Option<Arc<AtomicBool>>,
+    last_reflex: Option<Arc<Mutex<Instant>>>,
 }
 
 pub async fn connect(
@@ -77,6 +78,7 @@ fn make_state(
         last_reply: Some(last_reply),
         commands: Some(commands),
         connected: Some(Arc::new(AtomicBool::new(false))),
+        last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
     }
 }
 
@@ -119,6 +121,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         health,
                         inventory,
                     });
+                    if crate::reflex::evaluate(health).is_some() {
+                        let should_warn = if let Some(cooldown) = &state.last_reflex {
+                            let mut last = cooldown.lock().await;
+                            if last.elapsed() >= Duration::from_secs(15) {
+                                *last = Instant::now();
+                                true
+                            } else { false }
+                        } else { false };
+                        if should_warn {
+                            bot.stop_pathfinding();
+                            bot.walk(WalkDirection::None);
+                            bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
+                            tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
+                        }
+                    }
                 }
             }
             let mut queued = Vec::new();
