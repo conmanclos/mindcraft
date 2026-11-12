@@ -1,7 +1,7 @@
 use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::BotCommand, store::{AgentTask, Goal, Store}};
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     response::Html,
     routing::{get, post},
     Json, Router,
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{atomic::AtomicBool, Arc};
 use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, Mutex};
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use std::time::Duration;
 
 #[derive(Clone, Serialize)]
