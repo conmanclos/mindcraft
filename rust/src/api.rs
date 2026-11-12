@@ -180,7 +180,7 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
         if let Ok(command) = command_from_action(proposed_action.clone()) {
             if let Some(sender) = state.status.command_tx.lock().await.clone() {
-                sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
+                sender.try_send(command).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is full or disconnected".into()))?;
                 return Ok(Json(PlanResponse {
                     proposed_action,
                     execution: "AUTONOMOUS: command queued without manual approval",
