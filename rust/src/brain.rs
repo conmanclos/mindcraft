@@ -60,7 +60,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, goto, mine, place, deposit, withdraw, equip, jump, sneak, use_item, craft, attack. Only craft planks, sticks, or crafting_table; do not invent other recipes. Do not invent inventory-drop, status, or inspection actions. sneak target must be true or false. use_item uses the held item: right-click the block under the crosshair, or use it in air for a bounded 32-tick hold. craft target must be planks, sticks, or crafting_table. deposit target must be container coordinates x,y,z; the bot preserves its hotbar. withdraw target must be x,y,z,item_id and only moves matching stacks from that container. attack target must be an online Minecraft player username currently loaded in the world and within melee range.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, goto, explore, mine, place, deposit, withdraw, equip, jump, sneak, use_item, craft, attack. Only craft planks, sticks, or crafting_table; do not invent other recipes. Do not invent inventory-drop, status, or inspection actions. sneak target must be true or false. use_item uses the held item: right-click the block under the crosshair, or use it in air for a bounded 32-tick hold. craft target must be planks, sticks, or crafting_table. deposit target must be container coordinates x,y,z; the bot preserves its hotbar. withdraw target must be x,y,z,item_id and only moves matching stacks from that container. explore target is a radius in blocks from 8 to 128. attack target must be an online Minecraft player username currently loaded in the world and within melee range.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
@@ -100,9 +100,9 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "deposit", "withdraw", "equip", "jump", "sneak", "use_item", "craft", "attack", "drop"];
+        let supported = ["look", "follow", "stop", "say", "goto", "explore", "mine", "place", "deposit", "withdraw", "equip", "jump", "sneak", "use_item", "craft", "attack", "drop"];
         if !supported.contains(&action_name.as_str()) {
-            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, jump, sneak, block-targeted item use, basic crafting, inventory deposit/withdrawal, and player-targeted attack", action.action);
+            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, jump, sneak, block-targeted item use, basic crafting, inventory deposit/withdrawal, exploration, and player-targeted attack", action.action);
         }
         if !["low", "medium", "high"].contains(&action.risk.to_lowercase().as_str()) {
             bail!("risk must be low, medium, or high");
@@ -116,7 +116,7 @@ impl Brain {
     pub fn authorize_action(&self, action: &PlannedAction, explicit_approval: bool) -> Result<()> {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
-        let safe = ["look", "follow", "stop", "say", "goto", "jump", "sneak"];
+        let safe = ["look", "follow", "stop", "say", "goto", "explore", "jump", "sneak"];
         let destructive = ["attack", "mine", "place", "drop", "equip", "use_item", "craft", "deposit", "withdraw"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
