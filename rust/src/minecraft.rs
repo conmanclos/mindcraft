@@ -161,6 +161,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             bot.exit();
         }
         Event::Tick => {
+            let mut critical_health = false;
             if state.swarm_restart.as_ref().is_some_and(|restart| restart.load(Ordering::Relaxed)) {
                 bot.exit();
                 return Ok(());
@@ -168,6 +169,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if bot.exists() {
                 let health = bot.health();
                 let hunger = bot.hunger();
+                critical_health = health.is_finite() && health <= 6.0;
+                if critical_health {
+                    if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
+                }
                 if state.is_primary {
                     if let Some(status) = &state.status {
                         let should_snapshot = if let Some(last) = &state.last_snapshot {
@@ -291,6 +296,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 }
             }
             for command in queued {
+                if critical_health && matches!(
+                    &command,
+                    BotCommand::Follow(_) | BotCommand::Goto(_, _, _) | BotCommand::Mine(_, _, _)
+                        | BotCommand::Place(_, _, _) | BotCommand::AttackCrosshair | BotCommand::Jump
+                ) {
+                    bot.chat("Survival reflex: movement or combat action blocked while health is critical.");
+                    continue;
+                }
                 match command {
                     BotCommand::Say(text) => {
                         let safe: String = text.chars().take(240).collect();
