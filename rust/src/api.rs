@@ -393,8 +393,8 @@ async fn list_goal_tasks(State(state): State<ApiState>, headers: HeaderMap, Path
 async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
     let roles = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
-    if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 || !roles.contains(&request.role.as_str()) {
-        return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 bytes and role must be a supported specialist role".into()));
+    if !valid_agent_id(&request.agent_id) || !roles.contains(&request.role.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens, and role must be supported".into()));
     }
     let task = state.store.claim_task(&request.agent_id, &request.role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -403,8 +403,8 @@ async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(requ
 
 async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
-    if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "agent_id must contain 1-64 bytes".into()));
+    if !valid_agent_id(&request.agent_id) {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
     let renewed = state.store.renew_task_lease(task_id, &request.agent_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -416,8 +416,8 @@ async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(
 
 async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
-    if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "agent_id must contain 1-64 bytes".into()));
+    if !valid_agent_id(&request.agent_id) {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
     let completed = state.store.complete_task(task_id, &request.agent_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -425,6 +425,11 @@ async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(t
         return Err((StatusCode::CONFLICT, "task is not claimed by this agent or is already complete".into()));
     }
     Ok(Json(CompleteResponse { completed }))
+}
+
+fn valid_agent_id(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 64
+        && value.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
 }
 
 fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
@@ -451,6 +456,16 @@ mod tests {
             target: target.map(str::to_owned),
             reason: "test".into(),
             risk: "low".into(),
+        }
+    }
+
+    #[test]
+    fn task_worker_ids_are_bounded_and_safe_for_persistence() {
+        assert!(valid_agent_id("Scout"));
+        assert!(valid_agent_id("builder-02"));
+        assert!(valid_agent_id("worker.team_1"));
+        for invalid in ["", " ", " worker", "worker ", "worker\\n", "a/b", "a".repeat(65).as_str()] {
+            assert!(!valid_agent_id(invalid), "accepted {invalid:?}");
         }
     }
 
