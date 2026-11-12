@@ -409,6 +409,37 @@ async fn ensure_agent_connected(state: &ApiState, target: Option<&str>) -> Resul
     }
 }
 
+async fn dispatch_parallel_smelt_jobs(
+    state: &ApiState,
+    jobs: Vec<SmeltJob>,
+    explicit_agent: Option<String>,
+) -> Result<(), (StatusCode, String)> {
+    if explicit_agent.as_deref().is_some_and(|agent| !agent.trim().is_empty()) {
+        return Err((StatusCode::BAD_REQUEST, "smelt_parallel assigns one furnace job per connected bot; omit the agent field".into()));
+    }
+    let connected = {
+        let snapshots = state.status.agents.lock().await;
+        state.config.minecraft_accounts.iter().filter_map(|configured| {
+            snapshots.keys().find(|connected| connected.eq_ignore_ascii_case(configured)).cloned()
+        }).collect::<Vec<_>>()
+    };
+    if connected.len() < jobs.len() {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("smelt_parallel needs {} connected bots for {} distinct furnace jobs; only {} are connected", jobs.len(), jobs.len(), connected.len()),
+        ));
+    }
+    let sender = state.status.command_tx.lock().await.clone()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
+    for (job, agent) in jobs.into_iter().zip(connected.into_iter()) {
+        sender.send(AgentCommand {
+            target: Some(agent),
+            command: BotCommand::Smelt(job.input, (job.x, job.y, job.z), job.count),
+        }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
+    }
+    Ok(())
+}
+
 fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Option<String>, (StatusCode, String)> {
     let Some(target) = target.filter(|value| !value.trim().is_empty()) else { return Ok(None); };
     config.minecraft_accounts.iter().find(|name| name.eq_ignore_ascii_case(&target))
