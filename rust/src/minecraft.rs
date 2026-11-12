@@ -622,6 +622,40 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             // its lifecycle without blocking the ECS tick handler.
                             let mut mining_ticks = client.get_tick_broadcaster();
                             client.start_mining(position);
+                            // StartMiningBlockEvent is processed on a later game tick;
+                            // don't interpret the not-yet-inserted Mining component as
+                            // an immediate mining failure.
+                            let start_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                            let mut mining_started = false;
+                            loop {
+                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    cancel_active_mining(&client);
+                                    return;
+                                }
+                                if !client.exists() { return; }
+                                if client.is_mining() {
+                                    mining_started = true;
+                                    break;
+                                }
+                                match tokio::time::timeout_at(start_deadline, mining_ticks.recv()).await {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
+                                        tracing::debug!(username = %client.username(), skipped, "mining start wait missed tick notifications");
+                                    }
+                                    Ok(Err(broadcast::error::RecvError::Closed)) => return,
+                                    Err(_) => break,
+                                }
+                            }
+                            if !mining_started {
+                                if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
+                                    if approach_mined_drop(&client, position, &generation_state, generation).await {
+                                        client.chat("The block broke before the mining state could be observed; I approached its drop location.");
+                                    }
+                                } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("The server did not start mining that block; it may be protected or out of reach.");
+                                }
+                                return;
+                            }
                             let mining_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
                             loop {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
