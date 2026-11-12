@@ -267,7 +267,8 @@ mod tests {
         let context = store.recent_context(1, 40).unwrap();
         assert!(context.len() <= 40);
         assert!(context.starts_with("user: "));
-        assert!(context.ends_with(&"🙂".repeat(8)));
+        let expected_suffix = "🙂".repeat(8);
+        assert!(context.ends_with(expected_suffix.as_str()));
     }
 
     #[test]
