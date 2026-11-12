@@ -64,8 +64,18 @@ impl Config {
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
         let default_base_url = if provider == "ollama" { "http://127.0.0.1:11434/v1" } else { "https://api.openai.com/v1" };
         let base_url = env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| default_base_url.into());
-        if provider == "openai" && api_key.is_empty() {
-            bail!("MINDCRAFT_API_KEY is required when MINDCRAFT_PROVIDER=openai");
+        if ["openai", "anthropic", "google"].contains(&provider.as_str()) && api_key.is_empty() {
+            bail!("MINDCRAFT_API_KEY is required for the selected hosted provider");
+        }
+        let model = env::var("MINDCRAFT_MODEL").ok().filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| if provider == "ollama" { "llama3.1".into() } else { String::new() });
+        if model.is_empty() {
+            bail!("MINDCRAFT_MODEL is required when using a hosted or OpenAI-compatible provider");
+        }
+        let parsed_base_url = reqwest::Url::parse(&base_url)
+            .map_err(|error| anyhow::anyhow!("MINDCRAFT_BASE_URL is invalid: {error}"))?;
+        if !["http", "https"].contains(&parsed_base_url.scheme()) || parsed_base_url.host_str().is_none() {
+            bail!("MINDCRAFT_BASE_URL must be an absolute HTTP or HTTPS URL");
         }
 
         let mut api_token = env::var("MINDCRAFT_API_TOKEN").unwrap_or_default();
@@ -89,7 +99,7 @@ impl Config {
             api_token_was_generated,
             mode,
             provider,
-            model: env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into()),
+            model,
             api_key,
             base_url,
             minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
