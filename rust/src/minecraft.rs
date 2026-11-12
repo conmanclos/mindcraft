@@ -681,7 +681,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                                                         let sender = status.command_tx.lock().await.clone();
                                                         if let Some(sender) = sender {
                                                             if sender.send(command).await.is_ok() {
-                                                                if action.action != "say" && reply_bot.logged_in() {
+                                                                if !action.action.eq_ignore_ascii_case("say") && reply_bot.logged_in() {
                                                                     reply_bot.chat(&format!("On it: {}", action.reason));
                                                                 }
                                                                 return;
