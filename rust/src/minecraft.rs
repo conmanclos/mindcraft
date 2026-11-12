@@ -944,7 +944,7 @@ mod chat_policy_tests {
 
     #[test]
     fn autonomous_chat_requires_an_exact_case_insensitive_allowlist_match() {
-        let trusted = HashSet::from(["owner".to_owned(), "friend_2".to_owned()]);
+        let trusted = ["owner".to_owned(), "friend_2".to_owned()].into_iter().collect::<HashSet<_>>();
         assert!(is_trusted_chat_sender(&trusted, Some("Owner")));
         assert!(is_trusted_chat_sender(&trusted, Some("FRIEND_2")));
         assert!(!is_trusted_chat_sender(&trusted, Some("stranger")));
