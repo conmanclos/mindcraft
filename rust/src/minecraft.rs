@@ -697,7 +697,12 @@ fn schedule_auto_eat(bot: &Client, state: &BotState) {
         let result = eat_food(&mut eating_bot).await;
         eating_flag.store(false, Ordering::Relaxed);
         match result {
-            Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
+            Ok(food_name) => {
+                tracing::info!(username = %eating_bot.username(), %food_name, "autonomous survival reflex ate food");
+                if is_primary {
+                    eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low."));
+                }
+            }
             Err(error) => {
                 tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
                 if is_primary {
