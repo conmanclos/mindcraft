@@ -203,6 +203,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if hotbar.contains(&slot) {
                                 let hotbar_index = (slot - *hotbar.start()) as u8;
                                 bot.set_selected_hotbar_slot(hotbar_index);
+                                // Azalea applies hotbar selection on the next ECS Update.
+                                // Wait for that update so the right-click cannot consume
+                                // whatever item happened to be selected previously.
+                                bot.wait_updates(1).await;
                                 bot.start_use_item();
                                 tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
                             }
