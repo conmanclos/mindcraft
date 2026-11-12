@@ -42,7 +42,7 @@ fn extract_json_segment(raw: &str, open: char, close: char) -> Option<&str> {
         if in_string {
             if escaped {
                 escaped = false;
-            } else if character == '\\\\' {
+            } else if character == '\\' {
                 escaped = true;
             } else if character == '"' {
                 in_string = false;
@@ -227,15 +227,13 @@ impl Brain {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_json_segment;
-
     #[test]
     fn json_extraction_ignores_brackets_inside_strings_and_trailing_prose() {
-        let object = "Result: {\"action\":\"say\",\"target\":\"text with } and \\\" quote\",\"reason\":\"ok\",\"risk\":\"low\"} Done.";
+        let object = r#"Result: {"action":"say","target":"text with } and \" quote","reason":"ok","risk":"low"} Done."#;
         let extracted = extract_json_segment(object, '{', '}').unwrap();
         let parsed: serde_json::Value = serde_json::from_str(extracted).unwrap();
         assert_eq!(parsed["action"], "say");
-        assert_eq!(parsed["target"], "text with } and \\\" quote");
+        assert_eq!(parsed["target"], "text with } and \" quote");
 
         let array = "Tasks: [{\"description\":\"array ] inside string\"},{\"description\":\"second\"}] complete";
         let extracted = extract_json_segment(array, '[', ']').unwrap();
