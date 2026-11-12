@@ -191,6 +191,14 @@ mod tests {
         assert!(brain("autonomous").authorize_action(&action, false).is_ok());
     }
 
+
+    #[test]
+    fn attack_requires_explicit_approval_even_in_autonomous_mode() {
+        let action = PlannedAction { action:"attack".into(), target:Some("crosshair".into()), reason:String::new(), risk:"high".into() };
+        assert!(brain("autonomous").authorize_action(&action, false).is_err());
+        assert!(brain("autonomous").authorize_action(&action, true).is_ok());
+    }
+
     #[test]
     fn drop_is_blocked_until_executor_exists() {
         let action = PlannedAction { action:"drop".into(), target:Some("diamond".into()), reason:String::new(), risk:"high".into() };
