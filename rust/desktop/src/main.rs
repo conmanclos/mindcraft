@@ -18,6 +18,13 @@ struct RuntimeProcess(Mutex<Option<Child>>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RuntimeLaunch {
+    token: String,
+    api_port: u16,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SavedSetup {
     server: String, username: String, auth: String, microsoft_email: String,
     provider: String, model: String, base_url: String, autonomy: String,
@@ -142,7 +149,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<String, String> {
+fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<RuntimeLaunch, String> {
     let mut child = process.0.lock().map_err(|_| "Runtime process lock is unavailable".to_string())?;
     if child.as_mut().is_some_and(|running| running.try_wait().ok().flatten().is_none()) {
         return Err("Mindcraft is already running.".into());
@@ -164,8 +171,13 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<S
     #[cfg(unix)]
     fs::set_permissions(&log_path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
     let log_stderr = log.try_clone().map_err(|e| e.to_string())?;
+    let port_probe = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("Could not reserve a local dashboard port: {e}"))?;
+    let api_port = port_probe.local_addr().map_err(|e| e.to_string())?.port();
+    drop(port_probe);
+
     let mut command = Command::new(runtime);
     command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
+    command.env("MINDCRAFT_BIND", format!("127.0.0.1:{api_port}"));
     command.env("MINDCRAFT_AZALEA_AUTH_CACHE", data.join("azalea-auth.json"));
     if let Ok(entry) = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key") {
         if let Ok(key) = entry.get_password() {
@@ -180,7 +192,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<S
 
     let spawned = command.spawn().map_err(|e| format!("Could not start the Rust runtime: {e}"))?;
     *child = Some(spawned);
-    Ok(token)
+    Ok(RuntimeLaunch { token, api_port })
 }
 
 #[tauri::command]
