@@ -383,7 +383,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::Follow(username) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
                         if let Some(target) = &state.follow_target { *target.lock().await = Some(username); }
+                        if let Some(last) = &state.last_follow_repath {
+                            *last.lock().await = Instant::now() - Duration::from_secs(5);
+                        }
                     }
                     BotCommand::Look(x, y, z) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
@@ -520,6 +525,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
                         if let Some(radius_state) = &state.explore_radius { radius_state.store(radius as usize, Ordering::Relaxed); }
                         if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
