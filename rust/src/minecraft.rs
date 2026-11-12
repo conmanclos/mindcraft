@@ -468,14 +468,20 @@ fn best_safe_food_slot(menu: &azalea::inventory::Menu) -> Option<(usize, u8)> {
 }
 
 fn safe_food_priority(name: &str) -> Option<u8> {
+    // Debug output may render registry names as either snake_case or CamelCase.
+    // Compare an alphanumeric-only lowercase form so both representations work.
+    let compact: String = name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
     [
-        ("golden_carrot", 10), ("cooked_beef", 10), ("cooked_porkchop", 10),
-        ("golden_apple", 10), ("cooked_mutton", 8), ("cooked_rabbit", 8),
-        ("cooked_chicken", 8), ("cooked_cod", 8), ("cooked_salmon", 8),
-        ("bread", 7), ("pumpkin_pie", 7), ("baked_potato", 7),
+        ("goldencarrot", 10), ("cookedbeef", 10), ("cookedporkchop", 10),
+        ("goldenapple", 10), ("cookedmutton", 8), ("cookedrabbit", 8),
+        ("cookedchicken", 8), ("cookedcod", 8), ("cookedsalmon", 8),
+        ("bread", 7), ("pumpkinpie", 7), ("bakedpotato", 7),
         ("carrot", 4), ("potato", 4), ("apple", 3),
-        ("melon_slice", 3), ("sweet_berries", 3), ("glow_berries", 3),
-    ].iter().find_map(|(needle, score)| name.contains(needle).then_some(*score))
+        ("melonslice", 3), ("sweetberries", 3), ("glowberries", 3),
+    ].iter().find_map(|(needle, score)| compact.contains(needle).then_some(*score))
 }
 
 #[cfg(test)]
@@ -489,5 +495,7 @@ mod food_tests {
         assert_eq!(safe_food_priority("itemstack { kind: potion }"), None);
         assert_eq!(safe_food_priority("itemstack { kind: rotten_flesh }"), None);
         assert_eq!(safe_food_priority("itemstack { kind: golden_apple }"), Some(10));
+        assert_eq!(safe_food_priority("ItemStack { kind: CookedBeef }"), Some(10));
+        assert_eq!(safe_food_priority("ItemStack { kind: BakedPotato }"), Some(7));
     }
 }
