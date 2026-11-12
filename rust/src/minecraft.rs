@@ -76,7 +76,6 @@ pub async fn connect(
         *status.command_tx.lock().await = Some(command_tx);
         let shared_receiver = Arc::new(Mutex::new(command_rx));
         let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
-        let shared_reflex_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)));
         let shared_follow_target = Arc::new(Mutex::new(None));
         let shared_pending_block_action = Arc::new(Mutex::new(None));
         let shared_swarm_restart = Arc::new(AtomicBool::new(false));
@@ -87,8 +86,8 @@ pub async fn connect(
             let command_receiver = if is_primary { Some(shared_receiver.clone()) } else { None };
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
-                shared_follow_target.clone(), shared_reflex_cooldown.clone(),
-                shared_pending_block_action.clone(), shared_swarm_restart.clone(), is_primary,
+                shared_follow_target.clone(), shared_pending_block_action.clone(),
+                shared_swarm_restart.clone(), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -109,7 +108,6 @@ fn make_state(
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     last_reply: Arc<Mutex<Instant>>,
     follow_target: Arc<Mutex<Option<String>>>,
-    last_reflex: Arc<Mutex<Instant>>,
     pending_block_action: Arc<Mutex<Option<PendingBlockAction>>>,
     swarm_restart: Arc<AtomicBool>,
     is_primary: bool,
@@ -120,7 +118,7 @@ fn make_state(
         last_reply: Some(last_reply),
         commands,
         connected: Some(Arc::new(AtomicBool::new(false))),
-        last_reflex: Some(last_reflex),
+        last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
