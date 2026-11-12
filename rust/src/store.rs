@@ -105,10 +105,9 @@ impl Store {
             if remaining <= prefix.len() + 1 { break; }
             let body_budget = remaining - prefix.len() - 1;
             let mut body_start = content.len();
-            for (index, character) in content.char_indices().rev() {
+            for (index, _) in content.char_indices().rev() {
                 if content.len() - index > body_budget { break; }
                 body_start = index;
-                let _ = character;
             }
             let line = format!("{prefix}{}", &content[body_start..]);
             let used = line.len() + 1;
