@@ -222,6 +222,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Stop => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                     }
@@ -230,18 +231,25 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Look(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
                         bot.look_at(BlockPos::new(x, y, z).center());
                     }
                     BotCommand::Goto(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
                     }
                     BotCommand::Mine(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
                         bot.start_mining(BlockPos::new(x, y, z));
                     }
                     BotCommand::Place(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
                         bot.look_at(position.center());
                         bot.block_interact(position);
