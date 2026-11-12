@@ -154,11 +154,14 @@ $("claimTask").onclick=async()=>{
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
   }catch(e){$("claimTask").disabled=false;$("taskResult").textContent="Claim failed: "+e.message}
 };
-$("planTask").onclick=()=>{
-  if(!currentTask) return;
-  $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". Use the live game state and choose one safe, supported next action.";
-  $("message").focus();
-  $("plan").click();
+$("planTask").onclick=async()=>{
+  try{
+    if(!currentTask)throw Error("Claim a task first.");
+    await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgentId});
+    $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". Use the live game state and choose one safe, supported next action.";
+    $("message").focus();
+    $("plan").click();
+  }catch(e){$("taskResult").textContent="Task lease check failed; claim the task again before planning. "+e.message}
 };
 setInterval(()=>{if(token)connect().catch(()=>{})},5000);
 $("completeTask").onclick=async()=>{
