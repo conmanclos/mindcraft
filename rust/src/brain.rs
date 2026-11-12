@@ -104,7 +104,7 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "equip", "attack"];
+        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "equip", "attack", "jump", "use_item"];
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
@@ -114,16 +114,16 @@ impl Brain {
     pub fn authorize_action(&self, action: &PlannedAction, explicit_approval: bool) -> Result<()> {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
-        let safe = ["look", "follow", "stop", "say", "goto"];
-        let destructive = ["attack", "mine", "place", "equip"];
+        let safe = ["look", "follow", "stop", "say", "goto", "jump"];
+        let destructive = ["attack", "mine", "place", "equip", "use_item"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
         if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) && !explicit_approval {
             bail!("assisted mode requires explicit approval for '{}'", action.action);
         }
-        if action_name == "attack" && !explicit_approval {
-            bail!("attack always requires explicit user approval, including in autonomous mode");
+        if ["attack", "use_item"].contains(&action_name.as_str()) && !explicit_approval {
+            bail!("attack and generic item use always require explicit user approval, including in autonomous mode");
         }
         if self.config.mode != "autonomous" && action.risk.eq_ignore_ascii_case("high") && !explicit_approval {
             bail!("high-risk action requires explicit approval in {} mode", self.config.mode);
@@ -199,6 +199,13 @@ mod tests {
     #[test]
     fn attack_requires_explicit_approval_even_in_autonomous_mode() {
         let action = PlannedAction { action:"attack".into(), target:Some("crosshair".into()), reason:String::new(), risk:"high".into() };
+        assert!(brain("autonomous").authorize_action(&action, false).is_err());
+        assert!(brain("autonomous").authorize_action(&action, true).is_ok());
+    }
+
+    #[test]
+    fn generic_item_use_requires_explicit_approval() {
+        let action = PlannedAction { action:"use_item".into(), target:None, reason:String::new(), risk:"low".into() };
         assert!(brain("autonomous").authorize_action(&action, false).is_err());
         assert!(brain("autonomous").authorize_action(&action, true).is_ok());
     }
