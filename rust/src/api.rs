@@ -119,6 +119,10 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/tasks/:task_id/heartbeat", post(heartbeat_task))
         .with_state(state)
         .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(CorsLayer::new()
+            .allow_origin([HeaderValue::from_static("tauri://localhost"), HeaderValue::from_static("http://tauri.localhost")])
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]))
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
