@@ -372,6 +372,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     bot.walk(WalkDirection::None);
                 }
             }
+            let exploration_active = state.is_exploring.as_ref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed));
+            if exploration_active && !critical_health && !bot.is_goto_target_reached() {
+                let waypoint_stuck = if let Some(last) = &state.last_explore_repath {
+                    last.lock().await.elapsed() >= Duration::from_secs(60)
+                } else { false };
+                if waypoint_stuck {
+                    bot.stop_pathfinding();
+                    bot.walk(WalkDirection::None);
+                    if let Some(last) = &state.last_explore_repath {
+                        *last.lock().await = instant_before(Duration::from_secs(15));
+                    }
+                    tracing::warn!(username = %bot.username(), "exploration waypoint exceeded 60 seconds; skipping it");
+                }
+            }
             if state.is_exploring.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed))
                 && !critical_health
                 && bot.is_goto_target_reached()
