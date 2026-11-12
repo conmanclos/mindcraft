@@ -731,6 +731,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Equip(slot) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
                         bot.set_selected_hotbar_slot(slot);
                     }
                     BotCommand::Explore(radius) => {
