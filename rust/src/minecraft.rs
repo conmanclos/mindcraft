@@ -129,7 +129,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             }
             tracing::info!(username = %bot.username(), "Minecraft agent spawned and ready");
         }
-        Event::Disconnect(_) => {
+        Event::ConnectionFailed(error) => {
+            tracing::warn!(username = %bot.username(), error = ?error, "Minecraft connection attempt failed; Azalea will retry");
+        }
+        Event::Disconnect(reason) => {
             if let Some(connected) = &state.connected {
                 if connected.swap(false, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
@@ -138,7 +141,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                 }
             }
-            tracing::warn!(username = %bot.username(), "Minecraft agent disconnected; restarting the swarm");
+            tracing::warn!(username = %bot.username(), reason = ?reason, "Minecraft agent disconnected; restarting the swarm");
             bot.exit();
         }
         Event::Tick => {
