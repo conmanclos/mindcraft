@@ -5,6 +5,7 @@ use axum::{
     response::Html,
     routing::{get, post},
     Json, Router,
+    extract::DefaultBodyLimit,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -74,6 +75,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/plan", post(plan))
         .route("/api/execute", post(execute))
         .with_state(state)
+        .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
@@ -139,7 +141,13 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
 
     let command = match request.action.action.to_lowercase().as_str() {
-        "say" => BotCommand::Say(request.action.target.unwrap_or(request.action.reason)),
+        "say" => {
+            let text = request.action.target.unwrap_or(request.action.reason);
+            if text.trim().is_empty() || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
+                return Err((StatusCode::BAD_REQUEST, "say accepts plain chat text only; slash commands and control characters are blocked".into()));
+            }
+            BotCommand::Say(text)
+        },
         "stop" => BotCommand::Stop,
         "goto" | "mine" => {
             let coordinates = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
