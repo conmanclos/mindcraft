@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
             println!("Provider: {}", config.provider);
             println!("Model: {}", config.model);
             println!("Minecraft server configured: {}", config.minecraft_server.is_some());
+            println!("Minecraft auth: {}", config.minecraft_auth);
             println!("API bind: {}", config.bind);
             println!("API token configured: {}", !config.api_token.is_empty());
             println!("Database: {}", config.database.display());
