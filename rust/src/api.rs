@@ -148,7 +148,8 @@ async fn health() -> Json<serde_json::Value> {
 async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Result<Json<StatusResponse>, StatusCode> {
     authorize(&state, &headers)?;
     let world = state.status.world.lock().await.clone();
-    let agents = state.status.agents.lock().await.values().cloned().collect();
+    let mut agents: Vec<WorldSnapshot> = state.status.agents.lock().await.values().cloned().collect();
+    agents.sort_by(|left, right| left.agent.cmp(&right.agent));
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
