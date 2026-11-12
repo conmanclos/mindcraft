@@ -39,6 +39,7 @@ pub enum BotCommand {
     Build(Option<String>, Vec<(i32, i32, i32)>),
     BuildMixed(Vec<BuildBlock>),
     Equip(u8),
+    OptimizeArmor,
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>),
     ContainerDeposit(i32, i32, i32),
@@ -588,8 +589,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         }
                     }
                 }
-                // Autonomous armor reflex fills empty slots and replaces only weaker recognized armor.
-                // It preserves equal/better gear and never moves items while another menu is open.
+                // Autonomous armor reflex fills empty armor slots only; it never replaces worn gear.
+                // Explicitly approved optimize_armor actions handle intentional upgrades.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous()) {
                     let should_equip = if let Some(last) = &state.last_auto_armor {
                         let mut last = last.lock().await;
@@ -600,41 +601,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false };
                     if should_equip {
                         if let Ok(menu) = bot.menu() {
-                            if let Some((source_slot, target_slot, rank, needs_swap)) = best_armor_upgrade(&menu) {
+                            if let Some((source_slot, target_slot, rank)) = best_empty_armor_slot(&menu) {
                                 if let Ok(inventory) = bot.get_inventory() {
-                                    if needs_swap {
-                                        inventory.left_click(source_slot);
-                                        bot.wait_updates(1).await;
-                                        inventory.left_click(target_slot);
-                                        bot.wait_updates(1).await;
-                                        inventory.left_click(source_slot);
-                                        bot.wait_updates(2).await;
-                                    } else {
-                                        inventory.shift_click(source_slot);
-                                        bot.wait_updates(2).await;
-                                    }
-                                    let equipped_rank = bot.menu().ok()
+                                    inventory.shift_click(source_slot);
+                                    bot.wait_updates(2).await;
+                                    let equipped = bot.menu().ok()
                                         .and_then(|menu| menu.slot(target_slot).map(|item| {
-                                            if item.is_empty() { None } else {
-                                                armor_item_target(&format!("{:?}", item.kind()))
-                                                    .filter(|(slot, _)| *slot == target_slot)
-                                                    .map(|(_, rank)| rank)
-                                            }
+                                            !item.is_empty()
+                                                && armor_item_target(&format!("{:?}", item.kind()))
+                                                    .is_some_and(|(slot, actual_rank)| slot == target_slot && actual_rank >= rank)
                                         }))
-                                        .flatten();
-                                    if equipped_rank.is_some_and(|actual| actual >= rank) {
-                                        tracing::info!(username = %bot.username(), source_slot, target_slot, armor_rank = rank, replaced = needs_swap, "autonomous survival reflex equipped a verified armor upgrade");
+                                        .unwrap_or(false);
+                                    if equipped {
+                                        tracing::info!(username = %bot.username(), source_slot, target_slot, armor_rank = rank, "autonomous survival reflex equipped armor into an empty slot");
                                     } else {
-                                        if needs_swap {
-                                            let source_empty = bot.menu().ok()
-                                                .and_then(|menu| menu.slot(source_slot).map(|item| item.is_empty()))
-                                                .unwrap_or(false);
-                                            if source_empty {
-                                                inventory.left_click(source_slot);
-                                                bot.wait_updates(1).await;
-                                            }
-                                        }
-                                        tracing::warn!(username = %bot.username(), source_slot, target_slot, "armor upgrade was not confirmed by the server");
+                                        tracing::warn!(username = %bot.username(), source_slot, target_slot, "armor quick-move was not confirmed by the server");
                                     }
                                 }
                             }
@@ -3224,6 +3205,23 @@ fn armor_item_target(debug_name: &str) -> Option<(usize, u8)> {
         return None;
     };
     Some((target, rank))
+}
+
+/// Find the strongest recognized armor item that can fill an empty armor slot.
+fn best_empty_armor_slot(menu: &azalea_inventory::Menu) -> Option<(usize, usize, u8)> {
+    menu.try_as_player()?;
+    let slots = menu.slots();
+    let mut best: Option<(usize, usize, u8)> = None;
+    for source_slot in menu.player_slots_range() {
+        let Some(item) = slots.get(source_slot) else { continue; };
+        if item.is_empty() { continue; }
+        let Some((target_slot, rank)) = armor_item_target(&format!("{:?}", item.kind())) else { continue; };
+        if slots.get(target_slot).map_or(true, |equipped| !equipped.is_empty()) { continue; }
+        if best.map_or(true, |(_, _, best_rank)| rank > best_rank) {
+            best = Some((source_slot, target_slot, rank));
+        }
+    }
+    best
 }
 
 /// Find the strongest recognized armor upgrade. Unknown equipped items and
