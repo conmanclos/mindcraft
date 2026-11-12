@@ -227,6 +227,8 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::Say(text))
         }
         "stop" => Ok(BotCommand::Stop),
+        "jump" => Ok(BotCommand::Jump),
+        "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
             if !target.eq_ignore_ascii_case("crosshair") {
