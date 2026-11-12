@@ -378,7 +378,7 @@ mod tests {
         assert!(super::valid_minecraft_server("localhost"));
         assert!(super::valid_minecraft_server("play.example.net:25565"));
         assert!(super::valid_minecraft_server("192.168.1.20:25566"));
-        for invalid in ["", "https://example.com", "example.com/path", "host:0", "host:65536", "host:nope", "host name:25565", "::1:25565"] {
+        for invalid in ["", "https://example.com", "example.com/path", "host:0", "host:65536", "host:nope", "host name:25565", "::1:25565", "a..b", "-host", "host-", "bad_.host"] {
             assert!(!super::valid_minecraft_server(invalid), "accepted {invalid}");
         }
     }
