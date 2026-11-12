@@ -270,14 +270,17 @@ async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(req
     let drafts = tokio::time::timeout(Duration::from_secs(50), state.brain.decompose_goal(&request.description))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "strategic planner timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let goal_id = state.store.create_goal(&request.description)
+    let task_specs = drafts.iter()
+        .map(|draft| (draft.role.clone(), draft.description.clone(), draft.priority))
+        .collect::<Vec<_>>();
+    let (goal_id, task_ids) = state.store.create_goal_with_tasks(&request.description, &task_specs)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let mut tasks = Vec::with_capacity(drafts.len());
-    for draft in drafts {
-        let id = state.store.add_task(goal_id, &draft.role, &draft.description, draft.priority)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        tasks.push(serde_json::json!({"id":id,"role":draft.role,"description":draft.description,"priority":draft.priority,"status":"pending"}));
-    }
+    let tasks = drafts.into_iter().zip(task_ids)
+        .map(|(draft, id)| serde_json::json!({
+            "id":id,"role":draft.role,"description":draft.description,
+            "priority":draft.priority,"status":"pending"
+        }))
+        .collect::<Vec<_>>();
     Ok(Json(serde_json::json!({"goal_id":goal_id,"description":request.description,"tasks":tasks})))
 }
 
