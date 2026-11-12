@@ -25,13 +25,12 @@
   "bundle": {
     "active": true,
     "targets": [
-      "dmg",
-      "app"
+      "all"
     ],
     "category": "Game",
     "shortDescription": "Your native Rust AI Minecraft teammate",
-    "resources": {
-      "binaries/mindcraft": "mindcraft"
-    }
+    "resources": [
+      "binaries/*"
+    ]
   }
 }
