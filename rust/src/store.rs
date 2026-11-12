@@ -233,6 +233,21 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn goal_and_specialist_tasks_are_created_atomically() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let tasks = vec![
+            ("scout".to_owned(), "Find a safe location".to_owned(), 90),
+            ("builder".to_owned(), "Build a shelter".to_owned(), 80),
+        ];
+        let (goal, ids) = store.create_goal_with_tasks("Build a starter base", &tasks).unwrap();
+        assert_eq!(ids.len(), 2);
+        let persisted = store.list_tasks(goal).unwrap();
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted[0].role, "scout");
+        assert_eq!(persisted[1].role, "builder");
+    }
+
+    #[test]
     fn specialist_tasks_are_claimed_once_and_complete_the_goal() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let goal = store.create_goal("Build a safe starter base").unwrap();
