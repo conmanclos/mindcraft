@@ -164,14 +164,15 @@ setInterval(()=>{if(token)connect().catch(()=>{})},5000);
 $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
+    if(!window.confirm("Only confirm after checking the result in Minecraft. Mark task #"+currentTask.id+" complete?"))return;
+    $("completeTask").disabled=true;
     await api("/api/tasks/"+currentTask.id+"/complete",{agent_id:currentTaskAgentId});
-    $("taskResult").textContent="Task #"+currentTask.id+" marked complete.";
+    $("taskResult").textContent="Task #"+currentTask.id+" marked complete after your confirmation.";
     currentTask=null;
     currentTaskAgentId=null;
     stopTaskHeartbeat();
-    $("completeTask").disabled=true;
     $("planTask").disabled=true;
     $("claimTask").disabled=false;
-  }catch(e){$("taskResult").textContent="Completion failed: "+e.message}
+  }catch(e){$("taskResult").textContent="Completion failed: "+e.message;$("completeTask").disabled=!currentTask}
 };
 </script></body></html>
