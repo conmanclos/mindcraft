@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use std::{path::Path, sync::Mutex};
 
@@ -119,7 +119,7 @@ impl Store {
 
     pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        let tx = connection.transaction()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task = tx.query_row(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent
              FROM agent_tasks WHERE status='pending' AND role=?1
@@ -148,11 +148,29 @@ impl Store {
 
     pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        let changed = connection.execute(
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let goal_id: Option<i64> = tx.query_row(
+            "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
+            params![task_id, agent_id],
+            |row| row.get(0),
+        ).optional()?;
+        let Some(goal_id) = goal_id else {
+            tx.commit()?;
+            return Ok(false);
+        };
+        tx.execute(
             "UPDATE agent_tasks SET status='complete', updated_at=CURRENT_TIMESTAMP
              WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
             params![task_id, agent_id],
         )?;
-        Ok(changed == 1)
+        tx.execute(
+            "UPDATE goals SET status='complete'
+             WHERE id=?1 AND NOT EXISTS (
+               SELECT 1 FROM agent_tasks WHERE goal_id=?1 AND status!='complete'
+             )",
+            [goal_id],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 }
