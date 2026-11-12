@@ -448,7 +448,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 }
                                 if !client.exists() { return; }
                                 if !client.is_mining() {
-                                    client.chat(format!("Mining attempt at {}, {}, {} finished. Check the drops and inventory.", position.x, position.y, position.z));
+                                    match world.read().get_block_state(position) {
+                                        Some(block) if block.is_air() => client.chat(format!("Block broken at {}, {}, {}. Check nearby drops and inventory.", position.x, position.y, position.z)),
+                                        Some(_) => client.chat("Mining stopped, but the target block remains. It may be protected or the tool/action was rejected."),
+                                        None => client.chat("Mining stopped, but the target chunk is no longer loaded; I can't confirm the block result."),
+                                    }
                                     return;
                                 }
                                 if mining_ticks.recv().await.is_err() { return; }
