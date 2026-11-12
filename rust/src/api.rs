@@ -539,6 +539,9 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
     if ![0, 90, 180, 270].contains(&document.rotation) {
         return Err((StatusCode::BAD_REQUEST, "schematic rotation must be 0, 90, 180, or 270 degrees".into()));
     }
+    let rotation = document.rotation;
+    let mirror_x = document.mirror_x;
+    let mirror_z = document.mirror_z;
     let mut seen = HashSet::new();
     let mut blocks = Vec::with_capacity(document.blocks.len());
     for block in document.blocks {
@@ -551,9 +554,9 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
         if [block.x, block.y, block.z].iter().any(|value| value.unsigned_abs() > 32) {
             return Err((StatusCode::BAD_REQUEST, "schematic-relative coordinates must stay within 32 blocks of the origin".into()));
         }
-        let mut relative_x = if document.mirror_x { -block.x } else { block.x };
-        let mut relative_z = if document.mirror_z { -block.z } else { block.z };
-        (relative_x, relative_z) = match document.rotation {
+        let mut relative_x = if mirror_x { -block.x } else { block.x };
+        let mut relative_z = if mirror_z { -block.z } else { block.z };
+        (relative_x, relative_z) = match rotation {
             0 => (relative_x, relative_z),
             90 => (-relative_z, relative_x),
             180 => (-relative_x, -relative_z),
