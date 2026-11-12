@@ -4,11 +4,13 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct Brain {
     config: Arc<Config>,
     http: Client,
+    llm_slots: Arc<Semaphore>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,13 +34,18 @@ pub struct PlannedAction {
 
 impl Brain {
     pub fn new(config: Arc<Config>) -> Self {
-        Self { config, http: Client::builder().timeout(std::time::Duration::from_secs(45)).build().expect("HTTP client") }
+        Self {
+            config,
+            http: Client::builder().timeout(std::time::Duration::from_secs(45)).build().expect("HTTP client"),
+            llm_slots: Arc::new(Semaphore::new(2)),
+        }
     }
 
     pub async fn reply(&self, prompt: &str) -> Result<String> {
         if prompt.trim().is_empty() { bail!("prompt cannot be empty"); }
         if prompt.len() > 12_000 { bail!("prompt exceeds 12,000 bytes"); }
 
+        let _permit = self.llm_slots.acquire().await.map_err(|_| anyhow!("AI concurrency limiter is closed"))?;
         let system = format!(
             "You are Mindcraft, a cautious Minecraft Java 1.21.1 teammate. Autonomy profile: {}. You may advise or propose actions, but never claim that an in-game action occurred unless the runtime confirms it. Prioritize player safety, server rules, and explicit user intent. Keep responses concise and operational.",
             self.config.mode
