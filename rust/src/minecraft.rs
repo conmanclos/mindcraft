@@ -2437,6 +2437,139 @@ async fn execute_build(
     }
 }
 
+
+async fn execute_build_mixed(
+    bot: Client,
+    blocks: Vec<BuildBlock>,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if blocks.is_empty() || blocks.len() > 64 {
+        bot.chat("A custom schematic must contain between 1 and 64 blocks.");
+        return;
+    }
+    let Ok(menu) = bot.menu() else {
+        bot.chat("I can't inspect the player inventory before starting this schematic.");
+        return;
+    };
+    if menu.try_as_player().is_none() {
+        bot.chat("Close the open container before starting a schematic build.");
+        return;
+    }
+
+    let mut requirements: Vec<(String, usize)> = Vec::new();
+    for block in &blocks {
+        if let Some((_, count)) = requirements.iter_mut().find(|(material, _)| material == &block.material) {
+            *count += 1;
+        } else {
+            requirements.push((block.material.clone(), 1));
+        }
+    }
+
+    // Preflight every material before moving anything, reserving distinct empty
+    // hotbar slots so a partial inventory setup cannot overwrite existing gear.
+    let hotbar_start = *menu.hotbar_slots_range().start();
+    let mut reserved_hotbar = Vec::new();
+    let mut material_slots: Vec<(String, usize, Option<usize>, usize)> = Vec::new();
+    for (material, required) in &requirements {
+        let existing = menu.hotbar_slots_range().find(|slot| {
+            menu.slot(*slot).is_some_and(|item| {
+                !item.is_empty()
+                    && item.count() as usize >= *required
+                    && item_name_matches_exact(&format!("{:?}", item.kind()), material)
+            })
+        });
+        if let Some(slot) = existing {
+            material_slots.push((material.clone(), slot, None, *required));
+            continue;
+        }
+        let source = menu.player_slots_without_hotbar_range().find(|slot| {
+            menu.slot(*slot).is_some_and(|item| {
+                !item.is_empty()
+                    && item.count() as usize >= *required
+                    && item_name_matches_exact(&format!("{:?}", item.kind()), material)
+            })
+        });
+        let destination = menu.hotbar_slots_range().find(|slot| {
+            menu.slot(*slot).is_some_and(|item| item.is_empty())
+                && !reserved_hotbar.contains(slot)
+        });
+        let (Some(source), Some(destination)) = (source, destination) else {
+            bot.chat(format!("The schematic needs {required} {material} blocks in one stack and an empty hotbar slot for each material not already on the hotbar. I made no inventory changes."));
+            return;
+        };
+        reserved_hotbar.push(destination);
+        material_slots.push((material.clone(), destination, Some(source), *required));
+    }
+
+    for (material, destination, source, required) in &material_slots {
+        let Some(source) = source else { continue; };
+        if cancelled() { return; }
+        let Ok(inventory) = bot.get_inventory() else {
+            bot.chat("I couldn't open the player inventory to prepare schematic materials.");
+            return;
+        };
+        inventory.left_click(*source);
+        bot.wait_updates(1).await;
+        if cancelled() {
+            inventory.left_click(*source);
+            bot.wait_updates(1).await;
+            return;
+        }
+        inventory.left_click(*destination);
+        bot.wait_updates(2).await;
+        let verified = bot.menu().ok().is_some_and(|current| {
+            current.slot(*destination).is_some_and(|item| {
+                !item.is_empty()
+                    && item.count() as usize >= *required
+                    && item_name_matches_exact(&format!("{:?}", item.kind()), material)
+            })
+        });
+        if !verified {
+            let source_empty = bot.menu().ok()
+                .and_then(|current| current.slot(*source).map(|item| item.is_empty()))
+                .unwrap_or(false);
+            if source_empty {
+                inventory.left_click(*source);
+                bot.wait_updates(1).await;
+            }
+            bot.chat(format!("The server did not confirm the complete {material} stack in the hotbar; the schematic was not started."));
+            return;
+        }
+    }
+
+    let mut selected_material: Option<String> = None;
+    for (index, block) in blocks.iter().enumerate() {
+        if cancelled() || !bot.exists() { return; }
+        let Some((_, slot, _, _)) = material_slots.iter().find(|(material, _, _, _)| material == &block.material) else {
+            bot.chat("A schematic material was not prepared; construction stopped before placement.");
+            return;
+        };
+        let hotbar_index = (*slot - hotbar_start) as u8;
+        if selected_material.as_deref() != Some(block.material.as_str()) {
+            bot.set_selected_hotbar_slot(hotbar_index);
+            bot.wait_updates(1).await;
+            if bot.selected_hotbar_slot().ok() != Some(hotbar_index) {
+                bot.chat(format!("The server did not confirm selection of {} for schematic block {}.", block.material, index + 1));
+                return;
+            }
+            selected_material = Some(block.material.clone());
+        }
+        let target = BlockPos::new(block.x, block.y, block.z);
+        if !place_block_at(&bot, target, &generation_state, generation).await {
+            if !cancelled() {
+                bot.chat(format!("Schematic stopped at block {} of {} ({} {} {}): placement was not confirmed. Check support, reach, line of sight, and material stock.", index + 1, blocks.len(), block.x, block.y, block.z));
+            }
+            return;
+        }
+    }
+    if !cancelled() {
+        bot.chat(format!("Custom mixed-material schematic confirmed for all {} blocks.", blocks.len()));
+    }
+}
+
 async fn execute_smelt(
     bot: Client,
     input: String,
