@@ -16,6 +16,7 @@ pub enum BotCommand {
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
     Place(i32, i32, i32),
+    Plant(i32, i32, i32),
     Build(Option<String>, Vec<(i32, i32, i32)>),
     Equip(u8),
     Explore(u16),
@@ -991,6 +992,24 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             execute_build(client, material, positions, generation_state, generation).await;
                         });
                     }
+                    BotCommand::Plant(x, y, z) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let farmland = BlockPos::new(x, y, z);
+                            if !plant_crop_at(&client, farmland, &generation_state, generation)
+                                && !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                client.chat("Planting stopped without a confirmed crop. Check the soil, selected seeds, and reach.");
+                            }
+                        });
+                    }
                     BotCommand::Place(x, y, z) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
@@ -1779,6 +1798,90 @@ async fn place_block_at(
             }
         }
     }
+    false
+}
+
+fn is_plantable_seed(debug_name: &str) -> bool {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds"]
+        .contains(&compact.as_str())
+}
+
+/// Plant one recognized seed on an existing farmland block. The executor
+/// verifies the top-face raycast and confirms the crop block appeared.
+async fn plant_crop_at(
+    bot: &Client,
+    farmland: BlockPos,
+    generation_state: &Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() || !bot.exists() { return false; }
+    let Ok(world) = bot.world() else { return false; };
+    let Some(soil) = world.read().get_block_state(farmland) else { return false; };
+    if !format!("{soil:?}").to_ascii_lowercase().contains("farmland") {
+        bot.chat("Planting requires an existing farmland block; I won't till or replace terrain automatically.");
+        return false;
+    }
+    let crop_position = farmland.up(1);
+    if !world.read().get_block_state(crop_position).is_some_and(|block| block.is_air()) {
+        bot.chat("The block above that farmland is occupied; I won't overwrite it.");
+        return false;
+    }
+    let Ok(menu) = bot.menu() else { return false; };
+    if menu.try_as_player().is_none() {
+        bot.chat("Close the open container before planting.");
+        return false;
+    }
+    let slots = menu.slots();
+    let Some(seed_slot) = menu.hotbar_slots_range().find(|slot| {
+        slots.get(*slot).is_some_and(|item| {
+            !item.is_empty() && is_plantable_seed(&format!("{:?}", item.kind()))
+        })
+    }) else {
+        bot.chat("I need wheat, beetroot, pumpkin, or melon seeds in the hotbar to plant.");
+        return false;
+    };
+    let hotbar_start = *menu.hotbar_slots_range().start();
+    let hotbar_index = (seed_slot - hotbar_start) as u8;
+    bot.set_selected_hotbar_slot(hotbar_index);
+    bot.wait_updates(1).await;
+    if cancelled() || bot.selected_hotbar_slot().ok() != Some(hotbar_index) {
+        return false;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(
+        bot,
+        ReachBlockPosGoal::new(farmland, chunk_storage),
+        generation_state,
+        generation,
+    ).await || cancelled() || !bot.exists() || !bot.is_goto_target_reached() {
+        return false;
+    }
+    bot.look_at(placement_face_point(farmland, Direction::Up));
+    bot.wait_updates(1).await;
+    if cancelled() { return false; }
+    match bot.hit_result() {
+        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == farmland && hit.direction == Direction::Up => {}
+        _ => {
+            bot.chat("I don't have a clear view of the top of that farmland block.");
+            return false;
+        }
+    }
+    bot.block_interact(farmland);
+    for _ in 0..10 {
+        if cancelled() { return false; }
+        bot.wait_ticks(1).await;
+        if world.read().get_block_state(crop_position).is_some_and(|block| !block.is_air()) {
+            bot.chat(format!("Planting confirmed at {}, {}, {}.", crop_position.x, crop_position.y, crop_position.z));
+            return true;
+        }
+    }
+    bot.chat("The server did not confirm a planted crop; the farmland was left unchanged.");
     false
 }
 
