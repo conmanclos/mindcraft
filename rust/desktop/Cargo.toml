@@ -9,7 +9,6 @@ rust-version = "1.82"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-anyhow = "1"
 dotenvy = "0.15"
 keyring = { version = "3", features = ["apple-native"] }
 serde = { version = "1", features = ["derive"] }
