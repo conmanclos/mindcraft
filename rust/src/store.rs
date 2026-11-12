@@ -222,6 +222,15 @@ impl Store {
         Ok(connection.execute("DELETE FROM memories WHERE id=?1", [id])? == 1)
     }
 
+    pub fn has_goal_description(&self, description: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM goals WHERE description=?1)",
+            [description],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn create_goal(&self, description: &str) -> Result<i64> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
