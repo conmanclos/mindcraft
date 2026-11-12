@@ -875,6 +875,7 @@ async fn execute_craft(
 ) {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return; }
     let Some((requires_table, result_name, ingredients)) = recipe_spec(&recipe) else {
         bot.chat("I don't have a safe recipe executor for that item yet.");
         return;
