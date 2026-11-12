@@ -307,8 +307,21 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             }
                         }
                         crate::reflex::ReflexAction::WarnLowFood => {
-                            if should_warn {
-                                bot.chat("Reflex safety: food is low. Find food before continuing.");
+                            if should_warn && state.is_primary {
+                                if state.mode == "autonomous" {
+                                    let mut eating_bot = bot.clone();
+                                    tokio::spawn(async move {
+                                        match eat_food(&mut eating_bot).await {
+                                            Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
+                                            Err(error) => {
+                                                tracing::warn!(%error, "automatic eating could not find or use safe food");
+                                                eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    bot.chat("Reflex safety: food is low. Approve a use_item action or switch to Autonomous mode to allow safe automatic eating.");
+                                }
                                 tracing::warn!(username = %bot.username(), food = hunger.food, "low-food reflex activated");
                             }
                         }
@@ -539,10 +552,22 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             if !hit.miss {
                                 bot.block_interact(hit.block_pos);
                             } else {
-                                bot.chat("Aim at a block to use the held item.");
+                                let mut using_bot = bot.clone();
+                                tokio::spawn(async move {
+                                    if let Err(error) = use_held_item_for_duration(&mut using_bot, 32).await {
+                                        tracing::warn!(%error, "held-item use failed");
+                                        using_bot.chat("I couldn't use the held item.");
+                                    }
+                                });
                             }
                         } else {
-                            bot.chat("The current block target is unavailable.");
+                            let mut using_bot = bot.clone();
+                            tokio::spawn(async move {
+                                if let Err(error) = use_held_item_for_duration(&mut using_bot, 32).await {
+                                    tracing::warn!(%error, "held-item use failed");
+                                    using_bot.chat("I couldn't use the held item.");
+                                }
+                            });
                         }
                     }
                     BotCommand::Craft(recipe) => {
@@ -652,6 +677,114 @@ async fn open_target_container(bot: &mut Client, position: BlockPos) -> Result<C
             anyhow::bail!("container did not open before the timeout");
         }
     }
+}
+
+
+fn next_sequence(bot: &Client) -> Result<u32> {
+    let mut ecs = bot.ecs.lock();
+    let mut sequence = ecs.get_mut::<CurrentSequenceNumber>(bot.entity)
+        .ok_or_else(|| anyhow::anyhow!("the Minecraft item-use sequence is unavailable"))?;
+    *sequence += 1;
+    Ok(**sequence)
+}
+
+fn use_held_item(bot: &Client) -> Result<()> {
+    let sequence = next_sequence(bot)?;
+    let look = bot.component::<LookDirection>();
+    bot.write_packet(ServerboundUseItemPacket {
+        hand: InteractionHand::MainHand,
+        sequence,
+        yaw: look.y_rot,
+        pitch: look.x_rot,
+    }.get())?;
+    Ok(())
+}
+
+fn release_held_item(bot: &Client) -> Result<()> {
+    let sequence = next_sequence(bot)?;
+    bot.write_packet(ServerboundPlayerActionPacket {
+        action: PlayerAction::ReleaseUseItem,
+        pos: BlockPos::default(),
+        direction: Direction::Down,
+        sequence,
+    }.get())?;
+    Ok(())
+}
+
+async fn use_held_item_for_duration(bot: &mut Client, ticks_to_hold: usize) -> Result<()> {
+    use_held_item(bot)?;
+    let mut ticks = bot.get_tick_broadcaster();
+    wait_ticks(&mut ticks, ticks_to_hold).await?;
+    release_held_item(bot)?;
+    Ok(())
+}
+
+fn is_safe_food_item(name: &str) -> bool {
+    matches!(
+        name,
+        "apple" | "golden_apple" | "enchanted_golden_apple" | "bread"
+            | "beef" | "porkchop" | "chicken" | "mutton" | "rabbit"
+            | "cod" | "salmon" | "tropical_fish"
+            | "cooked_beef" | "cooked_porkchop" | "cooked_chicken"
+            | "cooked_mutton" | "cooked_rabbit" | "cooked_cod" | "cooked_salmon"
+            | "baked_potato" | "potato" | "carrot" | "golden_carrot" | "beetroot"
+            | "beetroot_soup" | "mushroom_stew" | "rabbit_stew" | "pumpkin_pie"
+            | "cookie" | "melon_slice" | "sweet_berries" | "glow_berries"
+            | "chorus_fruit" | "dried_kelp" | "honey_bottle"
+    )
+}
+
+fn food_name_in_slot(menu: &Menu, slot: usize) -> Option<String> {
+    let item = menu.slots().get(slot)?.as_present()?;
+    let name = normalize_item_name(&format!("{:?}", item.kind));
+    is_safe_food_item(&name).then_some(name)
+}
+
+async fn eat_food(bot: &mut Client) -> Result<String> {
+    let handle = bot.open_inventory()
+        .ok_or_else(|| anyhow::anyhow!("another container is already open"))?;
+    let menu = handle.menu()
+        .ok_or_else(|| anyhow::anyhow!("player inventory is not available"))?;
+    let hotbar_range = menu.hotbar_slots_range();
+
+    let (hotbar_slot, food_name) = if let Some(slot) = hotbar_range.clone()
+        .find(|slot| food_name_in_slot(&menu, *slot).is_some())
+    {
+        let name = food_name_in_slot(&menu, slot).expect("food slot was just verified");
+        (slot, name)
+    } else {
+        let source_slot = menu.player_slots_without_hotbar_range()
+            .find(|slot| food_name_in_slot(&menu, *slot).is_some())
+            .ok_or_else(|| anyhow::anyhow!("no safe food exists in the player inventory"))?;
+        let empty_hotbar_slot = hotbar_range.clone()
+            .find(|slot| menu.slots().get(*slot).is_some_and(|item| item.is_empty()))
+            .ok_or_else(|| anyhow::anyhow!("no empty hotbar slot is available for food"))?;
+        drop(menu);
+
+        click_pickup(bot, &handle, source_slot as u16, false).await?;
+        click_pickup(bot, &handle, empty_hotbar_slot as u16, false).await?;
+
+        let updated = handle.menu()
+            .ok_or_else(|| anyhow::anyhow!("player inventory closed while moving food"))?;
+        let name = food_name_in_slot(&updated, empty_hotbar_slot)
+            .ok_or_else(|| anyhow::anyhow!("food did not move into the hotbar"))?;
+        (empty_hotbar_slot, name)
+    };
+
+    let hotbar_index = (hotbar_slot - *hotbar_range.start()) as u8;
+    drop(handle);
+
+    bot.ecs.lock().send_event(SetSelectedHotbarSlotEvent {
+        entity: bot.entity,
+        slot: hotbar_index,
+    });
+    let mut ticks = bot.get_tick_broadcaster();
+    wait_ticks(&mut ticks, 2).await?;
+    use_held_item(bot)?;
+    let mut ticks = bot.get_tick_broadcaster();
+    wait_ticks(&mut ticks, 32).await?;
+    release_held_item(bot)?;
+    Ok(food_name)
 }
 
 async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<u32> {
