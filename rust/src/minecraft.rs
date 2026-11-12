@@ -149,7 +149,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         });
                     }
                 }
-                if crate::reflex::evaluate(health).is_some() {
+                if let Some(reflex_action) = crate::reflex::evaluate(health, hunger.food) {
                     let should_warn = if let Some(cooldown) = &state.last_reflex {
                         let mut last = cooldown.lock().await;
                         if last.elapsed() >= Duration::from_secs(15) {
@@ -158,10 +158,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else { false }
                     } else { false };
                     if should_warn {
-                        bot.stop_pathfinding();
-                        bot.walk(WalkDirection::None);
-                        bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
-                        tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
+                        match reflex_action {
+                            crate::reflex::ReflexAction::StopAndWarn => {
+                                bot.stop_pathfinding();
+                                bot.walk(WalkDirection::None);
+                                bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
+                                tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
+                            }
+                            crate::reflex::ReflexAction::WarnLowFood => {
+                                bot.chat("Reflex safety: food is low. Find food before continuing.");
+                                tracing::warn!(username = %bot.username(), food = hunger.food, "low-food reflex activated");
+                            }
+                        }
                     }
                 }
             }
