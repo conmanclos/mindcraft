@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::hit_result::HitResult, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -444,12 +444,45 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
-                        bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
-                        match bot.hit_result() {
-                            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => bot.block_interact(position),
-                            _ => bot.chat("I can only place against a block that is currently in my crosshair."),
-                        }
+                        let generation = state.mine_generation.as_ref().map(|value| value.load(Ordering::Relaxed)).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let support = position.down(1);
+                            let Ok(world) = client.world() else { client.chat("I can't read the loaded world to place that block."); return; };
+                            if !world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
+                                client.chat("The target position is not a loaded air block; I won't overwrite it.");
+                                return;
+                            }
+                            if !world.read().get_block_state(support).is_some_and(|block| !block.is_air()) {
+                                client.chat("I need a loaded solid support block directly below the target position.");
+                                return;
+                            }
+                            let chunk_storage = world.read().chunks.clone();
+                            client.goto_with_opts(ReachBlockPosGoal::new(support, chunk_storage), PathfinderOpts::new().allow_mining(false)).await;
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
+                            if !client.exists() || !client.is_goto_target_reached() {
+                                client.chat("I couldn't reach the support block safely.");
+                                return;
+                            }
+                            client.look_at(support.center().up(0.49));
+                            client.wait_updates(1).await;
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
+                            match client.hit_result() {
+                                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == Direction::Up => {
+                                    client.block_interact(support);
+                                    client.wait_ticks(2).await;
+                                    let placed = world.read().get_block_state(position).is_some_and(|block| !block.is_air());
+                                    if placed {
+                                        client.chat(format!("Placed a block at {}, {}, {}.", x, y, z));
+                                    } else {
+                                        client.chat("The server did not confirm placement. Check that a placeable block is selected in the hotbar.");
+                                    }
+                                }
+                                _ => client.chat("I couldn't get a clear view of the top face of the support block."),
+                            }
+                        });
                     }
                     BotCommand::Jump => bot.jump(),
                     BotCommand::UseItem => {
