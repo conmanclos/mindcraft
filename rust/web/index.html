@@ -25,6 +25,8 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="stat"><span class="muted">Autonomy</span><b id="mode">Unknown</b></div>
 <div class="stat"><span class="muted">AI provider</span><b id="provider">Unknown</b></div>
 <div class="stat"><span class="muted">Model</span><b id="model">Unknown</b></div>
+<div class="stat"><span class="muted">Health</span><b id="health">Unknown</b></div>
+<div class="stat"><span class="muted">Position</span><b id="position">Unknown</b></div>
 </div></section>
 <section class="panel"><h2>Teammate chat</h2><div id="log" aria-live="polite">Connect to the local runtime to begin.</div>
 <label for="message">Message</label><textarea id="message" placeholder="Ask Mindcraft a question or mention Mindcraft in Minecraft chat..."></textarea>
@@ -35,7 +37,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 const $=id=>document.getElementById(id);let token="";let lastPlan=null;
 function log(s){$("log").textContent += "\n"+s;$("log").scrollTop=$("log").scrollHeight}
 async function api(path,body){const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||data.message||("HTTP "+r.status));return data}
-async function connect(){token=$("token").value.trim();if(!token)throw Error("Enter the API token printed in the terminal.");const s=await api("/api/status");$("mc").textContent=s.minecraft_connected?"Connected":"Not connected";$("mode").textContent=s.autonomy;$("provider").textContent=s.provider;$("model").textContent=s.model;$("connection").textContent="Connected to local runtime"}
+async function connect(){token=$("token").value.trim();if(!token)throw Error("Enter the API token printed in the terminal.");const s=await api("/api/status");$("mc").textContent=s.minecraft_connected?"Connected":"Not connected";$("mode").textContent=s.autonomy;$("provider").textContent=s.provider;$("model").textContent=s.model;$("health").textContent=s.world?s.world.health+"/20":"Unknown";$("position").textContent=s.world?s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";$("connection").textContent="Connected to local runtime"}
 $("connect").onclick=()=>connect().catch(e=>{$("connection").textContent=e.message});
 $("send").onclick=async()=>{try{if(!token)await connect();const message=$("message").value.trim();if(!message)return;log("You: "+message);$("message").value="";$("send").disabled=true;const r=await api("/api/chat",{message});log("Mindcraft: "+r.reply)}catch(e){log("Error: "+e.message)}finally{$("send").disabled=false}};
 $("plan").onclick=async()=>{try{if(!token)await connect();const message=$("message").value.trim();if(!message)throw Error("Describe the action you want planned in the message box.");$("plan").disabled=true;const r=await api("/api/plan",{message});$("proposal").style.display="block";$("proposal").textContent=JSON.stringify(r.proposed_action,null,2)+"\nExecution: "+r.execution}catch(e){$("proposal").style.display="block";$("proposal").textContent="Plan rejected: "+e.message}finally{$("plan").disabled=false}};
