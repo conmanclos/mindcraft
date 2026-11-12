@@ -579,6 +579,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("That container is still outside the 4.5-block interaction reach.");
                                 return;
                             }
+                            client.look_at(position.center());
+                            client.wait_updates(1).await;
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                return;
+                            }
+                            match client.hit_result() {
+                                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+                                _ => {
+                                    client.chat("I don't have a clear line of sight to that container.");
+                                    return;
+                                }
+                            }
                             match client.open_container_at(position).await {
                                 Ok(Some(container)) => {
                                     if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
