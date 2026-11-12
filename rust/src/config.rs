@@ -79,6 +79,7 @@ impl Config {
             }
             api_token = uuid::Uuid::new_v4().to_string();
         }
+        validate_api_token(&api_token)?;
 
         Ok(Self {
             bind,
@@ -96,5 +97,27 @@ impl Config {
             microsoft_email,
             database: PathBuf::from(env::var("MINDCRAFT_DATABASE").unwrap_or_else(|_| "./mindcraft.sqlite3".into())),
         })
+    }
+}
+
+
+fn validate_api_token(token: &str) -> Result<()> {
+    if token.len() < 32 || !token.is_ascii()
+        || token.bytes().any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control()) {
+        bail!("MINDCRAFT_API_TOKEN must contain at least 32 non-whitespace ASCII bytes");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_api_token;
+
+    #[test]
+    fn api_tokens_must_have_sufficient_entropy_length_and_safe_header_characters() {
+        assert!(validate_api_token("0123456789abcdef0123456789abcdef").is_ok());
+        assert!(validate_api_token("short").is_err());
+        assert!(validate_api_token("0123456789abcdef0123456789abcde ").is_err());
+        assert!(validate_api_token("0123456789abcdef0123456789abcde\n").is_err());
     }
 }
