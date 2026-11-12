@@ -456,6 +456,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
 /// Return the best recognized, ordinary food item in the player's hotbar.
 /// Debug formatting is used only to identify the registry item name; unknown items fail closed.
 fn best_safe_food_slot(menu: &azalea::inventory::Menu) -> Option<(usize, u8)> {
+    // Do not attempt to eat while a chest, furnace, crafting table, or other
+    // server container is open; right-click would interact with that screen.
+    menu.try_as_player()?;
     menu.hotbar_slots_range().filter_map(|slot| {
         let item = menu.slots().get(slot)?;
         if item.is_empty() { return None; }
