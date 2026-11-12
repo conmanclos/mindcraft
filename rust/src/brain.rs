@@ -122,8 +122,8 @@ impl Brain {
         if self.config.mode == "assisted" && !explicit_approval {
             bail!("assisted mode requires explicit approval for every action ('{}')", action.action);
         }
-        if ["attack", "use_item"].contains(&action_name.as_str()) && !explicit_approval {
-            bail!("attack and generic item use always require explicit user approval, including in autonomous mode");
+        if ["attack", "use_item", "container_transfer"].contains(&action_name.as_str()) && !explicit_approval {
+            bail!("attack, generic item use, and container inventory transfers always require explicit user approval, including in autonomous mode");
         }
         // Never let an LLM-provided risk label downgrade a dangerous executor.
         // The runtime assigns a minimum risk from the action itself, then takes the
@@ -255,6 +255,13 @@ mod tests {
     #[test]
     fn generic_item_use_requires_explicit_approval() {
         let action = PlannedAction { action:"use_item".into(), target:None, reason:String::new(), risk:"low".into() };
+        assert!(brain("autonomous").authorize_action(&action, false).is_err());
+        assert!(brain("autonomous").authorize_action(&action, true).is_ok());
+    }
+
+    #[test]
+    fn container_transfers_always_require_explicit_approval() {
+        let action = PlannedAction { action: "container_transfer".into(), target: Some("1,64,1,27".into()), reason: String::new(), risk: "low".into() };
         assert!(brain("autonomous").authorize_action(&action, false).is_err());
         assert!(brain("autonomous").authorize_action(&action, true).is_ok());
     }
