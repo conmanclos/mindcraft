@@ -19,7 +19,7 @@ use azalea::{
         serverbound_player_command_packet::{Action as PlayerCommandAction, ServerboundPlayerCommandPacket},
         serverbound_use_item_packet::ServerboundUseItemPacket,
     },
-    direction::Direction,
+    core::direction::Direction,
 };
 use azalea_inventory::{operations::{PickupClick, QuickMoveClick}, Menu};
 use std::{
