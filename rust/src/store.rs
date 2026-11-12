@@ -116,6 +116,10 @@ impl Store {
         if !task_columns.iter().any(|name| name == "available_at") {
             connection.execute("ALTER TABLE agent_tasks ADD COLUMN available_at TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'", [])?;
         }
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS agent_tasks_ready_idx ON agent_tasks(status, available_at, priority DESC, id)",
+            [],
+        )?;
         Ok(Self { connection: Mutex::new(connection) })
     }
 
