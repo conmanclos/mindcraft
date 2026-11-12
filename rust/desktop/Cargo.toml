@@ -1,0 +1,16 @@
+[package]
+name = "mindcraft-desktop"
+version = "0.1.0"
+description = "Mindcraft native macOS desktop application"
+edition = "2021"
+rust-version = "1.82"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+keyring = { version = "3", features = ["apple-native"] }
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+uuid = { version = "1", features = ["v4"] }
