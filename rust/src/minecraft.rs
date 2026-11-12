@@ -623,6 +623,10 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
                 return;
             }
         };
+        if slots.get(*grid_slot).is_some_and(|item| !item.is_empty()) {
+            bot.chat("The crafting grid is not empty. Clear it first; I won't overwrite existing ingredients.");
+            return;
+        }
         let source_slot = player_slots.clone().find(|slot| {
             slots.get(*slot).is_some_and(|item| {
                 !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(*selector)
