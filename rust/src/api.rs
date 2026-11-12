@@ -422,12 +422,12 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             let (input, count) = match input_spec.split_once('*') {
                 Some((input, count)) => {
                     if count.contains('*') {
-                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be a single integer from 1 to 8".into()));
+                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be a single integer from 1 to 64".into()));
                     }
                     let count = count.trim().parse::<u8>()
-                        .map_err(|_| (StatusCode::BAD_REQUEST, "smelt batch count must be an integer from 1 to 8".into()))?;
-                    if !(1..=8).contains(&count) {
-                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be from 1 to 8".into()));
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "smelt batch count must be an integer from 1 to 64".into()))?;
+                    if !(1..=64).contains(&count) {
+                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be from 1 to 64".into()));
                     }
                     (input, count)
                 }
@@ -742,9 +742,10 @@ mod tests {
     fn smelting_requires_an_allowlisted_input_batch_and_valid_furnace_coordinate() {
         assert!(command_from_action(action("smelt", Some("raw_iron@0,64,0"))).is_ok());
         assert!(command_from_action(action("smelt", Some("raw_iron*8@0,64,0"))).is_ok());
+        assert!(command_from_action(action("smelt", Some("raw_iron*64@0,64,0"))).is_ok());
         assert!(command_from_action(action("smelt", Some("raw_iron*1@0,64,0"))).is_ok());
         assert!(command_from_action(action("smelt", Some("raw_iron*0@0,64,0"))).is_err());
-        assert!(command_from_action(action("smelt", Some("raw_iron*9@0,64,0"))).is_err());
+        assert!(command_from_action(action("smelt", Some("raw_iron*65@0,64,0"))).is_err());
         assert!(command_from_action(action("smelt", Some("raw_iron*many@0,64,0"))).is_err());
         assert!(command_from_action(action("smelt", Some("beef@0,64,0"))).is_ok());
         assert!(command_from_action(action("smelt", Some("unknown_item@0,64,0"))).is_err());
