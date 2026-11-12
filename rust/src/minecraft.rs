@@ -859,53 +859,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let generation_state = state.mine_generation.clone();
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            let support = position.down(1);
-                            let Ok(world) = client.world() else { client.chat("I can't read the loaded world to place that block."); return; };
-                            if !world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
-                                client.chat("The target position is not a loaded air block; I won't overwrite it.");
-                                return;
-                            }
-                            if !world.read().get_block_state(support).is_some_and(|block| block.is_collision_shape_full()) {
-                                client.chat("I need a loaded full-collision support block directly below the target position; slabs and partial blocks are not supported yet.");
-                                return;
-                            }
-                            let chunk_storage = world.read().chunks.clone();
-                            if !goto_cancellable(
-                                &client,
-                                ReachBlockPosGoal::new(support, chunk_storage),
-                                &generation_state,
-                                generation,
-                            ).await {
-                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    client.chat("Pathfinding to the placement support block timed out or failed.");
-                                }
-                                return;
-                            }
-                            if !client.exists() || !client.is_goto_target_reached() {
-                                client.chat("I couldn't reach the support block safely.");
-                                return;
-                            }
-                            client.look_at(support.center().up(0.49));
-                            client.wait_updates(1).await;
-                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
-                            match client.hit_result() {
-                                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == Direction::Up => {
-                                    client.block_interact(support);
-                                    let mut placed = false;
-                                    for _ in 0..10 {
-                                        if world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
-                                            placed = true;
-                                            break;
-                                        }
-                                        client.wait_ticks(1).await;
-                                    }
-                                    if placed {
-                                        client.chat(format!("Placed a block at {}, {}, {}.", x, y, z));
-                                    } else {
-                                        client.chat("The server did not confirm placement. Check that a placeable block is selected in the hotbar.");
-                                    }
-                                }
-                                _ => client.chat("I couldn't get a clear view of the top face of the support block."),
+                            if place_block_at(&client, position, &generation_state, generation).await {
+                                client.chat(format!("Placed a block at {}, {}, {}.", x, y, z));
+                            } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                client.chat("Placement was not confirmed. I need an air target, a reachable full-collision support face, line of sight, and a placeable selected block.");
                             }
                         });
                     }
