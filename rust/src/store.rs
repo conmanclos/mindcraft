@@ -119,6 +119,29 @@ impl Store {
         Ok(connection.last_insert_rowid())
     }
 
+    /// Create a goal and all of its specialist tasks in one transaction so
+    /// an interrupted write cannot leave a partially populated strategic plan.
+    pub fn create_goal_with_tasks(
+        &self,
+        description: &str,
+        tasks: &[(String, String, i32)],
+    ) -> Result<(i64, Vec<i64>)> {
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
+        let goal_id = tx.last_insert_rowid();
+        let mut task_ids = Vec::with_capacity(tasks.len());
+        for (role, task_description, priority) in tasks {
+            tx.execute(
+                "INSERT INTO agent_tasks(goal_id, role, description, priority) VALUES (?1, ?2, ?3, ?4)",
+                params![goal_id, role, task_description, priority.clamp(0, 100)],
+            )?;
+            task_ids.push(tx.last_insert_rowid());
+        }
+        tx.commit()?;
+        Ok((goal_id, task_ids))
+    }
+
     pub fn add_task(&self, goal_id: i64, role: &str, description: &str, priority: i32) -> Result<i64> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute(
@@ -240,6 +263,23 @@ mod tests {
         assert!(context.contains("assistant:"));
         assert!(context.contains("new"));
         assert!(!context.contains("old"));
+    }
+
+    #[test]
+    fn goal_and_specialist_tasks_are_created_as_one_durable_plan() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let tasks = vec![
+            ("scout".to_owned(), "Find a safe base location".to_owned(), 90),
+            ("gatherer".to_owned(), "Collect nearby wood".to_owned(), 70),
+        ];
+        let (goal_id, task_ids) = store.create_goal_with_tasks("Build a starter base", &tasks).unwrap();
+        assert_eq!(task_ids.len(), 2);
+        let stored = store.list_tasks(goal_id).unwrap();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].id, task_ids[0]);
+        assert_eq!(stored[0].role, "scout");
+        assert_eq!(stored[1].role, "gatherer");
+        assert!(stored.iter().all(|task| task.status == "pending"));
     }
 
     #[test]
