@@ -25,6 +25,7 @@ struct BotState {
     connected: Option<Arc<AtomicBool>>,
     last_reflex: Option<Arc<Mutex<Instant>>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
+    is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
 }
 
@@ -53,11 +54,12 @@ pub async fn connect(
     *status.command_tx.lock().await = Some(command_tx);
     let shared_receiver = Arc::new(Mutex::new(command_rx));
     let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
+    let shared_follow_target = Arc::new(Mutex::new(None));
 
     let mut builder = SwarmBuilder::new().set_handler(handle);
     for account in accounts_to_join {
         let state = make_state(
-            brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(),
+            brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(), shared_follow_target.clone(),
         );
         builder = builder.add_account_with_state(account, state);
     }
@@ -75,6 +77,7 @@ fn make_state(
     status: Arc<RuntimeStatus>,
     commands: Arc<Mutex<mpsc::Receiver<BotCommand>>>,
     last_reply: Arc<Mutex<Instant>>,
+    follow_target: Arc<Mutex<Option<String>>>,
 ) -> BotState {
     BotState {
         brain: Some(brain),
@@ -83,7 +86,8 @@ fn make_state(
         commands: Some(commands),
         connected: Some(Arc::new(AtomicBool::new(false))),
         last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
-        follow_target: Some(Arc::new(Mutex::new(None))),
+        follow_target: Some(follow_target),
+        is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
     }
 }
@@ -149,27 +153,33 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let mut receiver = receiver.lock().await;
                 while let Ok(command) = receiver.try_recv() { queued.push(command); }
             }
-            if let Some(target_lock) = &state.follow_target {
-                let target = target_lock.lock().await.clone();
-                if let Some(username) = target {
-                    let should_repath = if let Some(cooldown) = &state.last_follow_repath {
-                        let mut last = cooldown.lock().await;
-                        if last.elapsed() >= Duration::from_millis(1200) {
-                            *last = Instant::now();
-                            true
-                        } else { false }
-                    } else { false };
-                    if should_repath {
-                        let goal = bot.player_uuid_by_username(&username).ok().flatten()
-                            .and_then(|uuid| bot.entity_by_uuid(uuid))
-                            .and_then(|entity| entity.position().ok())
-                            .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
-                        if let Some(goal) = goal {
-                            bot.start_goto(BlockPosGoal(goal));
-                        } else {
-                            bot.stop_pathfinding();
-                        }
+            let follow_target = if let Some(target_lock) = &state.follow_target {
+                target_lock.lock().await.clone()
+            } else { None };
+            if let Some(username) = follow_target {
+                let should_repath = if let Some(cooldown) = &state.last_follow_repath {
+                    let mut last = cooldown.lock().await;
+                    if last.elapsed() >= Duration::from_millis(1200) {
+                        *last = Instant::now();
+                        true
+                    } else { false }
+                } else { false };
+                if should_repath {
+                    let goal = bot.player_uuid_by_username(&username).ok().flatten()
+                        .and_then(|uuid| bot.entity_by_uuid(uuid))
+                        .and_then(|entity| entity.position().ok())
+                        .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
+                    if let Some(goal) = goal {
+                        bot.start_goto(BlockPosGoal(goal));
+                        if let Some(following) = &state.is_following { following.store(true, Ordering::Relaxed); }
+                    } else {
+                        bot.stop_pathfinding();
                     }
+                }
+            } else if let Some(following) = &state.is_following {
+                if following.swap(false, Ordering::Relaxed) {
+                    bot.stop_pathfinding();
+                    bot.walk(WalkDirection::None);
                 }
             }
             for command in queued {
