@@ -425,7 +425,27 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
                 }
             }
         }
-        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, or starter_hut".into())),
+        "starter_house_4x4" => {
+            // A larger one-material shelter: 4x4 floor, two-high perimeter,
+            // a two-block front doorway, and a flat 4x4 roof (54 blocks).
+            for x in 0..4 { for z in 0..4 { positions.push((ox + x, oy, oz + z)); } }
+            for y in 1..=2 {
+                for x in 0..4 {
+                    for z in 0..4 {
+                        let perimeter = x == 0 || x == 3 || z == 0 || z == 3;
+                        let doorway = z == 0 && x == 1;
+                        if perimeter && !doorway { positions.push((ox + x, oy + y, oz + z)); }
+                    }
+                }
+            }
+            for x in 0..4 { for z in 0..4 { positions.push((ox + x, oy + 3, oz + z)); } }
+        }
+        "bridge_7x3" => {
+            // Flat seven-by-three crossing; the executor still validates
+            // every support face and stops if a span cannot be supported.
+            for x in 0..7 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
+        }
+        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, or bridge_7x3".into())),
     }
     positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
     if positions.len() > 64 {
