@@ -135,7 +135,7 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
 
 async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ExecuteRequest>) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
-    state.brain.authorize_action(&request.action)
+    state.brain.authorize_action(&request.action, true)
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
 
     let command = match request.action.action.to_lowercase().as_str() {
@@ -145,7 +145,7 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
             let coordinates = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z".into()))?;
-            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320 || parsed.iter().any(|v| v.abs() > 30_000_000) {
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320 || parsed.iter().any(|v| v.unsigned_abs() > 30_000_000) {
                 return Err((StatusCode::BAD_REQUEST, "coordinates outside supported world bounds".into()));
             }
             let pos = (parsed[0], parsed[1], parsed[2]);
