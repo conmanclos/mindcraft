@@ -42,6 +42,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div id="goalResult" class="muted" style="white-space:pre-wrap;margin-top:12px"></div>
 <div class="row" style="margin-top:10px"><button id="refreshGoals" class="secondary">Refresh saved goals</button></div>
 <div id="goalList" class="muted" style="white-space:pre-wrap;margin-top:10px">Saved goals will appear here.</div>
+<div style="margin-top:16px"><label for="schematicJson">Custom mixed-material schematic JSON</label><textarea id="schematicJson" rows="5" placeholder='{"origin":[100,64,100],"blocks":[{"x":0,"y":0,"z":0,"material":"oak_planks"}]}'></textarea><div class="row"><button id="buildSchematic" class="secondary">Queue schematic build</button><span class="muted" id="schematicStatus">Up to 64 blocks; optional rotation and mirroring.</span></div></div>
 <div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Task worker ID (not a Minecraft username)</label><input id="agentId" value="Scout"><div class="muted">Use 1-64 letters, numbers, dots, underscores, or hyphens.</div></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
 <div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="planTask" class="secondary" disabled>Plan claimed task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button><button id="releaseTask" class="secondary" disabled>Release task</button></div>
 <div class="row" style="margin-top:12px"><button id="refreshReview" class="secondary">Refresh review queue</button><select id="reviewQueue" style="flex:1"><option value="">No review tasks loaded</option></select><button id="loadReview" class="secondary" disabled>Load for review</button></div>
@@ -143,6 +144,14 @@ $("execute").onclick=async()=>{
     lastPlan=null;
   }catch(e){log("Execution rejected: "+e.message)}
   finally{$("execute").disabled=!lastPlan}
+};
+$("buildSchematic").onclick=async()=>{
+  try{
+    if(!token)await connect();
+    const request=JSON.parse($("schematicJson").value);
+    const result=await api("/api/build",request);
+    $("schematicStatus").textContent=result.message;
+  }catch(error){$("schematicStatus").textContent="Schematic rejected: "+error.message}
 };
 $("createGoal").onclick=async()=>{
   try{
