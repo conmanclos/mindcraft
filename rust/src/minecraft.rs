@@ -1918,6 +1918,11 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "polished_deepslate" => Some((false, "polished_deepslate", &[(1, "cobbled_deepslate"), (2, "cobbled_deepslate"), (3, "cobbled_deepslate"), (4, "cobbled_deepslate")])),
         "loom" => Some((false, "loom", &[(1, "string"), (2, "string"), (3, "planks"), (4, "planks")])),
         "campfire" => Some((true, "campfire", &[(2, "stick"), (4, "stick"), (5, "coal"), (6, "stick"), (7, "log"), (8, "log"), (9, "log")])),
+        "brewing_stand" => Some((true, "brewing_stand", &[(2, "blaze_rod"), (4, "cobblestone"), (5, "cobblestone"), (6, "cobblestone")])),
+        "stonecutter" => Some((true, "stonecutter", &[(2, "iron_ingot"), (4, "stone"), (5, "stone"), (6, "stone")])),
+        "grindstone" => Some((true, "grindstone", &[(1, "stick"), (2, "stone_slab"), (3, "stick"), (4, "planks"), (6, "planks")])),
+        "fletching_table" => Some((true, "fletching_table", &[(1, "flint"), (2, "flint"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
+        "cartography_table" => Some((true, "cartography_table", &[(1, "paper"), (2, "paper"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         _ => None,
     }
 }
