@@ -743,8 +743,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let bot = bot.clone();
                         let status = state.status.clone();
                         let store = state.store.clone();
+                        let stored_message = sender.as_deref()
+                            .map(|name| format!("{name}: {content}"))
+                            .unwrap_or_else(|| content.clone());
                         let history_context = if let Some(store) = &store {
-                            if let Err(error) = store.append_message("user", &content) {
+                            if let Err(error) = store.append_message("user", &stored_message) {
                                 tracing::warn!(%error, "could not persist addressed Minecraft chat message");
                             }
                             store.recent_context(12, 12_000).unwrap_or_default()
