@@ -181,6 +181,19 @@ async function refreshGoals(){
     const description=document.createElement("div");
     description.textContent=goal.description;
     section.append(heading,description);
+    if(goal.status==="failed"){
+      const retry=document.createElement("button");
+      retry.className="secondary";
+      retry.textContent="Retry failed goal";
+      retry.style.marginTop="6px";
+      retry.onclick=async()=>{
+        if(!confirm("Retry this goal? Verified completed tasks will stay complete."))return;
+        retry.disabled=true;
+        try{await api("/api/goals/"+goal.id+"/retry",{});await refreshGoals()}
+        catch(error){retry.disabled=false;alert("Could not retry goal: "+String(error))}
+      };
+      section.append(retry);
+    }
     if(goal.status==="active"){
       const cancel=document.createElement("button");
       cancel.className="secondary";
