@@ -328,7 +328,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 target_lock.lock().await.clone()
             } else { None };
             if let Some(username) = follow_target {
-                let target_reached = bot.is_goto_target_reached();
+                let mut target_reached = bot.is_goto_target_reached();
                 if !target_reached {
                     let follow_stuck = if let Some(last) = &state.last_follow_repath {
                         last.lock().await.elapsed() >= Duration::from_secs(60)
@@ -339,13 +339,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(last) = &state.last_follow_repath {
                             *last.lock().await = instant_before(Duration::from_secs(5));
                         }
+                        target_reached = true;
                         tracing::warn!(username = %bot.username(), target = %username, "follow route exceeded 60 seconds; recalculating toward the player's latest position");
                     }
                 }
                 // Advance the repath timer only when the previous route has
                 // completed. Otherwise the stuck-route watchdog would be reset
                 // every 1.2 seconds and never fire.
-                let should_repath = if target_reached || !bot.is_goto_target_reached() && state.last_follow_repath.as_ref().is_some_and(|last| last.try_lock().is_ok_and(|last| last.elapsed() >= Duration::from_secs(60))) {
+                let should_repath = if target_reached {
                     if let Some(cooldown) = &state.last_follow_repath {
                         let mut last = cooldown.lock().await;
                         if last.elapsed() >= Duration::from_millis(1200) {
