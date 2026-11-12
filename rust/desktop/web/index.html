@@ -29,7 +29,7 @@ main{max-width:900px;margin:0 auto;padding:42px 28px 60px}.brand{display:flex;al
 <div class="field"><label for="provider">AI provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama (local)</option><option value="openai-compatible">OpenAI-compatible API</option></select></div>
 <div class="field"><label for="model">Model name</label><input id="model" value="gpt-5.1" autocomplete="off"></div>
 <div class="field wide" id="keyField"><label for="key">Provider API key</label><input id="key" type="password" autocomplete="off" placeholder="Paste API key"></div>
-<div class="field wide hidden" id="urlField"><label for="baseUrl">Ollama / compatible base URL</label><input id="baseUrl" value="http://127.0.0.1:11434/v1"></div>
+<div class="field wide hidden" id="urlField"><label for="baseUrl">Ollama / OpenAI-compatible base URL</label><input id="baseUrl" value="http://127.0.0.1:11434/v1"></div>
 </div></section>
 <section class="panel"><h2>3. Autonomy & safety</h2><p>Choose how much control Mindcraft has in the world.</p><div class="field"><label for="autonomy">Operating mode</label><select id="autonomy"><option value="assisted">Assisted — ask before every supported action</option><option value="balanced" selected>Balanced — keep risky actions behind approval</option><option value="autonomous">Autonomous — execute supported safe plans automatically</option></select></div>
 <div class="muted">You can change this later. High-risk actions remain protected by Rust-side safety checks.</div></section>
@@ -63,7 +63,7 @@ async function loadSaved(){try{const s=await invoke("load_setup");if(!s)return;
 $("server").value=s.server;$("username").value=s.username||"Mindcraft";$("auth").value=s.auth||"microsoft";$("email").value=s.microsoftEmail||"";
 $("provider").value=s.provider||"openai";$("model").value=s.model||"gpt-5.1";$("baseUrl").value=s.baseUrl||"http://127.0.0.1:11434/v1";$("autonomy").value=s.autonomy||"balanced";toggleProvider();toggleAuth();$("run").disabled=false;message("Saved setup loaded. Re-enter your provider key only if you want to replace it.",true);
 }catch(e){message("Could not load saved setup: "+String(e))}}
-function toggleProvider(){const local=$("provider").value==="ollama";$("keyField").classList.toggle("hidden",local);$("urlField").classList.toggle("hidden",!local)}
+function toggleProvider(){const provider=$("provider").value;const local=provider==="ollama";$("keyField").classList.toggle("hidden",local);$("urlField").classList.toggle("hidden",!(local||provider==="openai-compatible"))}
 function toggleAuth(){$("emailField").classList.toggle("hidden",$("auth").value!=="microsoft")}
 $("provider").onchange=toggleProvider;$("auth").onchange=toggleAuth;toggleProvider();toggleAuth();
 $("save").onclick=async()=>{try{
