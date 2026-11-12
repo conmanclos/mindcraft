@@ -4,6 +4,16 @@ use azalea::{pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*,
 use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{mpsc, Mutex};
 
+#[derive(Clone, Copy)]
+enum PendingBlockActionKind { Mine, Place }
+
+#[derive(Clone, Copy)]
+struct PendingBlockAction {
+    kind: PendingBlockActionKind,
+    position: BlockPos,
+    attempts: u8,
+}
+
 #[derive(Debug)]
 pub enum BotCommand {
     Say(String),
@@ -29,6 +39,7 @@ struct BotState {
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
+    pending_block_action: Option<Arc<Mutex<Option<PendingBlockAction>>>>,
     is_primary: bool,
 }
 
@@ -66,6 +77,7 @@ pub async fn connect(
         let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
         let shared_reflex_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)));
         let shared_follow_target = Arc::new(Mutex::new(None));
+        let shared_pending_block_action = Arc::new(Mutex::new(None));
 
         let mut builder = SwarmBuilder::new().set_handler(handle);
         for (index, account) in accounts_to_join.into_iter().enumerate() {
@@ -73,7 +85,8 @@ pub async fn connect(
             let command_receiver = if is_primary { Some(shared_receiver.clone()) } else { None };
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
-                shared_follow_target.clone(), shared_reflex_cooldown.clone(), is_primary,
+                shared_follow_target.clone(), shared_reflex_cooldown.clone(),
+                shared_pending_block_action.clone(), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -95,6 +108,7 @@ fn make_state(
     last_reply: Arc<Mutex<Instant>>,
     follow_target: Arc<Mutex<Option<String>>>,
     last_reflex: Arc<Mutex<Instant>>,
+    pending_block_action: Arc<Mutex<Option<PendingBlockAction>>>,
     is_primary: bool,
 ) -> BotState {
     BotState {
@@ -108,6 +122,7 @@ fn make_state(
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
         last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
+        pending_block_action: Some(pending_block_action),
         is_primary,
     }
 }
@@ -196,6 +211,32 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                 }
             }
+            if state.is_primary {
+                if let Some(pending_lock) = &state.pending_block_action {
+                    let pending = pending_lock.lock().await.take();
+                    if let Some(mut pending) = pending {
+                        match bot.hit_result() {
+                            HitResult::Block(hit) if !hit.miss && hit.block_pos == pending.position => {
+                                match pending.kind {
+                                    PendingBlockActionKind::Mine => bot.start_mining(pending.position),
+                                    PendingBlockActionKind::Place => bot.block_interact(pending.position),
+                                }
+                            }
+                            _ => {
+                                pending.attempts = pending.attempts.saturating_add(1);
+                                if pending.attempts >= 20 {
+                                    bot.chat("I couldn't get a clear line of sight to that block. The action was cancelled.");
+                                } else {
+                                    if pending.attempts % 3 == 0 {
+                                        bot.look_at(pending.position.center());
+                                    }
+                                    *pending_lock.lock().await = Some(pending);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let mut queued = Vec::new();
             if let Some(receiver) = &state.commands {
                 let mut receiver = receiver.lock().await;
@@ -257,6 +298,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         }
                     }
                     BotCommand::Stop => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
@@ -266,35 +308,32 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(target) = &state.follow_target { *target.lock().await = Some(username); }
                     }
                     BotCommand::Look(x, y, z) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.look_at(BlockPos::new(x, y, z).center());
                     }
                     BotCommand::Goto(x, y, z) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
                     }
-                    BotCommand::Mine(x, y, z) => {
+                    BotCommand::Mine(x, y, z) | BotCommand::Place(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
-                        match bot.hit_result() {
-                            HitResult::Block(hit) if !hit.miss && hit.block_pos == position => bot.start_mining(position),
-                            _ => bot.chat("I can only mine a block that is currently in my crosshair."),
+                        let kind = if matches!(command, BotCommand::Mine(_, _, _)) {
+                            PendingBlockActionKind::Mine
+                        } else {
+                            PendingBlockActionKind::Place
+                        };
+                        if let Some(pending) = &state.pending_block_action {
+                            *pending.lock().await = Some(PendingBlockAction { kind, position, attempts: 0 });
                         }
-                    }
-                    BotCommand::Place(x, y, z) => {
-                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
-                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
-                        bot.stop_pathfinding();
-                        let position = BlockPos::new(x, y, z);
-                        match bot.hit_result() {
-                            HitResult::Block(hit) if !hit.miss && hit.block_pos == position => bot.block_interact(position),
-                            _ => bot.chat("I can only place against a block that is currently in my crosshair."),
-                        }
+                        bot.look_at(position.center());
                     }
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
                 }
