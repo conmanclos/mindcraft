@@ -1307,6 +1307,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
                         let generation_state = state.mine_generation.clone();
                         cancel_active_mining(&bot);
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
