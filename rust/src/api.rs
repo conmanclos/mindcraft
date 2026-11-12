@@ -265,6 +265,23 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             if slot > 8 { return Err((StatusCode::BAD_REQUEST, "hotbar slot must be between 0 and 8".into())); }
             Ok(BotCommand::Equip(slot))
         }
+        "withdraw" => {
+            let target = action.target.unwrap_or_default();
+            let parts = target.splitn(4, ',').map(str::trim).collect::<Vec<_>>();
+            if parts.len() != 4 {
+                return Err((StatusCode::BAD_REQUEST, "withdraw target must be x,y,z,item_id".into()));
+            }
+            let x = parts[0].parse::<i32>().map_err(|_| (StatusCode::BAD_REQUEST, "invalid x coordinate".into()))?;
+            let y = parts[1].parse::<i32>().map_err(|_| (StatusCode::BAD_REQUEST, "invalid y coordinate".into()))?;
+            let z = parts[2].parse::<i32>().map_err(|_| (StatusCode::BAD_REQUEST, "invalid z coordinate".into()))?;
+            let item = parts[3].to_lowercase();
+            if y < -64 || y > 320 || [x, y, z].iter().any(|value| value.unsigned_abs() > 30_000_000)
+                || item.is_empty() || item.len() > 64
+                || !item.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':') {
+                return Err((StatusCode::BAD_REQUEST, "withdraw target must contain valid world coordinates and an item id".into()));
+            }
+            Ok(BotCommand::Withdraw(x, y, z, item))
+        }
         "look" | "goto" | "mine" | "place" | "deposit" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
