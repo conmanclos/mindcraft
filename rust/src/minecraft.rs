@@ -338,7 +338,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     bot.walk(WalkDirection::None);
                 }
             }
-            if state.is_exploring.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) && !critical_health {
+            if state.is_exploring.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed))
+                && !critical_health
+                && bot.is_goto_target_reached()
+            {
                 let should_repath = if let Some(last) = &state.last_explore_repath {
                     let mut last = last.lock().await;
                     if last.elapsed() >= Duration::from_secs(15) { *last = Instant::now(); true } else { false }
