@@ -21,6 +21,9 @@ pub struct AgentTask {
     pub status: String,
     pub assigned_agent: Option<String>,
     pub lease_until: Option<String>,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub available_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -297,11 +300,11 @@ impl Store {
     pub fn list_tasks(&self, goal_id: i64) -> Result<Vec<AgentTask>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until FROM agent_tasks WHERE goal_id=?1 ORDER BY priority DESC, id"
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at FROM agent_tasks WHERE goal_id=?1 ORDER BY priority DESC, id"
         )?;
         let rows = statement.query_map([goal_id], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?
         }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -326,7 +329,7 @@ impl Store {
             [role],
             |row| Ok(AgentTask {
                 id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?
+                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?
             }),
         ).optional()?;
 
@@ -431,7 +434,7 @@ impl Store {
         )?;
         let rows = statement.query_map([], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?,
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?
         }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
