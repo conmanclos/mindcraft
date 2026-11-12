@@ -333,10 +333,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
 
             if critical_health {
                 bot.stop_pathfinding();
-                bot.ecs.lock().send_event(StartWalkEvent {
-                    entity: bot.entity,
-                    direction: WalkDirection::None,
-                });
+                stop_walking(&bot);
             } else if let Some(username) = follow_target {
                 let should_repath = if let Some(cooldown) = &state.last_follow_repath {
                     let mut last = cooldown.lock().await;
@@ -364,10 +361,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             } else if let Some(following) = &state.is_following {
                 if following.swap(false, Ordering::Relaxed) {
                     bot.stop_pathfinding();
-                    bot.ecs.lock().send_event(StartWalkEvent {
-                        entity: bot.entity,
-                        direction: WalkDirection::None,
-                    });
+                    stop_walking(&bot);
                 }
             }
 
@@ -417,10 +411,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             following.store(false, Ordering::Relaxed);
                         }
                         bot.stop_pathfinding();
-                        bot.ecs.lock().send_event(StartWalkEvent {
-                            entity: bot.entity,
-                            direction: WalkDirection::None,
-                        });
+                        stop_walking(&bot);
                     }
                     BotCommand::Follow(username) => {
                         if let Some(pending) = &state.pending_block_action {
