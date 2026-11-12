@@ -462,8 +462,10 @@ mod tests {
 
     #[test]
     fn chat_length_is_bounded_to_minecraft_message_limit() {
-        assert!(command_from_action(action("say", Some(&"a".repeat(256)))).is_ok());
-        assert!(command_from_action(action("say", Some(&"a".repeat(257)))).is_err());
+        let max_message = "a".repeat(256);
+        let oversized_message = "a".repeat(257);
+        assert!(command_from_action(action("say", Some(max_message.as_str()))).is_ok());
+        assert!(command_from_action(action("say", Some(oversized_message.as_str()))).is_err());
     }
 
     #[test]
