@@ -20,6 +20,7 @@ pub struct AgentTask {
     pub priority: i32,
     pub status: String,
     pub assigned_agent: Option<String>,
+    pub lease_until: Option<String>,
 }
 
 pub struct Store {
@@ -56,11 +57,21 @@ impl Store {
                priority INTEGER NOT NULL DEFAULT 0,
                status TEXT NOT NULL DEFAULT 'pending',
                assigned_agent TEXT,
+               lease_until TEXT,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE INDEX IF NOT EXISTS agent_tasks_queue_idx ON agent_tasks(status, role, priority DESC, id);"
         )?;
+        let has_lease_column = {
+            let mut statement = connection.prepare("PRAGMA table_info(agent_tasks)")?;
+            let columns = statement.query_map([], |row| row.get::<_, String>(1))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            columns.iter().any(|name| name == "lease_until")
+        };
+        if !has_lease_column {
+            connection.execute("ALTER TABLE agent_tasks ADD COLUMN lease_until TEXT", [])?;
+        }
         Ok(Self { connection: Mutex::new(connection) })
     }
 
@@ -108,7 +119,7 @@ impl Store {
     pub fn list_tasks(&self, goal_id: i64) -> Result<Vec<AgentTask>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent FROM agent_tasks WHERE goal_id=?1 ORDER BY priority DESC, id"
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until FROM agent_tasks WHERE goal_id=?1 ORDER BY priority DESC, id"
         )?;
         let rows = statement.query_map([goal_id], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
@@ -121,29 +132,41 @@ impl Store {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task = tx.query_row(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent
-             FROM agent_tasks WHERE status='pending' AND role=?1
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
+             FROM agent_tasks
+             WHERE role=?1 AND (status='pending' OR (status='claimed' AND lease_until IS NOT NULL AND lease_until < CURRENT_TIMESTAMP))
              ORDER BY priority DESC, id ASC LIMIT 1",
             [role],
             |row| Ok(AgentTask {
                 id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?
+                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?
             }),
         ).optional()?;
 
         if let Some(mut task) = task {
             tx.execute(
-                "UPDATE agent_tasks SET status='claimed', assigned_agent=?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND status='pending'",
+                "UPDATE agent_tasks SET status='claimed', assigned_agent=?1, lease_until=datetime('now','+2 minutes'), updated_at=CURRENT_TIMESTAMP WHERE id=?2",
                 params![agent_id, task.id],
             )?;
             task.status = "claimed".into();
             task.assigned_agent = Some(agent_id.to_owned());
+            task.lease_until = tx.query_row("SELECT lease_until FROM agent_tasks WHERE id=?1", [task.id], |row| row.get(0))?;
             tx.commit()?;
             Ok(Some(task))
         } else {
             tx.commit()?;
             Ok(None)
         }
+    }
+
+    pub fn renew_task_lease(&self, task_id: i64, agent_id: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let changed = connection.execute(
+            "UPDATE agent_tasks SET lease_until=datetime('now','+2 minutes'), updated_at=CURRENT_TIMESTAMP
+             WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
+            params![task_id, agent_id],
+        )?;
+        Ok(changed == 1)
     }
 
     pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
@@ -159,7 +182,7 @@ impl Store {
             return Ok(false);
         };
         tx.execute(
-            "UPDATE agent_tasks SET status='complete', updated_at=CURRENT_TIMESTAMP
+            "UPDATE agent_tasks SET status='complete', lease_until=NULL, updated_at=CURRENT_TIMESTAMP
              WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
             params![task_id, agent_id],
         )?;
@@ -190,6 +213,8 @@ mod tests {
         let claimed = store.claim_task("builder-1", "builder").unwrap().unwrap();
         assert_eq!(claimed.id, task);
         assert_eq!(claimed.assigned_agent.as_deref(), Some("builder-1"));
+        assert!(claimed.lease_until.is_some());
+        assert!(store.renew_task_lease(task, "builder-1").unwrap());
         assert!(store.claim_task("builder-2", "builder").unwrap().is_none());
 
         assert!(!store.complete_task(task, "builder-2").unwrap());
