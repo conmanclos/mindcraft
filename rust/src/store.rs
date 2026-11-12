@@ -99,6 +99,20 @@ impl Store {
         if !has_lease_column {
             connection.execute("ALTER TABLE agent_tasks ADD COLUMN lease_until TEXT", [])?;
         }
+        let task_columns = {
+            let mut statement = connection.prepare("PRAGMA table_info(agent_tasks)")?;
+            statement.query_map([], |row| row.get::<_, String>(1))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        if !task_columns.iter().any(|name| name == "attempts") {
+            connection.execute("ALTER TABLE agent_tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !task_columns.iter().any(|name| name == "last_error") {
+            connection.execute("ALTER TABLE agent_tasks ADD COLUMN last_error TEXT", [])?;
+        }
+        if !task_columns.iter().any(|name| name == "available_at") {
+            connection.execute("ALTER TABLE agent_tasks ADD COLUMN available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", [])?;
+        }
         Ok(Self { connection: Mutex::new(connection) })
     }
 
@@ -298,13 +312,13 @@ impl Store {
         let task = tx.query_row(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
              FROM agent_tasks
-             WHERE (status='pending' OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
+             WHERE ((status='pending' AND available_at <= CURRENT_TIMESTAMP) OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
                AND (
                  role=?1
                  OR NOT EXISTS (
                    SELECT 1 FROM agent_tasks preferred
                    WHERE preferred.role=?1
-                     AND (preferred.status='pending'
+                     AND ((preferred.status='pending' AND preferred.available_at <= CURRENT_TIMESTAMP)
                        OR (preferred.status='claimed' AND (preferred.lease_until IS NULL OR preferred.lease_until < CURRENT_TIMESTAMP)))
                  )
                )
@@ -318,7 +332,7 @@ impl Store {
 
         if let Some(mut task) = task {
             tx.execute(
-                "UPDATE agent_tasks SET status='claimed', assigned_agent=?1, lease_until=datetime('now','+2 minutes'), updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                "UPDATE agent_tasks SET status='claimed', assigned_agent=?1, lease_until=datetime('now','+2 minutes'), attempts=attempts+1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
                 params![agent_id, task.id],
             )?;
             task.status = "claimed".into();
@@ -330,6 +344,50 @@ impl Store {
             tx.commit()?;
             Ok(None)
         }
+    }
+
+
+    /// Record a worker-reported failure. Retry delays grow with the attempt
+    /// count and stop after five claims so permanently impossible work cannot
+    /// circulate forever. The error is bounded before it reaches SQLite.
+    pub fn fail_task(&self, task_id: i64, agent_id: &str, error: &str) -> Result<Option<String>> {
+        let error = error.trim();
+        if error.is_empty() || error.len() > 1000 {
+            anyhow::bail!("failure reason must contain 1-1000 bytes");
+        }
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let attempts: Option<i64> = tx.query_row(
+            "SELECT attempts FROM agent_tasks WHERE id=?1 AND assigned_agent=?2
+             AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+            params![task_id, agent_id],
+            |row| row.get(0),
+        ).optional()?;
+        let Some(attempts) = attempts else {
+            tx.commit()?;
+            return Ok(None);
+        };
+        let terminal = attempts >= 5;
+        if terminal {
+            tx.execute(
+                "UPDATE agent_tasks SET status='failed', assigned_agent=NULL, lease_until=NULL,
+                 last_error=?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                params![error, task_id],
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE agent_tasks SET status='pending', assigned_agent=NULL, lease_until=NULL,
+                 last_error=?1, available_at=datetime('now', '+' || MIN(attempts * 30, 600) || ' seconds'),
+                 updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                params![error, task_id],
+            )?;
+        }
+        let goal_id: i64 = tx.query_row("SELECT goal_id FROM agent_tasks WHERE id=?1", [task_id], |row| row.get(0))?;
+        if terminal {
+            tx.execute("UPDATE goals SET status='failed' WHERE id=?1 AND status='active'", [goal_id])?;
+        }
+        tx.commit()?;
+        Ok(Some(if terminal { "failed".into() } else { "retry_scheduled".into() }))
     }
 
     pub fn renew_task_lease(&self, task_id: i64, agent_id: &str) -> Result<bool> {
