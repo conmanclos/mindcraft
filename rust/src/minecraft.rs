@@ -604,14 +604,23 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         drop(container);
                                         return;
                                     }
-                                    let valid_slot = container.menu().ok().flatten()
-                                        .is_some_and(|menu| (slot as usize) < menu.slots().len());
-                                    if valid_slot {
+                                    let slot_before = container.slots()
+                                        .and_then(|slots| slots.get(slot as usize).cloned());
+                                    if let Some(item_before) = slot_before.filter(|item| !item.is_empty()) {
+                                        let before_count = item_before.count();
                                         container.shift_click(slot as usize);
                                         client.wait_ticks(2).await;
-                                        tracing::info!(username = %client.username(), slot, ?position, "container inventory transfer requested");
+                                        let moved = container.slots()
+                                            .and_then(|slots| slots.get(slot as usize).map(|item| item.is_empty() || item.count() < before_count))
+                                            .unwrap_or(false);
+                                        if moved {
+                                            tracing::info!(username = %client.username(), slot, ?position, "container slot transfer observed");
+                                            client.chat("The selected inventory slot changed after the transfer.");
+                                        } else {
+                                            client.chat("The selected slot did not change; the transfer may have been rejected or the destination may be full.");
+                                        }
                                     } else {
-                                        client.chat("That inventory slot is not available in the opened container.");
+                                        client.chat("That inventory slot is empty, unavailable, or the container closed.");
                                     }
                                     drop(container);
                                 }
