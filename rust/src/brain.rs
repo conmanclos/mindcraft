@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn assisted_mode_requires_approval_for_every_action() {
-        for name in ["say", "look", "follow", "stop", "goto", "explore", "jump", "equip", "mine", "place", "attack", "use_item"] {
+        for name in ["say", "look", "follow", "stop", "goto", "explore", "jump", "equip", "mine", "place", "container_transfer", "attack", "use_item"] {
             let action = PlannedAction { action: name.into(), target: None, reason: "test".into(), risk: "low".into() };
             assert!(brain("assisted").authorize_action(&action, false).is_err(), "{name} must require approval in assisted mode");
             assert!(brain("assisted").authorize_action(&action, true).is_ok(), "{name} should be allowed after explicit approval");
