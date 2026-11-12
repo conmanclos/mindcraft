@@ -1613,22 +1613,53 @@ async fn execute_build(
     }
     if let Some(material) = material {
         let Ok(menu) = bot.menu() else {
-            bot.chat("I can't inspect the hotbar to select the requested build material.");
+            bot.chat("I can't inspect the inventory to select the requested build material.");
             return;
         };
         if menu.try_as_player().is_none() {
             bot.chat("Close the open container before starting a material-specific build.");
             return;
         }
-        let Some(slot) = menu.hotbar_slots_range().find(|slot| {
+        let hotbar_start = *menu.hotbar_slots_range().start();
+        let mut material_slot = menu.hotbar_slots_range().find(|slot| {
             menu.slot(*slot).is_some_and(|item| {
                 !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
             })
-        }) else {
-            bot.chat(format!("I couldn't find {material} in the hotbar. Move the requested block stack into a hotbar slot first."));
-            return;
-        };
-        let hotbar_start = *menu.hotbar_slots_range().start();
+        });
+        if material_slot.is_none() {
+            let source_slot = menu.player_slots_without_hotbar_range().find(|slot| {
+                menu.slot(*slot).is_some_and(|item| {
+                    !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
+                })
+            });
+            let empty_hotbar_slot = menu.hotbar_slots_range().find(|slot| {
+                menu.slot(*slot).is_some_and(|item| item.is_empty())
+            });
+            let (Some(source_slot), Some(destination_slot)) = (source_slot, empty_hotbar_slot) else {
+                bot.chat(format!("I couldn't find {material} in the inventory with an empty hotbar slot available. I won't overwrite another item."));
+                return;
+            };
+            let Ok(inventory) = bot.get_inventory() else {
+                bot.chat("I couldn't safely open the player inventory to move the build material.");
+                return;
+            };
+            inventory.left_click(source_slot);
+            bot.wait_updates(1).await;
+            if cancelled() { return; }
+            inventory.left_click(destination_slot);
+            bot.wait_updates(2).await;
+            let verified = bot.menu().ok().is_some_and(|menu| {
+                menu.slot(destination_slot).is_some_and(|item| {
+                    !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
+                })
+            });
+            if !verified {
+                bot.chat("The server did not confirm moving the requested material into the hotbar.");
+                return;
+            }
+            material_slot = Some(destination_slot);
+        }
+        let Some(slot) = material_slot else { return; };
         let hotbar_index = (slot - hotbar_start) as u8;
         bot.set_selected_hotbar_slot(hotbar_index);
         bot.wait_updates(1).await;
