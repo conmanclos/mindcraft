@@ -21,7 +21,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="top"><div><h1>Mindcraft Native</h1><div class="muted">Rust runtime · Minecraft Java 1.21.1</div></div><div class="muted" id="connection">API not checked</div></div>
 <section class="panel"><label for="token">Dashboard API token (kept in this tab only)</label><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Paste the token printed by the runtime"><button id="connect">Connect</button></div></section>
 <section class="panel"><div class="grid">
-<div class="stat"><span class="muted">Minecraft</span><b id="mc">Unknown</b></div>
+<div class="stat"><span class="muted">Agents connected</span><b id="mc">Unknown</b></div>
 <div class="stat"><span class="muted">Autonomy</span><b id="mode">Unknown</b></div>
 <div class="stat"><span class="muted">AI provider</span><b id="provider">Unknown</b></div>
 <div class="stat"><span class="muted">Model</span><b id="model">Unknown</b></div>
@@ -57,12 +57,12 @@ async function connect(){
   token=$("token").value.trim();
   if(!token)throw Error("Enter the API token printed in the terminal.");
   const s=await api("/api/status");
-  $("mc").textContent=s.minecraft_connected?"Connected":"Not connected";
+  $("mc").textContent=String(s.connected_agents);
   $("mode").textContent=s.autonomy;
   $("provider").textContent=s.provider;
   $("model").textContent=s.model;
   $("health").textContent=s.world?s.world.health+"/20":"Unknown";
-  $("position").textContent=s.world?s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";
+  $("position").textContent=s.world?s.world.agent+": "+s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";
   $("connection").textContent="Connected to local runtime";
 }
 $("connect").onclick=()=>connect().catch(e=>{$("connection").textContent=e.message});
