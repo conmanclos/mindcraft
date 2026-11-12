@@ -18,6 +18,8 @@ pub struct WorldSnapshot {
     pub agent: String,
     pub position: [f64; 3],
     pub health: f32,
+    pub food: u32,
+    pub saturation: f32,
     pub inventory: Vec<String>,
 }
 
@@ -160,7 +162,7 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let context = history.into_iter().map(|(role, text)| format!("{role}: {text}")).collect::<Vec<_>>().join("\n");
     let world = state.status.world.lock().await.clone();
-    let world_context = world.map(|w| format!("\nCurrent bot state: position {:?}, health {}/20, inventory: {:?}.", w.position, w.health, w.inventory)).unwrap_or_default();
+    let world_context = world.map(|w| format!("\nCurrent bot state: position {:?}, health {}/20, food {}/20, saturation {}, inventory: {:?}.", w.position, w.health, w.food, w.saturation, w.inventory)).unwrap_or_default();
     let prompt = format!("Recent conversation:\n{context}{world_context}\n\nRespond to the latest user message.");
     let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
