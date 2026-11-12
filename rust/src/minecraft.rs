@@ -396,7 +396,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
-                        bot.start_mining(BlockPos::new(x, y, z));
+                        let position = BlockPos::new(x, y, z);
+                        bot.look_at(position.center());
+                        bot.wait_updates(1).await;
+                        bot.start_mining(position);
                     }
                     BotCommand::Place(x, y, z) => {
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
