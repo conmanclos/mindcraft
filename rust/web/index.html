@@ -42,6 +42,8 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div id="goalResult" class="muted" style="white-space:pre-wrap;margin-top:12px"></div>
 <div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Task worker ID (not a Minecraft username)</label><input id="agentId" value="Scout"><div class="muted">Use 1-64 letters, numbers, dots, underscores, or hyphens.</div></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
 <div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="planTask" class="secondary" disabled>Plan claimed task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button><button id="releaseTask" class="secondary" disabled>Release task</button></div>
+<div class="row" style="margin-top:12px"><button id="refreshReview" class="secondary">Refresh review queue</button><select id="reviewQueue" style="flex:1"><option value="">No review tasks loaded</option></select><button id="loadReview" class="secondary" disabled>Load for review</button></div>
+<div class="muted">Autonomous specialist actions appear here after they are queued. Inspect the result in Minecraft before marking a task complete; release it to retry.</div>
 <div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
 </section>
 </main>
@@ -51,6 +53,7 @@ let token="";
 let lastPlan=null;
 let currentTask=null;
 let currentTaskAgentId=null;
+let reviewTasks=[];
 let taskHeartbeat=null;
 function stopTaskHeartbeat(){if(taskHeartbeat){clearInterval(taskHeartbeat);taskHeartbeat=null;}}
 function startTaskHeartbeat(){
@@ -138,6 +141,37 @@ $("createGoal").onclick=async()=>{
   }catch(e){$("goalResult").textContent="Goal planning failed: "+e.message}
   finally{$("createGoal").disabled=false}
 };
+async function refreshReviewQueue(){
+  const tasks=await api("/api/tasks/review");
+  reviewTasks=tasks||[];
+  const select=$("reviewQueue");
+  select.innerHTML="";
+  if(!reviewTasks.length){
+    const option=document.createElement("option");option.value="";option.textContent="No actions awaiting review";select.appendChild(option);
+    $("loadReview").disabled=true;
+    return;
+  }
+  for(const task of reviewTasks){
+    const option=document.createElement("option");
+    option.value=String(task.id);
+    option.textContent="#"+task.id+" · "+(task.assigned_agent||"agent")+" · "+task.role+" · "+task.description;
+    select.appendChild(option);
+  }
+  $("loadReview").disabled=false;
+}
+$("refreshReview").onclick=async()=>{try{if(!token)await connect();await refreshReviewQueue()}catch(e){$("taskResult").textContent="Review queue refresh failed: "+e.message}};
+$("loadReview").onclick=()=>{
+  const task=reviewTasks.find(item=>String(item.id)===$("reviewQueue").value);
+  if(!task)return;
+  stopTaskHeartbeat();
+  currentTask=task;
+  currentTaskAgentId=task.assigned_agent;
+  $("planTask").disabled=true;
+  $("completeTask").disabled=false;
+  $("releaseTask").disabled=false;
+  $("claimTask").disabled=true;
+  $("taskResult").textContent="Review task #"+task.id+" · "+task.role+" · assigned to "+task.assigned_agent+"\n"+task.description+"\nVerify the in-game result before completing. Release to return it to the pending queue.";
+};
 $("claimTask").onclick=async()=>{
   try{
     $("claimTask").disabled=true;
@@ -177,6 +211,7 @@ $("releaseTask").onclick=async()=>{
     $("completeTask").disabled=true;
     $("planTask").disabled=true;
     $("claimTask").disabled=false;
+    refreshReviewQueue().catch(()=>{});
   }catch(e){$("taskResult").textContent="Task release failed: "+e.message;$("releaseTask").disabled=!currentTask}
 };
 $("completeTask").onclick=async()=>{
@@ -192,6 +227,7 @@ $("completeTask").onclick=async()=>{
     $("planTask").disabled=true;
     $("releaseTask").disabled=true;
     $("claimTask").disabled=false;
+    refreshReviewQueue().catch(()=>{});
   }catch(e){$("taskResult").textContent="Completion failed: "+e.message;$("completeTask").disabled=!currentTask}
 };
 </script></body></html>
