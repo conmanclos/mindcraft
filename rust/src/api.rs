@@ -25,13 +25,21 @@ pub struct WorldSnapshot {
     pub inventory: Vec<String>,
 }
 
+#[derive(Clone)]
+struct AgentCredential {
+    token: String,
+    expires_at: Instant,
+}
+
+const AGENT_CREDENTIAL_TTL: Duration = Duration::from_secs(60 * 60);
+
 pub struct RuntimeStatus {
     pub minecraft_connected: AtomicBool,
     pub connected_agents: std::sync::atomic::AtomicUsize,
     pub command_tx: Mutex<Option<broadcast::Sender<AgentCommand>>>,
     pub world: Mutex<Option<WorldSnapshot>>,
     pub agents: Mutex<HashMap<String, WorldSnapshot>>,
-    pub agent_tokens: Mutex<HashMap<String, String>>,
+    pub agent_tokens: Mutex<HashMap<String, AgentCredential>>,
 }
 
 impl Default for RuntimeStatus {
@@ -134,6 +142,7 @@ struct ExecuteResponse {
 struct AgentCredentialResponse {
     agent_id: String,
     token: String,
+    expires_in_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -521,8 +530,15 @@ async fn issue_agent_credential(
     }
     let token = uuid::Uuid::new_v4().to_string();
     let mut tokens = state.status.agent_tokens.lock().await;
-    tokens.insert(agent_id.clone(), token.clone());
-    Ok(Json(AgentCredentialResponse { agent_id, token }))
+    tokens.insert(agent_id.clone(), AgentCredential {
+        token: token.clone(),
+        expires_at: Instant::now() + AGENT_CREDENTIAL_TTL,
+    });
+    Ok(Json(AgentCredentialResponse {
+        agent_id,
+        token,
+        expires_in_seconds: AGENT_CREDENTIAL_TTL.as_secs(),
+    }))
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
@@ -543,7 +559,10 @@ async fn authorize_agent(state: &ApiState, headers: &HeaderMap, agent_id: &str) 
     let provided = bearer_token(headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let tokens = state.status.agent_tokens.lock().await;
     let expected = tokens.get(agent_id).ok_or(StatusCode::UNAUTHORIZED)?;
-    if constant_time_equal(provided, expected) { Ok(()) } else { Err(StatusCode::UNAUTHORIZED) }
+    if Instant::now() >= expected.expires_at {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    if constant_time_equal(provided, &expected.token) { Ok(()) } else { Err(StatusCode::UNAUTHORIZED) }
 }
 
 async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
