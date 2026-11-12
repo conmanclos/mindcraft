@@ -171,9 +171,8 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     }
     state.store.append_message("user", &request.message)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let history = state.store.recent_messages(12)
+    let context = state.store.recent_context(12, 12_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let context = history.into_iter().map(|(role, text)| format!("{role}: {text}")).collect::<Vec<_>>().join("\n");
     let world = state.status.world.lock().await.clone();
     let world_context = world.map(|w| format!("\nCurrent bot state: position {:?}, health {}/20, food {}/20, saturation {}, inventory: {:?}.", w.position, w.health, w.food, w.saturation, w.inventory)).unwrap_or_default();
     let prompt = format!("Recent conversation:\n{context}{world_context}\n\nRespond to the latest user message.");
