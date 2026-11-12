@@ -180,6 +180,59 @@ pub async fn connect(
     }
 }
 
+fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
+    let name = debug_name.to_ascii_lowercase();
+    if name.contains("ancient_debris") { Some("ancient debris") }
+    else if name.contains("diamond_ore") { Some("diamond ore") }
+    else if name.contains("emerald_ore") { Some("emerald ore") }
+    else if name.contains("gold_ore") { Some("gold ore") }
+    else if name.contains("iron_ore") { Some("iron ore") }
+    else if name.contains("copper_ore") { Some("copper ore") }
+    else if name.contains("coal_ore") { Some("coal ore") }
+    else if name.contains("chest") || name.contains("barrel") || name.contains("shulker_box") { Some("storage") }
+    else if name.contains("crafting_table") || name.contains("furnace") || name.contains("smoker") || name.contains("blast_furnace") { Some("workstation") }
+    else if name.contains("bell") || name.contains("loom") || name.contains("cartography_table") || name.contains("smithing_table") { Some("village workstation") }
+    else { None }
+}
+
+/// Search only nearby loaded blocks, and only choose a POI with an adjacent
+/// loaded air block that can serve as a safe navigation destination.
+fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, BlockPos, &'static str)> {
+    let position = bot.position().ok()?;
+    let center = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
+    let world = bot.world().ok()?;
+    let world = world.read();
+    let radius = radius.clamp(4, 8);
+    let mut best: Option<(f64, BlockPos, BlockPos, &'static str)> = None;
+    for y in -3..=3 {
+        for x in -radius..=radius {
+            for z in -radius..=radius {
+                if x * x + z * z > radius * radius { continue; }
+                let poi = BlockPos::new(center.x + x, center.y + y, center.z + z);
+                let Some(block) = world.get_block_state(poi) else { continue; };
+                let Some(kind) = point_of_interest_kind(&format!("{block:?}")) else { continue; };
+                let distance_sq = (x * x + y * y + z * z) as f64;
+                // Once the bot has reached a POI, skip it so the patrol moves on.
+                if distance_sq <= 16.0 { continue; }
+                let approaches = [
+                    BlockPos::new(poi.x + 1, poi.y, poi.z),
+                    BlockPos::new(poi.x - 1, poi.y, poi.z),
+                    BlockPos::new(poi.x, poi.y, poi.z + 1),
+                    BlockPos::new(poi.x, poi.y, poi.z - 1),
+                    BlockPos::new(poi.x, poi.y + 1, poi.z),
+                ];
+                let Some(approach) = approaches.into_iter().find(|candidate| {
+                    world.get_block_state(*candidate).is_some_and(|state| state.is_air())
+                }) else { continue; };
+                if best.as_ref().is_none_or(|(score, _, _, _)| distance_sq < *score) {
+                    best = Some((distance_sq, poi, approach, kind));
+                }
+            }
+        }
+    }
+    best.map(|(_, poi, approach, kind)| (poi, approach, kind))
+}
+
 fn exploration_offset(max_radius: i32, step: usize) -> (i32, i32) {
     // Golden-angle spiral: expand outward, then continue rotating around the
     // configured boundary instead of repeating the same 24 compass waypoints.
@@ -711,12 +764,26 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let base_radius = state.explore_radius.as_ref().map(|value| value.load(Ordering::Relaxed)).unwrap_or(32).clamp(8, 128) as i32;
                     let (dx, dz) = exploration_offset(base_radius, step);
                     if let Ok(position) = bot.position() {
-                        let destination = BlockPos::new(position.x.floor() as i32 + dx, position.y.floor() as i32, position.z.floor() as i32 + dz);
+                        let poi = nearby_point_of_interest(bot, 8);
+                        let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
+                            BlockPos::new(position.x.floor() as i32 + dx, position.y.floor() as i32, position.z.floor() as i32 + dz)
+                        });
                         let waypoint_loaded = bot.world().ok()
                             .is_some_and(|world| world.read().get_block_state(destination).is_some());
                         if waypoint_loaded {
+                            if let Some((poi_position, _, kind)) = poi {
+                                if let Some(store) = &state.store {
+                                    let subject = format!("poi:{}:{}:{}", poi_position.x, poi_position.y, poi_position.z);
+                                    let content = format!("Discovered {kind} at {}, {}, {} during exploration.", poi_position.x, poi_position.y, poi_position.z);
+                                    if let Err(error) = store.upsert_memory("world", &subject, &content, 0.9, 45, "exploration") {
+                                        tracing::debug!(%error, "could not persist discovered point of interest");
+                                    }
+                                }
+                                tracing::info!(username = %bot.username(), ?poi_position, ?destination, kind, "exploration prioritized a nearby point of interest");
+                            } else {
+                                tracing::info!(username = %bot.username(), ?destination, "exploration spiral waypoint selected");
+                            }
                             bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
-                            tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
                         } else {
                             tracing::debug!(username = %bot.username(), ?destination, "skipping exploration waypoint outside loaded chunks");
                         }
