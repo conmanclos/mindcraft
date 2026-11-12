@@ -167,7 +167,7 @@ impl Store {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let changed = connection.execute(
             "UPDATE agent_tasks SET lease_until=datetime('now','+2 minutes'), updated_at=CURRENT_TIMESTAMP
-             WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
+             WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
             params![task_id, agent_id],
         )?;
         Ok(changed == 1)
