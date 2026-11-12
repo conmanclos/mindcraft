@@ -223,7 +223,7 @@ async function refreshMemories(){
     const meta=document.createElement("div");meta.className="muted";meta.textContent="Importance "+memory.importance+" · confidence "+Number(memory.confidence).toFixed(2)+" · "+memory.source;
     body.append(title,content,meta);
     const remove=document.createElement("button");remove.className="secondary";remove.textContent="Delete";
-    remove.onclick=async()=>{try{await api("/api/memory/"+memory.id,{});await refreshMemories()}catch(e){$("memoryStatus").textContent=e.message}};
+    remove.onclick=async()=>{try{const response=await fetch("/api/memory/"+memory.id,{method:"DELETE",headers:{Authorization:"Bearer "+token}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);await refreshMemories()}catch(e){$("memoryStatus").textContent=e.message}};
     row.append(body,remove);list.appendChild(row);
   }
 }
