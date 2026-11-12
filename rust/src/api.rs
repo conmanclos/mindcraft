@@ -367,7 +367,7 @@ mod tests {
     fn chat_commands_cannot_invoke_server_commands_or_control_characters() {
         assert!(command_from_action(action("say", Some("hello team"))).is_ok());
         assert!(command_from_action(action("say", Some("/op player"))).is_err());
-        assert!(command_from_action(action("say", Some("hello\\n/op player"))).is_err());
+        assert!(command_from_action(action("say", Some("hello\n/op player"))).is_err());
         assert!(command_from_action(action("say", Some("   "))).is_err());
     }
 
