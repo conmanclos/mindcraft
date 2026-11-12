@@ -92,6 +92,11 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.model.trim().is_empty() {
         return Err("Enter an AI model name.".into());
     }
+    if ["ollama", "openai-compatible"].contains(&setup.provider.as_str())
+        && !setup.base_url.trim().is_empty()
+        && !(setup.base_url.trim().starts_with("http://") || setup.base_url.trim().starts_with("https://")) {
+        return Err("The AI base URL must start with http:// or https://.".into());
+    }
     if !["assisted", "balanced", "autonomous"].contains(&setup.autonomy.as_str()) {
         return Err("Choose an autonomy level.".into());
     }
