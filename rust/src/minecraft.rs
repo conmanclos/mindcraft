@@ -21,7 +21,7 @@ pub enum BotCommand {
     Explore(u16),
     ContainerTransfer(i32, i32, i32, u16),
     Craft(String, Option<(i32, i32, i32)>),
-    Smelt(String, (i32, i32, i32)),
+    Smelt(String, (i32, i32, i32), u8),
 }
 
 #[derive(Debug, Clone)]
@@ -915,7 +915,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             execute_craft(client, recipe, table, generation_state, generation).await;
                         });
                     }
-                    BotCommand::Smelt(input, (x, y, z)) => {
+                    BotCommand::Smelt(input, (x, y, z), count) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
                         let generation_state = state.mine_generation.clone();
@@ -926,7 +926,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            execute_smelt(client, input, BlockPos::new(x, y, z), generation_state, generation).await;
+                            execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
                         });
                     }
                     BotCommand::ContainerTransfer(x, y, z, slot) => {
@@ -1504,7 +1504,8 @@ async fn execute_craft(
         }
         output_matches = container.slots()
             .and_then(|slots| slots.first().map(|item| {
-                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
+                !item.is_empty() && item.count() >= count
+                    && item_name_matches(&format!("{:?}", item.kind()), result_name)
             }))
             .unwrap_or(false);
         if output_matches { break; }
@@ -1611,12 +1612,17 @@ async fn execute_smelt(
     bot: Client,
     input: String,
     position: BlockPos,
+    count: u8,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
 ) {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     if cancelled() { return; }
+    if !(1..=8).contains(&count) {
+        bot.chat("Batch smelting accepts 1 to 8 inputs per furnace operation.");
+        return;
+    }
     let Some(result_name) = smelt_spec(&input) else {
         bot.chat("That input is not in the safe smelting allowlist.");
         return;
@@ -1685,15 +1691,20 @@ async fn execute_smelt(
     }
     let Some(input_source) = menu.player_slots_range().find(|slot| {
         slots.get(*slot).is_some_and(|item| {
-            !item.is_empty() && smelt_input_matches(&format!("{:?}", item.kind()), &input)
+            !item.is_empty() && item.count() >= count
+                && smelt_input_matches(&format!("{:?}", item.kind()), &input)
         })
     }) else {
-        bot.chat(format!("I don't have {input} in my inventory."));
+        bot.chat(format!("I need at least {count} {input} in one inventory stack."));
         return;
     };
 
     container.left_click(input_source);
-    container.right_click(0);
+    for _ in 0..count {
+        if cancelled() { drop(container); return; }
+        container.right_click(0);
+        bot.wait_ticks(1).await;
+    }
     container.left_click(input_source);
     let mut input_placed = false;
     for _ in 0..5 {
@@ -1701,7 +1712,8 @@ async fn execute_smelt(
         if cancelled() { drop(container); return; }
         input_placed = container.slots()
             .and_then(|slots| slots.first().map(|item| {
-                !item.is_empty() && smelt_input_matches(&format!("{:?}", item.kind()), &input)
+                !item.is_empty() && item.count() >= count
+                    && smelt_input_matches(&format!("{:?}", item.kind()), &input)
             }))
             .unwrap_or(false);
         if input_placed { break; }
@@ -1754,9 +1766,9 @@ async fn execute_smelt(
         }
     }
 
-    bot.chat(format!("Started smelting one {input}; waiting for {result_name}."));
+    bot.chat(format!("Started a batch of {count} {input}; waiting for {count} {result_name}."));
     let mut ticks = bot.get_tick_broadcaster();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20 + u64::from(count) * 12);
     let mut output_ready = false;
     loop {
         if cancelled() { return; }
@@ -1781,7 +1793,7 @@ async fn execute_smelt(
         }
     }
     if !output_ready {
-        bot.chat(format!("The {input} is still in the furnace or smelting exceeded 30 seconds. I left the furnace contents untouched; check it and collect {result_name} when ready."));
+        bot.chat(format!("The batch of {input} is still in the furnace or exceeded its wait limit. I left the furnace contents untouched; check it and collect {result_name} when ready."));
         return;
     }
 
@@ -1796,7 +1808,7 @@ async fn execute_smelt(
         if output_cleared { break; }
     }
     if output_cleared {
-        bot.chat(format!("Smelted one {input} into {result_name} and confirmed the furnace output slot cleared."));
+        bot.chat(format!("Smelted {count} {input} into {result_name} and confirmed the furnace output slot cleared."));
     } else {
         bot.chat(format!("The {result_name} is ready, but the furnace output slot did not clear. Check inventory capacity and the furnace."));
     }
