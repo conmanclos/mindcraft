@@ -9,7 +9,7 @@ Mindcraft Desktop is a Tauri 2 macOS application shell around the native Rust Mi
 3. Select an AI provider, model, and API key (the key is stored in macOS Keychain).
 4. Choose Assisted, Balanced, or Autonomous mode.
 5. Save setup and click **Run Mindcraft**.
-6. The app starts the bundled Rust runtime on an automatically selected local port and displays connection/agent/health/food status.
+6. The app starts the bundled Rust runtime on an automatically selected local port and displays connection/agent/health/food status. The specialist task panel can claim work, renew its two-minute lease while the task is active, pass the task description to the action planner, and mark it complete only after you confirm the in-game result.
 
 The app stores its settings, local API bearer token, SQLite database, and Azalea Microsoft authentication cache under the macOS application data directory, with private filesystem permissions. The AI provider API key is stored in Keychain. Microsoft tokens are therefore kept with the app's local data rather than the global `~/.minecraft` cache. It does not require Node.js or a separately installed Rust toolchain.
 
@@ -29,4 +29,4 @@ The resulting app bundles the native runtime as a resource. Apple Silicon and In
 
 ## Current development status
 
-This is the initial desktop shell and setup workflow. It still requires a successful native build, macOS integration testing, and a live Minecraft 26.1 server test before it can be called ready. The build script and Azalea 0.16.0+mc26.1 integration are now in place, but neither has been compile-verified in this environment. Microsoft authentication, app-scoped auth caching, and Keychain behavior also require an end-to-end Mac test. Sign and notarize before public distribution. No CI or GitHub Actions are used.
+This is the initial desktop shell and setup workflow. It still requires a successful native build, macOS integration testing, and a live Minecraft 26.1 server test before it can be called ready. The build script and Azalea 0.16.0+mc26.1 integration are now in place, but neither has been compile-verified in this environment. The desktop task workflow now renews leases every 45 seconds, remembers the claiming worker identity even if the editable worker field changes, and requires confirmation before completion. Microsoft authentication, app-scoped auth caching, Keychain behavior, runtime startup/stop, and task workflow still require an end-to-end Mac test. Sign and notarize before public distribution. No CI or GitHub Actions are used.
