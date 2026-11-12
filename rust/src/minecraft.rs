@@ -1048,6 +1048,13 @@ async fn approach_mined_drop(
     if !goto_cancellable(client, BlockPosGoal(position), generation_state, generation).await {
         return false;
     }
+    let Ok(current) = client.position() else { return false; };
+    let dx = current.x - (position.x as f64 + 0.5);
+    let dy = current.y - (position.y as f64 + 0.5);
+    let dz = current.z - (position.z as f64 + 0.5);
+    if dx * dx + dy * dy + dz * dz > 6.25 {
+        return false;
+    }
     client.wait_ticks(10).await;
     !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
 }
