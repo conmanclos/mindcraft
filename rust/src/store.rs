@@ -271,7 +271,8 @@ impl Store {
         let changed = connection.execute(
             "UPDATE agent_tasks
              SET status='pending', assigned_agent=NULL, lease_until=NULL, updated_at=CURRENT_TIMESTAMP
-             WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+             WHERE id=?1 AND assigned_agent=?2
+               AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
         )?;
         Ok(changed == 1)
@@ -377,6 +378,22 @@ mod tests {
         let second = store.claim_task("SoloBot", "planner").unwrap().unwrap();
         assert_eq!(second.id, gatherer_id);
         assert_eq!(second.role, "gatherer");
+    }
+
+    #[test]
+    fn reviewed_task_can_be_released_back_to_pending() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Build a shelter").unwrap();
+        let task_id = store.add_task(goal, "builder", "Place the shelter blocks", 80).unwrap();
+
+        store.claim_task("Builder", "builder").unwrap().unwrap();
+        assert!(store.mark_task_for_review(task_id, "Builder").unwrap());
+        assert!(store.release_task(task_id, "Builder").unwrap());
+
+        let task = store.list_tasks(goal).unwrap().remove(0);
+        assert_eq!(task.status, "pending");
+        assert_eq!(task.assigned_agent, None);
+        assert!(store.claim_task("OtherBuilder", "builder").unwrap().is_some());
     }
 
     #[test]
