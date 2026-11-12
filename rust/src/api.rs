@@ -189,9 +189,15 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     if request.message.trim().is_empty() || request.message.len() > 4_000 {
         return Err((StatusCode::BAD_REQUEST, "planning request must contain 1-4000 bytes".into()));
     }
-    let world_context = state.status.world.lock().await.clone().map(|world| format!(
-        "\nCurrent Minecraft state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
-        world.position, world.health, world.food, world.saturation, world.inventory
+    let target = resolve_agent_target(&state.config, request.agent.clone())?;
+    let world = if let Some(username) = target.as_deref() {
+        state.status.agents.lock().await.get(username).cloned()
+    } else {
+        state.status.world.lock().await.clone()
+    };
+    let world_context = world.map(|world| format!(
+        "\nCurrent Minecraft state for {}: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
+        world.agent, world.position, world.health, world.food, world.saturation, world.inventory
     )).unwrap_or_default();
     let planning_request = format!("Player request: {}{world_context}", request.message);
     let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&planning_request))
@@ -201,9 +207,8 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
         if let Ok(command) = command_from_action(proposed_action.clone()) {
             if let Some(sender) = state.status.command_tx.lock().await.clone() {
-                let target = resolve_agent_target(&state.config, request.agent.clone())?;
                 ensure_agent_connected(&state, target.as_deref()).await?;
-                sender.send(AgentCommand { target, command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
+                sender.send(AgentCommand { target: target.clone(), command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
                 return Ok(Json(PlanResponse {
                     proposed_action,
                     execution: "AUTONOMOUS: command queued without manual approval",
