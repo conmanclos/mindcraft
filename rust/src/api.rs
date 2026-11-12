@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{atomic::AtomicBool, Arc};
+use std::{collections::HashMap, sync::{atomic::AtomicBool, Arc}};
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -28,6 +28,7 @@ pub struct RuntimeStatus {
     pub connected_agents: std::sync::atomic::AtomicUsize,
     pub command_tx: Mutex<Option<broadcast::Sender<AgentCommand>>>,
     pub world: Mutex<Option<WorldSnapshot>>,
+    pub agents: Mutex<HashMap<String, WorldSnapshot>>,
 }
 
 impl Default for RuntimeStatus {
@@ -37,6 +38,7 @@ impl Default for RuntimeStatus {
             connected_agents: std::sync::atomic::AtomicUsize::new(0),
             command_tx: Mutex::new(None),
             world: Mutex::new(None),
+            agents: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -104,6 +106,7 @@ struct StatusResponse {
     provider: String,
     model: String,
     world: Option<WorldSnapshot>,
+    agents: Vec<WorldSnapshot>,
 }
 
 pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, status: Arc<RuntimeStatus>) -> anyhow::Result<()> {
@@ -145,6 +148,7 @@ async fn health() -> Json<serde_json::Value> {
 async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Result<Json<StatusResponse>, StatusCode> {
     authorize(&state, &headers)?;
     let world = state.status.world.lock().await.clone();
+    let agents = state.status.agents.lock().await.values().cloned().collect();
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
@@ -155,6 +159,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
         provider: state.config.provider.clone(),
         model: state.config.model.clone(),
         world,
+        agents,
     }))
 }
 
