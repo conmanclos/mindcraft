@@ -27,10 +27,13 @@ Install Rustup and a C toolchain required by bundled SQLite. The checked-in `rus
 ```sh
 cd rust
 cp .env.example .env
+cargo fmt --all -- --check
+cargo check --all-targets
+cargo test
 cargo build --release
 ```
 
-A successful build has not yet been verified after the 1.21.1 API migration. Treat the runtime as in development until `cargo check` succeeds and it joins a live 1.21.1 server.
+These are local commands only; no GitHub Actions or CI workflow is used. A successful build has not yet been verified after the 1.21.1 API migration. Treat the runtime as in development until formatting, compile, unit tests, and a live 1.21.1 server connection have all been verified.
 
 ## Configure
 
