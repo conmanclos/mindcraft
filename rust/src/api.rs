@@ -1,4 +1,4 @@
-use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::BotCommand, store::{AgentTask, Goal, Store}};
+use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{AgentCommand, BotCommand}, store::{AgentTask, Goal, Store}};
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
@@ -9,7 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::{atomic::AtomicBool, Arc};
 use subtle::ConstantTimeEq;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{broadcast, Mutex};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ pub struct WorldSnapshot {
 pub struct RuntimeStatus {
     pub minecraft_connected: AtomicBool,
     pub connected_agents: std::sync::atomic::AtomicUsize,
-    pub command_tx: Mutex<Option<mpsc::Sender<BotCommand>>>,
+    pub command_tx: Mutex<Option<broadcast::Sender<AgentCommand>>>,
     pub world: Mutex<Option<WorldSnapshot>>,
 }
 
@@ -62,7 +62,10 @@ struct AgentClaimRequest { agent_id: String, role: String }
 struct CompleteTaskRequest { agent_id: String }
 
 #[derive(Deserialize)]
-struct ExecuteRequest { action: PlannedAction }
+struct PlanRequest { message: String, #[serde(default)] agent: Option<String> }
+
+#[derive(Deserialize)]
+struct ExecuteRequest { action: PlannedAction, #[serde(default)] agent: Option<String> }
 
 #[derive(Serialize)]
 struct ChatResponse { reply: String }
@@ -176,7 +179,7 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     Ok(Json(ChatResponse { reply }))
 }
 
-async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ChatRequest>) -> Result<Json<PlanResponse>, (StatusCode, String)> {
+async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<PlanRequest>) -> Result<Json<PlanResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
     if request.message.trim().is_empty() || request.message.len() > 4_000 {
         return Err((StatusCode::BAD_REQUEST, "planning request must contain 1-4000 bytes".into()));
@@ -193,7 +196,8 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
         if let Ok(command) = command_from_action(proposed_action.clone()) {
             if let Some(sender) = state.status.command_tx.lock().await.clone() {
-                sender.try_send(command).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is full or disconnected".into()))?;
+                let target = resolve_agent_target(&state.config, request.agent.clone())?;
+                sender.send(AgentCommand { target, command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
                 return Ok(Json(PlanResponse {
                     proposed_action,
                     execution: "AUTONOMOUS: command queued without manual approval",
@@ -216,10 +220,21 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
     state.brain.authorize_action(&request.action, true)
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
     let command = command_from_action(request.action)?;
+    let target = resolve_agent_target(&state.config, request.agent)?;
     let sender = state.status.command_tx.lock().await.clone()
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
-    sender.try_send(command).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is full or disconnected".into()))?;
+    sender.send(AgentCommand { target, command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
     Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
+}
+
+fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Option<String>, (StatusCode, String)> {
+    let Some(target) = target.filter(|value| !value.trim().is_empty()) else { return Ok(None); };
+    if config.minecraft_auth != "offline" {
+        return Err((StatusCode::BAD_REQUEST, "named agent routing is available only for configured offline-mode team members; Microsoft mode routes to the primary client".into()));
+    }
+    config.minecraft_accounts.iter().find(|name| name.eq_ignore_ascii_case(&target))
+        .cloned().map(Some)
+        .ok_or((StatusCode::BAD_REQUEST, "agent must match one of the configured offline bot usernames".into()))
 }
 
 pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
