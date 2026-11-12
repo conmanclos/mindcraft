@@ -5,13 +5,13 @@ Mindcraft Desktop is a Tauri 2 macOS application shell around the native Rust Mi
 ## User experience
 
 1. Open the Mindcraft app.
-2. Enter the Minecraft server and choose Microsoft authentication or **Cracked / Offline Mode**. Offline mode lets the bot join without a second paid Minecraft account, but only on servers whose owners have explicitly enabled offline/cracked connections (`online-mode=false`). It does not bypass authentication on online-mode servers.
+2. Enter the Minecraft server and choose Microsoft authentication or **Cracked / Offline Mode**. Offline mode lets the bot join without a second paid Minecraft account, but only on servers whose owners have explicitly enabled offline/cracked connections (`online-mode=false`). It does not bypass authentication on online-mode servers. Offline mode supports a comma-separated team of up to eight unique bot usernames; Microsoft sign-in currently supports one account.
 3. Select an AI provider, model, and API key (the key is stored in macOS Keychain).
 4. Choose Assisted, Balanced, or Autonomous mode.
 5. Save setup and click **Run Mindcraft**.
 6. The app starts the bundled Rust runtime on an automatically selected local port and displays connection/agent/health/food status. The specialist task panel can claim work, renew its two-minute lease while the task is active, pass the task description to the action planner, and mark it complete only after you confirm the in-game result.
 
-The app stores its settings, local API bearer token, SQLite database, and Azalea Microsoft authentication cache under the macOS application data directory, with private filesystem permissions. The AI provider API key is stored in Keychain. Microsoft tokens are therefore kept with the app's local data rather than the global `~/.minecraft` cache. It does not require Node.js or a separately installed Rust toolchain.
+The app stores its settings (including the offline bot team), local API bearer token, SQLite database, and Azalea Microsoft authentication cache under the macOS application data directory, with private filesystem permissions. The AI provider API key is stored in Keychain. Microsoft tokens are therefore kept with the app's local data rather than the global `~/.minecraft` cache. It does not require Node.js or a separately installed Rust toolchain.
 
 ## Packaging
 
