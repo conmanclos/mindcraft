@@ -2158,31 +2158,65 @@ async fn execute_smelt(
         return;
     }
 
-    let mut fuel_candidates = container.slots().map(|slots| {
-        menu.player_slots_range().filter_map(|slot| {
-            let item = slots.get(slot)?;
-            if item.is_empty() { return None; }
-            let capacity = smelt_fuel_capacity(&format!("{:?}", item.kind()))?;
-            let required = required_smelt_fuel(count, capacity)?;
-            if item.count() < required { return None; }
-            let excess_capacity = u16::from(required) * u16::from(capacity) - u16::from(count);
-            Some((slot, required, excess_capacity, capacity))
-        }).collect::<Vec<_>>()
-    }).unwrap_or_default();
-    fuel_candidates.sort_by_key(|(_, _, excess, capacity)| (*excess, *capacity));
-    let Some((fuel_source, required_fuel, _, _)) = fuel_candidates.first().copied() else {
+    let Some(inventory_slots) = container.slots() else {
         container.shift_click(0);
         bot.wait_ticks(2).await;
-        bot.chat(format!("I need enough coal, charcoal, blaze rods, or lava buckets to smelt {count} items. I returned the input."));
+        bot.chat("I couldn't inspect inventory fuel stacks; I returned the furnace input.");
         return;
     };
-    container.left_click(fuel_source);
-    for _ in 0..required_fuel {
-        if cancelled() { drop(container); return; }
-        container.right_click(1);
-        bot.wait_ticks(1).await;
+    // Group identical fuel items across inventory slots. A furnace accepts one
+    // fuel type per batch, but the required amount may be assembled from
+    // multiple stacks of that same item without mixing coal with blaze rods.
+    let mut fuel_groups: Vec<(String, String, u8, u16, Vec<(usize, u8)>)> = Vec::new();
+    for slot in menu.player_slots_range() {
+        let Some(item) = inventory_slots.get(slot) else { continue; };
+        if item.is_empty() { continue; }
+        let debug_name = format!("{:?}", item.kind());
+        let Some(capacity) = smelt_fuel_capacity(&debug_name) else { continue; };
+        let canonical: String = debug_name.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if let Some(group) = fuel_groups.iter_mut().find(|group| group.0 == canonical) {
+            group.3 += u16::from(item.count());
+            group.4.push((slot, item.count()));
+        } else {
+            fuel_groups.push((canonical, debug_name, capacity, u16::from(item.count()), vec![(slot, item.count())]));
+        }
     }
-    container.left_click(fuel_source);
+    let mut fuel_candidates = fuel_groups.into_iter().filter_map(|(_, selector, capacity, total, sources)| {
+        let required = required_smelt_fuel(count, capacity)?;
+        if total < u16::from(required) { return None; }
+        let excess_capacity = u16::from(required) * u16::from(capacity) - u16::from(count);
+        Some((excess_capacity, capacity, required, selector, sources))
+    }).collect::<Vec<_>>();
+    fuel_candidates.sort_by_key(|(excess, capacity, _, _, _)| (*excess, *capacity));
+    let Some((_, _, required_fuel, fuel_selector, fuel_sources)) = fuel_candidates.into_iter().next() else {
+        container.shift_click(0);
+        bot.wait_ticks(2).await;
+        bot.chat(format!("I need enough coal, charcoal, blaze rods, or lava buckets across one or more stacks of the same fuel type to smelt {count} items. I returned the input."));
+        return;
+    };
+    let mut remaining_fuel = required_fuel;
+    for (fuel_source, available) in fuel_sources {
+        if remaining_fuel == 0 { break; }
+        let amount = remaining_fuel.min(available);
+        container.left_click(fuel_source);
+        for _ in 0..amount {
+            if cancelled() { drop(container); return; }
+            container.right_click(1);
+            bot.wait_ticks(1).await;
+        }
+        container.left_click(fuel_source);
+        remaining_fuel -= amount;
+    }
+    if remaining_fuel != 0 {
+        container.shift_click(1);
+        container.shift_click(0);
+        bot.wait_ticks(2).await;
+        bot.chat("I couldn't assemble the complete fuel batch; I returned the accepted fuel and input.");
+        return;
+    }
     let mut fuel_placed = false;
     for _ in 0..5 {
         bot.wait_ticks(1).await;
@@ -2191,7 +2225,7 @@ async fn execute_smelt(
             .and_then(|slots| slots.get(1).map(|item| {
                 !item.is_empty()
                     && item.count() >= required_fuel
-                    && smelt_fuel_matches(&format!("{:?}", item.kind()))
+                    && item_name_matches_exact(&format!("{:?}", item.kind()), &fuel_selector)
             }))
             .unwrap_or(false);
         if fuel_placed { break; }
@@ -2200,7 +2234,7 @@ async fn execute_smelt(
         container.shift_click(1);
         container.shift_click(0);
         bot.wait_ticks(2).await;
-        bot.chat("The server did not accept enough of the selected fuel; I returned any accepted fuel and the input.");
+        bot.chat("The server did not accept the complete selected fuel stack; I returned any accepted fuel and the input.");
         return;
     }
 
