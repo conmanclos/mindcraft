@@ -16,7 +16,7 @@ if ! xcode-select -p >/dev/null 2>&1; then
   echo "Install the Xcode Command Line Tools first: xcode-select --install" >&2
   exit 1
 fi
-rustup toolchain install nightly --profile minimal
+rustup toolchain install nightly --profile minimal --component rustfmt --component clippy
 if ! cargo tauri --help >/dev/null 2>&1; then
   echo "Installing the Tauri v2 CLI..."
   cargo install tauri-cli --version '^2'
