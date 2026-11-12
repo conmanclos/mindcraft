@@ -387,9 +387,17 @@ async fn build_schematic(
 
 async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ExecuteRequest>) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    let action_name = request.action.action.to_ascii_lowercase();
     state.brain.authorize_action(&request.action, true)
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
     let command = command_from_action(request.action)?;
+    if action_name == "smelt_parallel" {
+        let BotCommand::SmeltQueue(jobs) = command else {
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "parallel smelting parser returned an unexpected command".into()));
+        };
+        dispatch_parallel_smelt_jobs(&state, jobs, request.agent).await?;
+        return Ok(Json(ExecuteResponse { accepted: true, message: "parallel furnace jobs dispatched to separate connected bots" }));
+    }
     let target = resolve_agent_target(&state.config, request.agent)?;
     ensure_agent_connected(&state, target.as_deref()).await?;
     let sender = state.status.command_tx.lock().await.clone()
