@@ -456,19 +456,35 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
 /// Return the best recognized, ordinary food item in the player's hotbar.
 /// Debug formatting is used only to identify the registry item name; unknown items fail closed.
 fn best_safe_food_slot(menu: &azalea::inventory::Menu) -> Option<(usize, u8)> {
-    let hotbar = menu.hotbar_slots_range();
-    hotbar.filter_map(|slot| {
+    menu.hotbar_slots_range().filter_map(|slot| {
         let item = menu.slots().get(slot)?;
         if item.is_empty() { return None; }
         let name = format!("{item:?}").to_ascii_lowercase();
-        let priority = [
-            ("golden_carrot", 10), ("cooked_beef", 10), ("cooked_porkchop", 10),
-            ("golden_apple", 10), ("cooked_mutton", 8), ("cooked_rabbit", 8),
-            ("cooked_chicken", 8), ("cooked_cod", 8), ("cooked_salmon", 8),
-            ("bread", 7), ("pumpkin_pie", 7), ("baked_potato", 7),
-            ("cooked", 6), ("carrot", 4), ("potato", 4), ("apple", 3),
-            ("melon_slice", 3), ("sweet_berries", 3), ("glow_berries", 3),
-        ].iter().find_map(|(needle, score)| name.contains(needle).then_some(*score))?;
-        Some((slot, priority))
+        Some((slot, safe_food_priority(&name)?))
     }).max_by_key(|(_, priority)| *priority)
+}
+
+fn safe_food_priority(name: &str) -> Option<u8> {
+    [
+        ("golden_carrot", 10), ("cooked_beef", 10), ("cooked_porkchop", 10),
+        ("golden_apple", 10), ("cooked_mutton", 8), ("cooked_rabbit", 8),
+        ("cooked_chicken", 8), ("cooked_cod", 8), ("cooked_salmon", 8),
+        ("bread", 7), ("pumpkin_pie", 7), ("baked_potato", 7),
+        ("carrot", 4), ("potato", 4), ("apple", 3),
+        ("melon_slice", 3), ("sweet_berries", 3), ("glow_berries", 3),
+    ].iter().find_map(|(needle, score)| name.contains(needle).then_some(*score))
+}
+
+#[cfg(test)]
+mod food_tests {
+    use super::safe_food_priority;
+
+    #[test]
+    fn safe_food_classifier_prefers_nutritious_food_and_fails_closed() {
+        assert!(safe_food_priority("itemstack { kind: cooked_beef }").unwrap()
+            > safe_food_priority("itemstack { kind: bread }").unwrap());
+        assert_eq!(safe_food_priority("itemstack { kind: potion }"), None);
+        assert_eq!(safe_food_priority("itemstack { kind: rotten_flesh }"), None);
+        assert_eq!(safe_food_priority("itemstack { kind: golden_apple }"), Some(10));
+    }
 }
