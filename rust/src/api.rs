@@ -347,3 +347,66 @@ fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
     }
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::brain::PlannedAction;
+
+    fn action(name: &str, target: Option<&str>) -> PlannedAction {
+        PlannedAction {
+            action: name.into(),
+            target: target.map(str::to_owned),
+            reason: "test".into(),
+            risk: "low".into(),
+        }
+    }
+
+    #[test]
+    fn chat_commands_cannot_invoke_server_commands_or_control_characters() {
+        assert!(command_from_action(action("say", Some("hello team"))).is_ok());
+        assert!(command_from_action(action("say", Some("/op player"))).is_err());
+        assert!(command_from_action(action("say", Some("hello\\n/op player"))).is_err());
+        assert!(command_from_action(action("say", Some("   "))).is_err());
+    }
+
+    #[test]
+    fn attack_is_limited_to_the_visible_crosshair_target() {
+        assert!(matches!(
+            command_from_action(action("attack", Some("crosshair"))),
+            Ok(BotCommand::AttackCrosshair)
+        ));
+        assert!(command_from_action(action("attack", Some("nearest"))).is_err());
+        assert!(command_from_action(action("attack", None)).is_err());
+    }
+
+    #[test]
+    fn coordinate_actions_reject_malformed_and_out_of_world_targets() {
+        assert!(matches!(
+            command_from_action(action("goto", Some("12,64,-8"))),
+            Ok(BotCommand::Goto(12, 64, -8))
+        ));
+        for target in ["1,2", "1,2,3,4", "1,321,3", "1,-65,3", "30000001,64,0", "x,64,0"] {
+            assert!(command_from_action(action("mine", Some(target))).is_err(), "accepted invalid target: {target}");
+        }
+    }
+
+    #[test]
+    fn follow_and_equip_targets_are_strictly_validated() {
+        assert!(matches!(
+            command_from_action(action("follow", Some("Player_123"))),
+            Ok(BotCommand::Follow(name)) if name == "Player_123"
+        ));
+        for name in ["ab", "player name", "../player", "player!"] {
+            assert!(command_from_action(action("follow", Some(name))).is_err());
+        }
+        assert!(matches!(
+            command_from_action(action("equip", Some("8"))),
+            Ok(BotCommand::Equip(8))
+        ));
+        for slot in ["-1", "9", "1.5", "x"] {
+            assert!(command_from_action(action("equip", Some(slot))).is_err());
+        }
+    }
+}
