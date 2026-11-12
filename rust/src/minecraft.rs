@@ -1643,6 +1643,22 @@ fn smelt_input_matches(debug_name: &str, selector: &str) -> bool {
 }
 
 #[cfg(test)]
+mod smelt_recipe_tests {
+    use super::smelt_spec;
+
+    #[test]
+    fn smelting_allowlist_maps_inputs_to_expected_outputs() {
+        assert_eq!(smelt_spec("raw_iron"), Some("iron_ingot"));
+        assert_eq!(smelt_spec("raw_copper"), Some("copper_ingot"));
+        assert_eq!(smelt_spec("ancient_debris"), Some("netherite_scrap"));
+        assert_eq!(smelt_spec("sand"), Some("glass"));
+        assert_eq!(smelt_spec("beef"), Some("cooked_beef"));
+        assert_eq!(smelt_spec("potato"), Some("baked_potato"));
+        assert_eq!(smelt_spec("unknown"), None);
+    }
+}
+
+#[cfg(test)]
 mod smelt_input_tests {
     use super::smelt_input_matches;
 
