@@ -11,6 +11,7 @@ use azalea::{
     entity::{indexing::EntityUuidIndex, LookDirection, Position},
     interact::{CurrentSequenceNumber, HitResultComponent},
     inventory::SetSelectedHotbarSlotEvent,
+    mining::{Mining, StopMiningBlockEvent},
     movement::{StartWalkEvent, WalkDirection},
     world::MinecraftEntityId,
     protocol::packets::game::{
@@ -1064,6 +1065,13 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
         anyhow::bail!("inventory may be full; crafting result remains in the output slot");
     }
     Ok(())
+}
+
+fn stop_mining(bot: &Client) {
+    let mut ecs = bot.ecs.lock();
+    if ecs.get::<Mining>(bot.entity).is_some() {
+        ecs.send_event(StopMiningBlockEvent { entity: bot.entity });
+    }
 }
 
 fn stop_walking(bot: &Client) {
