@@ -223,6 +223,13 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             Ok(BotCommand::Say(text))
         }
         "stop" => Ok(BotCommand::Stop),
+        "attack" => {
+            let target = action.target.unwrap_or_default();
+            if !target.eq_ignore_ascii_case("crosshair") {
+                return Err((StatusCode::BAD_REQUEST, "attack target must be 'crosshair'; aim at a visible entity first".into()));
+            }
+            Ok(BotCommand::AttackCrosshair)
+        }
         "follow" => {
             let username = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a Minecraft username".into()))?;
             if !(3..=16).contains(&username.len()) || !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
