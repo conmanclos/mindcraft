@@ -37,7 +37,7 @@ pub async fn connect(
     let account = if auth_mode == "microsoft" {
         let email = microsoft_email.ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
         tracing::info!("starting Azalea Microsoft device-code authentication");
-        Account::microsoft(email).await?
+        Account::microsoft(email.as_str()).await?
     } else {
         Account::offline(username.clone())
     };
