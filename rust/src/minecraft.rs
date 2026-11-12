@@ -427,8 +427,9 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                     .is_some_and(|flag| flag.load(Ordering::Relaxed));
                 if (critical_health || eating_now) && matches!(
                     &command,
-                    BotCommand::Follow(_) | BotCommand::Goto(_, _, _) | BotCommand::Mine(_, _, _)
-                        | BotCommand::Place(_, _, _) | BotCommand::AttackPlayer(_) | BotCommand::Jump
+                    BotCommand::Follow(_) | BotCommand::Goto(_, _, _) | BotCommand::Explore(_)
+                        | BotCommand::Mine(_, _, _) | BotCommand::Place(_, _, _)
+                        | BotCommand::AttackPlayer(_) | BotCommand::Jump
                         | BotCommand::Equip(_) | BotCommand::UseItem | BotCommand::Craft(_)
                         | BotCommand::Deposit(_, _, _) | BotCommand::Withdraw(_, _, _, _)
                 ) {
