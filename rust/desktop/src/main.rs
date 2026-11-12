@@ -137,6 +137,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<S
     let log_stderr = log.try_clone().map_err(|e| e.to_string())?;
     let mut command = Command::new(runtime);
     command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
+    command.env("MINDCRAFT_AZALEA_AUTH_CACHE", data.join("azalea-auth.json"));
     if let Ok(entry) = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key") {
         if let Ok(key) = entry.get_password() {
             command.env("MINDCRAFT_API_KEY", key);
