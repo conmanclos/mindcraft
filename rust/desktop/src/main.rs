@@ -117,7 +117,12 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         ("MINDCRAFT_MICROSOFT_EMAIL", setup.microsoft_email.trim().to_owned()),
         ("MINDCRAFT_PROVIDER", setup.provider.clone()),
         ("MINDCRAFT_MODEL", setup.model.trim().to_owned()),
-        ("MINDCRAFT_BASE_URL", if setup.base_url.trim().is_empty() { "http://127.0.0.1:11434/v1".into() } else { setup.base_url.trim().to_owned() }),
+        ("MINDCRAFT_BASE_URL", match setup.provider.as_str() {
+            "openai" => "https://api.openai.com/v1".into(),
+            "ollama" => if setup.base_url.trim().is_empty() { "http://127.0.0.1:11434/v1".into() } else { setup.base_url.trim().to_owned() },
+            "openai-compatible" => if setup.base_url.trim().is_empty() { return Err("Enter the OpenAI-compatible API base URL.".into()); } else { setup.base_url.trim().to_owned() },
+            _ => "https://api.openai.com/v1".into(),
+        }),
         ("MINDCRAFT_MODE", setup.autonomy.clone()),
         ("MINDCRAFT_BIND", "127.0.0.1:8787".into()),
         ("MINDCRAFT_API_TOKEN", token),
