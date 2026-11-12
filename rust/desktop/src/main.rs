@@ -27,7 +27,7 @@ struct RuntimeLaunch {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SavedSetup {
-    server: String, username: String, accounts: String, auth: String, microsoft_email: String,
+    server: String, username: String, accounts: String, auth: String, microsoft_email: String, trusted_players: String,
     provider: String, model: String, base_url: String, autonomy: String,
 }
 
@@ -39,6 +39,7 @@ struct Setup {
     accounts: String,
     auth: String,
     microsoft_email: String,
+    trusted_players: String,
     provider: String,
     model: String,
     api_key: String,
@@ -67,6 +68,22 @@ fn valid_http_base_url(value: &str) -> bool {
             && url.query().is_none()
             && url.fragment().is_none()
     })
+}
+
+fn validate_trusted_players(raw: &str) -> Result<String, String> {
+    let names = raw.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>();
+    if names.len() > 32 {
+        return Err("Enter no more than 32 trusted Minecraft player usernames.".into());
+    }
+    let mut unique = std::collections::HashSet::new();
+    for name in &names {
+        if !(3..=16).contains(&name.len())
+            || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
+            || !unique.insert(name.to_ascii_lowercase()) {
+            return Err("Trusted player names must be unique Minecraft usernames (3-16 letters, numbers, or underscores).".into());
+        }
+    }
+    Ok(names.join(","))
 }
 
 fn dotenv_value(value: &str) -> String {
@@ -105,6 +122,7 @@ fn load_setup(app: AppHandle) -> Result<Option<SavedSetup>, String> {
         accounts: get("MINDCRAFT_MC_ACCOUNTS"),
         auth: get("MINDCRAFT_MC_AUTH"),
         microsoft_email: get("MINDCRAFT_MICROSOFT_EMAIL"),
+        trusted_players: get("MINDCRAFT_TRUSTED_PLAYERS"),
         provider: get("MINDCRAFT_PROVIDER"),
         model: get("MINDCRAFT_MODEL"),
         base_url: get("MINDCRAFT_BASE_URL"),
@@ -129,6 +147,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.auth == "microsoft" && setup.microsoft_email.trim().is_empty() {
         return Err("Enter the Microsoft account email.".into());
     }
+    let trusted_players = validate_trusted_players(&setup.trusted_players)?;
     let accounts = if setup.auth == "offline" {
         validate_offline_accounts(&setup.accounts, &setup.username)?
     } else {
@@ -176,6 +195,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         ("MINDCRAFT_MC_ACCOUNTS", accounts),
         ("MINDCRAFT_MC_AUTH", setup.auth.clone()),
         ("MINDCRAFT_MICROSOFT_EMAIL", setup.microsoft_email.trim().to_owned()),
+        ("MINDCRAFT_TRUSTED_PLAYERS", trusted_players),
         ("MINDCRAFT_PROVIDER", setup.provider.clone()),
         ("MINDCRAFT_MODEL", setup.model.trim().to_owned()),
         ("MINDCRAFT_BASE_URL", match setup.provider.as_str() {
@@ -239,7 +259,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
     // MINDCRAFT_* variables from silently overriding it or leaking stale API keys.
     for key in [
         "MINDCRAFT_MC_SERVER", "MINDCRAFT_MC_USERNAME", "MINDCRAFT_MC_ACCOUNTS",
-        "MINDCRAFT_MC_AUTH", "MINDCRAFT_MICROSOFT_EMAIL", "MINDCRAFT_PROVIDER",
+        "MINDCRAFT_MC_AUTH", "MINDCRAFT_MICROSOFT_EMAIL", "MINDCRAFT_TRUSTED_PLAYERS", "MINDCRAFT_PROVIDER",
         "MINDCRAFT_MODEL", "MINDCRAFT_API_KEY", "MINDCRAFT_BASE_URL", "MINDCRAFT_MODE",
         "MINDCRAFT_BIND", "MINDCRAFT_API_TOKEN", "MINDCRAFT_DATABASE",
         "MINDCRAFT_AZALEA_AUTH_CACHE",
@@ -337,6 +357,15 @@ mod tests {
     fn dotenv_values_cannot_inject_additional_environment_lines() {
         assert_eq!(super::dotenv_value("safe\r\nMINDCRAFT_MODE=autonomous"), "\"safeMINDCRAFT_MODE=autonomous\"");
         assert_eq!(super::dotenv_value("quoted\"value"), "\"quoted\\\"value\"");
+    }
+
+    #[test]
+    fn trusted_chat_players_allow_empty_or_a_bounded_unique_username_list() {
+        assert_eq!(super::validate_trusted_players("").unwrap(), "");
+        assert_eq!(super::validate_trusted_players("Owner, Friend_2").unwrap(), "Owner,Friend_2");
+        assert!(super::validate_trusted_players("Owner,owner").is_err());
+        assert!(super::validate_trusted_players("bad-name").is_err());
+        assert!(super::validate_trusted_players(&(0..33).map(|i| format!("Player{i:02}")).collect::<Vec<_>>().join(",")).is_err());
     }
 
     #[test]
