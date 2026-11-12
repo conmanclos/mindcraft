@@ -132,6 +132,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Tick => {
             if bot.exists() {
                 let health = bot.health();
+                let hunger = bot.hunger();
                 if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
                         let mut last = last.lock().await;
@@ -153,6 +154,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             agent: bot.username(),
                             position: [position.x as f64, position.y as f64, position.z as f64],
                             health,
+                            food: hunger.food,
+                            saturation: hunger.saturation,
                             inventory,
                         });
                     }
