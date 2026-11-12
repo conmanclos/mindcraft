@@ -1943,7 +1943,8 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
 fn recipe_output_count(recipe: &str) -> u32 {
     match recipe {
         "planks" | "sticks" | "torch" | "bowl" => 4,
-        "paper" | "arrow" => 3,
+        "paper" => 3,
+        "arrow" => 4,
         "slab" => 6,
         "stairs" => 4,
         "fence" | "sign" | "door" | "ladder" => 3,
