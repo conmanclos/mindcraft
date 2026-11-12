@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn assisted_mode_requires_approval_for_every_action() {
-        for name in ["say", "look", "follow", "stop", "goto", "explore", "jump", "equip", "mine", "place", "craft", "container_transfer", "attack", "use_item"] {
+        for name in ["say", "look", "follow", "stop", "goto", "explore", "jump", "equip", "mine", "place", "craft", "smelt", "container_transfer", "attack", "use_item"] {
             let action = PlannedAction { action: name.into(), target: None, reason: "test".into(), risk: "low".into() };
             assert!(brain("assisted").authorize_action(&action, false).is_err(), "{name} must require approval in assisted mode");
             assert!(brain("assisted").authorize_action(&action, true).is_ok(), "{name} should be allowed after explicit approval");
@@ -243,6 +243,19 @@ mod tests {
             assert!(brain("balanced").authorize_action(&action, true).is_ok());
             assert!(brain("autonomous").authorize_action(&action, false).is_ok());
         }
+    }
+
+    #[test]
+    fn smelting_is_high_risk_in_balanced_mode() {
+        let action = PlannedAction {
+            action: "smelt".into(),
+            target: Some("raw_iron@0,64,0".into()),
+            reason: String::new(),
+            risk: "low".into(),
+        };
+        assert!(brain("balanced").authorize_action(&action, false).is_err());
+        assert!(brain("balanced").authorize_action(&action, true).is_ok());
+        assert!(brain("autonomous").authorize_action(&action, false).is_ok());
     }
 
     #[test]
