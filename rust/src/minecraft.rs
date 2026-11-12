@@ -1693,7 +1693,7 @@ async fn execute_build(
             bot.chat("The selected hotbar slot is unavailable.");
             return;
         };
-        if item.is_empty() || item.count() as usize < positions.len() {
+        if item.is_empty() || (item.count() as usize) < positions.len() {
             bot.chat(format!("The selected hotbar stack needs at least {} placeable blocks; I won't start a partial build.", positions.len()));
             return;
         }
