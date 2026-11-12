@@ -545,7 +545,6 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         if let Some(following) = &state.is_following {
                             following.store(false, Ordering::Relaxed);
                         }
-                        bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
                         if let Some(pending) = &state.pending_block_action {
                             *pending.lock().await = Some(PendingBlockAction {
