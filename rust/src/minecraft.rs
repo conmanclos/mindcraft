@@ -1282,6 +1282,37 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
                         });
                     }
+                    BotCommand::SmeltQueue(jobs) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let total = jobs.len();
+                            for (index, job) in jobs.into_iter().enumerate() {
+                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    return;
+                                }
+                                client.chat(format!("Starting furnace queue job {} of {} at {}, {}, {}.", index + 1, total, job.x, job.y, job.z));
+                                execute_smelt(
+                                    client.clone(),
+                                    job.input,
+                                    BlockPos::new(job.x, job.y, job.z),
+                                    job.count,
+                                    generation_state.clone(),
+                                    generation,
+                                ).await;
+                            }
+                            if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                client.chat(format!("Finished processing the {} queued furnace jobs. Check each furnace output and inventory.", total));
+                            }
+                        });
+                    }
                     BotCommand::ContainerDeposit(x, y, z) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
