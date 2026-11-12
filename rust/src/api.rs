@@ -774,9 +774,23 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
         }
         "craft" => {
-            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a recipe name, optionally followed by @x,y,z for a crafting table".into()))?;
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be recipe[*count], optionally followed by @x,y,z for a crafting table".into()))?;
             let mut parts = raw.split('@');
-            let recipe = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+            let recipe_spec = parts.next().unwrap_or_default().trim();
+            let (recipe, count) = match recipe_spec.split_once('*') {
+                Some((recipe, count)) => {
+                    if count.contains('*') {
+                        return Err((StatusCode::BAD_REQUEST, "craft batch count must be a single integer from 1 to 16".into()));
+                    }
+                    let count = count.trim().parse::<u8>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "craft batch count must be an integer from 1 to 16".into()))?;
+                    if !(1..=16).contains(&count) {
+                        return Err((StatusCode::BAD_REQUEST, "craft batch count must be from 1 to 16".into()));
+                    }
+                    (recipe.trim().to_ascii_lowercase(), count)
+                }
+                None => (recipe_spec.to_ascii_lowercase(), 1),
+            };
             let table = match parts.next() {
                 Some(coordinates) => {
                     let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
@@ -795,9 +809,9 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 return Err((StatusCode::NOT_IMPLEMENTED, "that recipe is not in the runtime's explicit crafting allowlist".into()));
             };
             if requires_table && table.is_none() {
-                return Err((StatusCode::BAD_REQUEST, "this recipe requires a crafting table; append @x,y,z to the recipe name".into()));
+                return Err((StatusCode::BAD_REQUEST, "that recipe requires a crafting-table coordinate in the form recipe[*count]@x,y,z".into()));
             }
-            Ok(BotCommand::Craft(recipe, table))
+            Ok(BotCommand::Craft(recipe, table, count))
         }
         "smelt" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use input[*count]@x,y,z syntax".into()))?;
