@@ -1828,6 +1828,18 @@ async fn execute_smelt(
             bot.chat("The server did not accept the selected fuel; I returned any accepted fuel and the input.");
             return;
         }
+    } else {
+        let existing_fuel_is_sufficient = container.slots()
+            .and_then(|slots| slots.get(1).map(|item| {
+                !item.is_empty() && smelt_fuel_matches(&format!("{:?}", item.kind()))
+            }))
+            .unwrap_or(false);
+        if !existing_fuel_is_sufficient {
+            container.shift_click(0);
+            bot.wait_ticks(2).await;
+            bot.chat("The furnace has an unrecognized or insufficient fuel item. I returned the input and left the existing fuel untouched.");
+            return;
+        }
     }
 
     bot.chat(format!("Started a batch of {count} {input}; waiting for {count} {result_name}."));
