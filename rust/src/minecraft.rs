@@ -617,8 +617,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         tracing::info!(username = %bot.username(), source_slot, target_slot, armor_rank = rank, replaced = needs_swap, "autonomous survival reflex equipped a verified armor upgrade");
                                     } else {
                                         if needs_swap {
-                                            inventory.left_click(source_slot);
-                                            bot.wait_updates(1).await;
+                                            let source_empty = bot.menu().ok()
+                                                .and_then(|menu| menu.slot(source_slot).map(|item| item.is_empty()))
+                                                .unwrap_or(false);
+                                            if source_empty {
+                                                inventory.left_click(source_slot);
+                                                bot.wait_updates(1).await;
+                                            }
                                         }
                                         tracing::warn!(username = %bot.username(), source_slot, target_slot, "armor upgrade was not confirmed by the server");
                                     }
