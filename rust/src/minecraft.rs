@@ -1923,6 +1923,9 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "grindstone" => Some((true, "grindstone", &[(1, "stick"), (2, "stone_slab"), (3, "stick"), (4, "planks"), (6, "planks")])),
         "fletching_table" => Some((true, "fletching_table", &[(1, "flint"), (2, "flint"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         "cartography_table" => Some((true, "cartography_table", &[(1, "paper"), (2, "paper"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
+        "hopper" => Some((true, "hopper", &[(1, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "chest"), (6, "iron_ingot"), (8, "iron_ingot")])),
+        "dropper" => Some((true, "dropper", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (5, "redstone"), (6, "cobblestone"), (7, "cobblestone"), (8, "cobblestone"), (9, "cobblestone")])),
+        "dispenser" => Some((true, "dispenser", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (5, "bow"), (6, "cobblestone"), (7, "cobblestone"), (8, "redstone"), (9, "cobblestone")])),
         _ => None,
     }
 }
