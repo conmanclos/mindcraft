@@ -1740,7 +1740,7 @@ async fn execute_smelt(
         let Some(fuel_source) = fuel_source else {
             container.shift_click(0);
             bot.wait_ticks(2).await;
-            bot.chat("I placed the input but found no coal or charcoal. I returned the input to your inventory.");
+            bot.chat("I placed the input but found no coal, charcoal, blaze rod, or lava bucket. I returned the input to your inventory.");
             return;
         };
         container.left_click(fuel_source);
@@ -1761,7 +1761,7 @@ async fn execute_smelt(
             container.shift_click(1);
             container.shift_click(0);
             bot.wait_ticks(2).await;
-            bot.chat("The server did not accept coal or charcoal as fuel; I returned any accepted fuel and the input.");
+            bot.chat("The server did not accept the selected fuel; I returned any accepted fuel and the input.");
             return;
         }
     }
