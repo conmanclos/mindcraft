@@ -800,14 +800,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must contain 2-4 semicolon-separated input[*count]@x,y,z furnace jobs".into()))?;
             let entries = raw.split(';').map(str::trim).filter(|entry| !entry.is_empty()).collect::<Vec<_>>();
             if !(2..=4).contains(&entries.len()) {
-                return Err((StatusCode::BAD_REQUEST, "smelt_queue requires 2-4 furnace jobs".into()));
+                return Err((StatusCode::BAD_REQUEST, "smelt_queue and smelt_parallel require 2-4 furnace jobs".into()));
             }
             let mut jobs = Vec::with_capacity(entries.len());
             let mut positions = HashSet::new();
             for entry in entries {
                 let job = parse_smelt_job(entry)?;
                 if !positions.insert((job.x, job.y, job.z)) {
-                    return Err((StatusCode::BAD_REQUEST, "smelt_queue cannot target the same furnace more than once".into()));
+                    return Err((StatusCode::BAD_REQUEST, "smelting job lists cannot target the same furnace more than once".into()));
                 }
                 jobs.push(job);
             }
