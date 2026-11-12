@@ -193,7 +193,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/execute", post(execute))
         .route("/api/goals", get(list_goals).post(create_goal))
         .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
-        .route("/api/agents/:agent_id/credential", post(issue_agent_credential))
+        .route("/api/agents/:agent_id/credential", post(issue_agent_credential).delete(revoke_agent_credential))
         .route("/api/tasks/claim", post(claim_task))
         .route("/api/tasks/:task_id/complete", post(complete_task))
         .route("/api/tasks/:task_id/heartbeat", post(heartbeat_task))
@@ -549,6 +549,19 @@ async fn issue_agent_credential(
         token,
         expires_in_seconds: AGENT_CREDENTIAL_TTL.as_secs(),
     }))
+}
+
+async fn revoke_agent_credential(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(agent_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if !valid_agent_id(&agent_id) {
+        return Err((StatusCode::BAD_REQUEST, "agent ID must contain 1-64 safe ASCII characters".into()));
+    }
+    let revoked = state.status.agent_tokens.lock().await.remove(&agent_id).is_some();
+    Ok(Json(serde_json::json!({"agent_id":agent_id,"revoked":revoked})))
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
