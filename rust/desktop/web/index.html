@@ -60,6 +60,18 @@ main{max-width:900px;margin:0 auto;padding:42px 28px 60px}.brand{display:flex;al
 <div class="field-note">Autonomous specialist actions appear here after they are queued. Inspect the result in Minecraft before completing a task; release it to retry.</div>
 <div id="taskResult" class="status">No task claimed.</div>
 </section>
+<section class="panel hidden" id="memoryPanel">
+<h2>Persistent memory</h2><p>Save durable preferences, verified world facts, and useful events. Mindcraft includes these memories in its AI context.</p>
+<div class="grid">
+<div class="field"><label for="memoryKind">Memory type</label><select id="memoryKind"><option value="preference">Preference</option><option value="semantic">Knowledge</option><option value="world">World fact</option><option value="episodic">Event</option></select></div>
+<div class="field"><label for="memoryImportance">Importance (0-100)</label><input id="memoryImportance" type="number" min="0" max="100" value="60"></div>
+<div class="field"><label for="memorySubject">Subject</label><input id="memorySubject" maxlength="120" placeholder="e.g. base location"></div>
+<div class="field"><label for="memoryConfidence">Confidence (0-1)</label><input id="memoryConfidence" type="number" min="0" max="1" step="0.05" value="1"></div>
+<div class="field wide"><label for="memoryContent">What should Mindcraft remember?</label><textarea id="memoryContent" maxlength="2000" rows="3" placeholder="A concise fact or preference, not a command."></textarea></div>
+</div>
+<div class="actions"><button id="saveMemory">Save memory</button><button id="refreshMemories" class="secondary">Refresh</button></div>
+<div id="memoryStatus" class="status">No memories loaded.</div><div id="memoryList" class="status">Persistent memories will appear here.</div>
+</section>
 </main>
 <script>
 const $=id=>document.getElementById(id);let token="";let apiBase="";let poll=null;let reviewTasks=[];let lastReviewRefresh=0;let lastGoalRefresh=0;
@@ -76,7 +88,7 @@ $("save").onclick=async()=>{try{
 const setup={server:$("server").value.trim(),username:$("username").value.trim(),accounts:$("accounts").value.trim(),auth:$("auth").value,microsoftEmail:$("email").value.trim(),trustedPlayers:$("trustedPlayers").value.trim(),provider:$("provider").value,model:$("model").value.trim(),apiKey:$("key").value,baseUrl:$("baseUrl").value.trim(),autonomy:$("autonomy").value};
 await invoke("save_setup",{setup});$("key").value="";$("run").disabled=false;message("Setup saved on this Mac. Your provider key is stored in Keychain.",true);
 }catch(e){message(String(e))}};
-$("run").onclick=async()=>{try{$("run").disabled=true;message("Starting the Rust runtime…");const launch=await invoke("start_runtime");token=launch.token;apiBase="http://127.0.0.1:"+launch.apiPort;$("stop").disabled=false;$("live").classList.remove("hidden");$("controls").classList.remove("hidden");$("goals").classList.remove("hidden");$("liveTitle").textContent="Mindcraft is starting";$("liveDescription").textContent="Waiting for the Minecraft connection…";message("Runtime launched. Checking your Minecraft connection.",true);pollStatus();refreshGoals().catch(()=>{});poll=setInterval(pollStatus,2500)}catch(e){$("run").disabled=false;message(String(e))}};
+$("run").onclick=async()=>{try{$("run").disabled=true;message("Starting the Rust runtime…");const launch=await invoke("start_runtime");token=launch.token;apiBase="http://127.0.0.1:"+launch.apiPort;$("stop").disabled=false;$("live").classList.remove("hidden");$("controls").classList.remove("hidden");$("goals").classList.remove("hidden");$("liveTitle").textContent="Mindcraft is starting";$("liveDescription").textContent="Waiting for the Minecraft connection…";message("Runtime launched. Checking your Minecraft connection.",true);pollStatus();refreshGoals().catch(()=>{});$("memoryPanel").classList.remove("hidden");refreshMemories().catch(()=>{});poll=setInterval(pollStatus,2500)}catch(e){$("run").disabled=false;message(String(e))}};
 $("stop").onclick=async()=>{try{await invoke("stop_runtime");clearInterval(poll);clearTaskHeartbeat();claimedTask=null;claimedAgentId=null;$("claimTask").disabled=false;$("completeTask").disabled=true;$("planClaimedTask").disabled=true;$("stop").disabled=true;$("run").disabled=false;$("liveTitle").textContent="Stopped";$("liveDescription").textContent="Mindcraft is not running.";message("Mindcraft stopped.",true)}catch(e){message(String(e))}};
 $("sendChat").onclick=async()=>{const field=$("chatMessage");const messageText=field.value.trim();if(!messageText)return;field.value="";const log=$("chatLog");log.textContent+="\nYou: "+messageText;try{const response=await fetch(apiBase+"/api/chat",{method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({message:messageText})});const data=await response.json();if(!response.ok)throw Error(data.error||data.message||"HTTP "+response.status);log.textContent+="\nMindcraft: "+data.reply;log.scrollTop=log.scrollHeight}catch(e){log.textContent+="\nError: "+String(e)}};
 let proposedAction=null;let claimedTask=null;let claimedAgentId=null;let taskHeartbeat=null;
@@ -115,6 +127,29 @@ $("completeTask").onclick=async()=>{try{if(!claimedTask||!claimedAgentId)throw E
 
 async function pollStatus(){try{$("runtimeLog").textContent=await invoke("runtime_log");$("runtimeLog").scrollTop=$("runtimeLog").scrollHeight;const r=await fetch(apiBase+"/api/status",{headers:{Authorization:"Bearer "+token}});if(!r.ok)throw Error("Runtime API returned "+r.status);const s=await r.json();$("mcStatus").textContent=s.minecraft_connected?"Connected":"Connecting";$("agents").textContent=String(s.connected_agents);
 $("agentRoster").textContent=(s.agents||[]).map(a=>a.agent+" · "+(a.role||"teammate")+" · "+a.health+"/20 HP · "+a.food+"/20 food · "+a.position.map(v=>v.toFixed(1)).join(", ")+"\n"+(a.inventory||[]).join(" | ")).join("\n\n")||"No connected agents yet.";if(Date.now()-lastReviewRefresh>10000){lastReviewRefresh=Date.now();refreshReviewQueue().catch(()=>{})}if(Date.now()-lastGoalRefresh>60000){lastGoalRefresh=Date.now();refreshGoals().catch(()=>{})}$("health").textContent=s.world?s.world.health+"/20":"—";$("food").textContent=s.world?s.world.food+"/20":"—";$("liveTitle").textContent=s.minecraft_connected?"You're in the game":"Runtime is running";$("liveDescription").textContent=s.minecraft_connected?"Mindcraft is connected to "+$("server").value:"Waiting for the Minecraft server and account authentication."}catch(e){const running=await invoke("runtime_running").catch(()=>false);if(!running){clearInterval(poll);clearTaskHeartbeat();claimedTask=null;claimedAgentId=null;$("claimTask").disabled=false;$("completeTask").disabled=true;$("planClaimedTask").disabled=true;$("stop").disabled=true;$("run").disabled=false;$("liveTitle").textContent="Runtime stopped";$("liveDescription").textContent="Check the server address and setup, then try again.";message("The runtime exited. Check that your server and configuration are correct.")}}}
+async function refreshMemories(){
+ const memories=await api("/api/memory");
+ const list=$("memoryList");list.textContent="";
+ if(!memories.length){list.textContent="No persistent memories saved.";return}
+ for(const memory of memories){
+  const row=document.createElement("div");row.style.cssText="border-top:1px solid var(--line);padding:10px 0;display:flex;gap:12px;justify-content:space-between;align-items:flex-start";
+  const body=document.createElement("div");
+  const title=document.createElement("strong");title.textContent="["+memory.kind+"] "+memory.subject;
+  const content=document.createElement("div");content.textContent=memory.content;
+  const meta=document.createElement("div");meta.className="field-note";meta.textContent="Importance "+memory.importance+" · confidence "+Number(memory.confidence).toFixed(2)+" · "+memory.source;
+  body.append(title,content,meta);
+  const remove=document.createElement("button");remove.className="secondary";remove.textContent="Delete";
+  remove.onclick=async()=>{try{const response=await fetch(apiBase+"/api/memory/"+memory.id,{method:"DELETE",headers:{Authorization:"Bearer "+token}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);await refreshMemories()}catch(e){$("memoryStatus").textContent="Delete failed: "+String(e)}};
+  row.append(body,remove);list.appendChild(row);
+ }
+}
+$("saveMemory").onclick=async()=>{
+ try{
+  const payload={kind:$("memoryKind").value,subject:$("memorySubject").value.trim(),content:$("memoryContent").value.trim(),importance:Number($("memoryImportance").value),confidence:Number($("memoryConfidence").value),source:"desktop"};
+  await api("/api/memory",payload);$("memorySubject").value="";$("memoryContent").value="";$("memoryStatus").textContent="Memory saved.";await refreshMemories();
+ }catch(e){$("memoryStatus").textContent="Save failed: "+String(e)}
+};
+$("refreshMemories").onclick=async()=>{try{await refreshMemories();$("memoryStatus").textContent="Memory refreshed."}catch(e){$("memoryStatus").textContent=String(e)}};
 loadSaved();
 </script>
 </body></html>
