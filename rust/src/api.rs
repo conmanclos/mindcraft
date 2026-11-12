@@ -318,9 +318,17 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         "\nCurrent Minecraft state for {}: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
         world.agent, world.position, world.health, world.food, world.saturation, world.inventory
     )).unwrap_or_default();
+    let connected_agents = state.status.agents.lock().await.values()
+        .map(|agent| format!("{} ({})", agent.agent, agent.role))
+        .collect::<Vec<_>>();
+    let team_context = format!(
+        "\nConnected Minecraft team ({}): {}.",
+        connected_agents.len(),
+        if connected_agents.is_empty() { "none".to_owned() } else { connected_agents.join(", ") }
+    );
     let memory_context = state.store.relevant_memory_context(&request.message, 3_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let planning_request = format!("Player request: {}{world_context}\n{memory_context}", request.message);
+    let planning_request = format!("Player request: {}{world_context}{team_context}\n{memory_context}", request.message);
     let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&planning_request))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
