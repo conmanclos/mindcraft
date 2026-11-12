@@ -242,7 +242,7 @@ impl Store {
     pub fn has_goal_description(&self, description: &str) -> Result<bool> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         Ok(connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM goals WHERE description=?1)",
+            "SELECT EXISTS(SELECT 1 FROM goals WHERE description=?1 AND status!='failed')",
             [description],
             |row| row.get(0),
         )?)
