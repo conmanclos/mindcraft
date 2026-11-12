@@ -710,6 +710,25 @@ fn safe_food_priority(name: &str) -> Option<u8> {
 }
 
 #[cfg(test)]
+mod recipe_tests {
+    use super::recipe_spec;
+
+    #[test]
+    fn allowlisted_recipes_fit_their_declared_crafting_grid() {
+        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "furnace", "chest", "bread", "ladder"] {
+            let (requires_table, _, ingredients) = recipe_spec(recipe).expect("recipe must be allowlisted");
+            let grid_size = if requires_table { 9 } else { 4 };
+            let mut used = std::collections::HashSet::new();
+            for (slot, selector) in ingredients {
+                assert!((1..=grid_size).contains(slot), "{recipe} has invalid grid slot {slot}");
+                assert!(used.insert(*slot), "{recipe} places multiple ingredients in slot {slot}");
+                assert!(!selector.is_empty(), "{recipe} has an empty ingredient selector");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod food_tests {
     use super::safe_food_priority;
 
