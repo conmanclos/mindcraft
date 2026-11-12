@@ -1625,7 +1625,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         tokio::task::spawn_local(async move {
                             if autonomous && may_execute_chat_actions {
                                 let action_request = format!(
-                                    "Player request: {content}\nCurrent Minecraft state:{world_context}"
+                                    "Player request: {content}\nCurrent Minecraft state:{world_context}\nThis in-game chat action is routed only to the primary bot; never choose smelt_parallel, which is available only through the multi-agent API planner. Use smelt_queue for sequential furnace work on this bot."
                                 );
                                 match brain.plan(&action_request).await {
                                     Ok(action) if brain.authorize_action(&action, false).is_ok() => {
