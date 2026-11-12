@@ -8,8 +8,11 @@ use tokio::sync::{mpsc, Mutex};
 pub enum BotCommand {
     Say(String),
     Stop,
+    Look(i32, i32, i32),
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
+    Equip(u8),
+    UseItem,
 }
 
 #[derive(Clone, Component, Default)]
@@ -87,12 +90,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                     }
+                    BotCommand::Look(x, y, z) => {
+                        bot.look_at(BlockPos::new(x, y, z).center());
+                    }
                     BotCommand::Goto(x, y, z) => {
                         bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
                     }
                     BotCommand::Mine(x, y, z) => {
                         bot.start_mining(BlockPos::new(x, y, z));
                     }
+                    BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
+                    BotCommand::UseItem => bot.start_use_item(),
                 }
             }
         }
