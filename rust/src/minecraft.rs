@@ -739,6 +739,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let autonomous = brain.is_autonomous();
                         let bot = bot.clone();
                         let status = state.status.clone();
+                        let store = state.store.clone();
+                        let history_context = if let Some(store) = &store {
+                            if let Err(error) = store.append_message("user", &content) {
+                                tracing::warn!(%error, "could not persist addressed Minecraft chat message");
+                            }
+                            store.recent_messages(12).map(|history| {
+                                history.into_iter().map(|(role, text)| format!("{role}: {text}"))
+                                    .collect::<Vec<_>>().join("\n")
+                            }).unwrap_or_default()
+                        } else {
+                            String::new()
+                        };
                         let world_context = if let Some(status) = &status {
                             status.world.lock().await.clone().map(|world| format!(
                                 " Current game state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
@@ -748,7 +760,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             String::new()
                         };
                         let prompt = format!(
-                            "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action.{world_context} Message: {content}"
+                            "Recent conversation:\n{history_context}\nA Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action.{world_context} Message: {content}"
                         );
                         // Provider work runs outside the tick handler so it cannot stall
                         // movement, keep-alives, or the Minecraft event loop.
@@ -769,6 +781,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                                 if let Some(sender) = sender {
                                                     match sender.send(AgentCommand { target: None, command }) {
                                                         Ok(_) => {
+                                                            if let Some(store) = &store {
+                                                                let memory = format!("Queued in-game action: {}. {}", action.action, action.reason);
+                                                                if let Err(error) = store.append_message("assistant", &memory) {
+                                                                    tracing::warn!(%error, "could not persist autonomous action result");
+                                                                }
+                                                            }
                                                             if bot.exists() && !action.action.eq_ignore_ascii_case("say") {
                                                                 bot.chat("On it.");
                                                             }
@@ -788,6 +806,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
 
                             match brain.reply(&prompt).await {
                                 Ok(reply) => {
+                                    if let Some(store) = &store {
+                                        if let Err(error) = store.append_message("assistant", &reply) {
+                                            tracing::warn!(%error, "could not persist Minecraft chat reply");
+                                        }
+                                    }
                                     let safe_reply: String = reply.chars().take(240).collect();
                                     if bot.exists()
                                         && !safe_reply.trim().is_empty()
