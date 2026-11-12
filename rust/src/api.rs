@@ -900,6 +900,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::ContainerTransfer(x, y, z, slot_range, item_filter))
         }
         "optimize_armor" => Ok(BotCommand::OptimizeArmor),
+        "inventory_sort" => Ok(BotCommand::InventorySort),
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
