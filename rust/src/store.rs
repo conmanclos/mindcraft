@@ -177,7 +177,7 @@ impl Store {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let goal_id: Option<i64> = tx.query_row(
-            "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
+            "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
             params![task_id, agent_id],
             |row| row.get(0),
         ).optional()?;
@@ -185,11 +185,15 @@ impl Store {
             tx.commit()?;
             return Ok(false);
         };
-        tx.execute(
+        let changed = tx.execute(
             "UPDATE agent_tasks SET status='complete', lease_until=NULL, updated_at=CURRENT_TIMESTAMP
-             WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
+             WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
             params![task_id, agent_id],
         )?;
+        if changed != 1 {
+            tx.commit()?;
+            return Ok(false);
+        }
         tx.execute(
             "UPDATE goals SET status='complete'
              WHERE id=?1 AND NOT EXISTS (
