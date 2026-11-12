@@ -107,6 +107,11 @@ pub async fn connect(
                 match goal_store.has_goal_description(DEFAULT_GOAL) {
                     Ok(true) => {},
                     Ok(false) => {
+                        if goal_status.agents.lock().await.is_empty() {
+                            tracing::debug!("waiting for a connected Minecraft agent before decomposing the baseline survival objective");
+                            tokio::time::sleep(Duration::from_secs(10)).await;
+                            continue;
+                        }
                         let memory = goal_store.relevant_memory_context(DEFAULT_GOAL, 3_000).unwrap_or_default();
                         let connected_agents = goal_status.agents.lock().await.values()
                             .map(|agent| format!("{} ({})", agent.agent, agent.role))
