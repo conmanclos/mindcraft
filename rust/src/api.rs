@@ -1,8 +1,8 @@
-use crate::{brain::Brain, config::Config, store::Store};
+use crate::{brain::{Brain, PlannedAction}, config::Config, store::Store};
 use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
-    response::{Html, IntoResponse},
+    response::Html,
     routing::{get, post},
     Json, Router,
 };
@@ -31,6 +31,12 @@ pub struct ChatRequest { pub message: String }
 struct ChatResponse { reply: String }
 
 #[derive(Serialize)]
+struct PlanResponse {
+    proposed_action: PlannedAction,
+    execution: &'static str,
+}
+
+#[derive(Serialize)]
 struct StatusResponse {
     name: &'static str,
     version: &'static str,
@@ -48,6 +54,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/health", get(health))
         .route("/api/status", get(status_handler))
         .route("/api/chat", post(chat))
+        .route("/api/plan", post(plan))
         .with_state(state)
         .layer(TraceLayer::new_for_http());
 
@@ -93,6 +100,17 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     Ok(Json(ChatResponse { reply }))
 }
 
+async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ChatRequest>) -> Result<Json<PlanResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if request.message.trim().is_empty() || request.message.len() > 4_000 {
+        return Err((StatusCode::BAD_REQUEST, "planning request must contain 1-4000 bytes".into()));
+    }
+    let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&request.message))
+        .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
+        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    Ok(Json(PlanResponse { proposed_action, execution: "not_executed; awaiting a live game action adapter" }))
+}
+
 fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
     let provided = headers.get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -103,8 +121,4 @@ fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
         return Err(StatusCode::UNAUTHORIZED);
     }
     Ok(())
-}
-
-impl IntoResponse for StatusResponse {
-    fn into_response(self) -> axum::response::Response { Json(self).into_response() }
 }
