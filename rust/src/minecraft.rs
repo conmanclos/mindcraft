@@ -1296,7 +1296,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
                         if let Some(last) = &state.last_explore_repath { *last.lock().await = instant_before(Duration::from_secs(20)); }
                     }
-                    BotCommand::Craft(recipe, table) => {
+                    BotCommand::Craft(recipe, table, count) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
                         let generation_state = state.mine_generation.clone();
@@ -1307,7 +1307,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            execute_craft(client, recipe, table, generation_state, generation).await;
+                            for batch in 0..count {
+                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    return;
+                                }
+                                if !execute_craft(client.clone(), recipe.clone(), table, generation_state.clone(), generation).await {
+                                    if batch > 0 && !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                        client.chat(format!("Craft batch stopped after {} of {} successful batch(es).", batch, count));
+                                    }
+                                    return;
+                                }
+                            }
+                            if count > 1 && !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                client.chat(format!("Completed all {} requested {} crafting batches.", count, recipe));
+                            }
                         });
                     }
                     BotCommand::Smelt(input, (x, y, z), count) => {
