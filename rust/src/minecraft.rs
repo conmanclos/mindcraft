@@ -397,7 +397,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         // movement, keep-alives, or the Minecraft event loop.
                         tokio::task::spawn_local(async move {
                             if autonomous {
-                                match brain.plan(&content).await {
+                                let action_request = format!(
+                                    "Player request: {content}\\nCurrent Minecraft state:{world_context}"
+                                );
+                                match brain.plan(&action_request).await {
                                     Ok(action) if brain.authorize_action(&action, false).is_ok() => {
                                         match crate::api::command_from_action(action.clone()) {
                                             Ok(command) => {
