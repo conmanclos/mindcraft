@@ -1,0 +1,40 @@
+[package]
+name = "mindcraft-native"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Native Rust Minecraft AI teammate runtime for Mindcraft"
+license = "MIT"
+
+[[bin]]
+name = "mindcraft"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["macros"] }
+azalea = "=0.10.3+mc1.21.1"
+clap = { version = "4", features = ["derive", "env"] }
+dotenvy = "0.15"
+eyre = "0.6"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+subtle = "2"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
