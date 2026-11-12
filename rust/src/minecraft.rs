@@ -2588,13 +2588,14 @@ async fn plant_crop_at(
     let valid_soil = if nether_wart {
         soil_compact == "soulsand"
     } else if sugar_cane {
-        (soil_compact.contains("dirt") || soil_compact.contains("grass") || soil_compact == "sand" || soil_compact == "redsand" || soil_compact == "mud")
+        (soil_compact.contains("dirt") || soil_compact.contains("grass") || soil_compact == "sand" || soil_compact == "redsand" || soil_compact == "mud" || soil_compact == "podzol" || soil_compact == "mycelium" || soil_compact == "mossblock")
             && water_adjacent
     } else if cactus {
         (soil_compact == "sand" || soil_compact == "redsand") && cactus_clear
     } else if bamboo {
         soil_compact.contains("dirt") || soil_compact.contains("grass") || soil_compact == "sand" || soil_compact == "redsand"
             || soil_compact.contains("gravel") || soil_compact.contains("podzol") || soil_compact == "mud"
+            || soil_compact == "mycelium" || soil_compact == "mossblock"
     } else if mushroom {
         // Restrict mushrooms to light-independent substrates until local light can be verified.
         soil_compact == "mycelium" || soil_compact == "podzol"
@@ -2606,11 +2607,11 @@ async fn plant_crop_at(
         bot.chat(if nether_wart {
             "Nether wart must be planted on soul sand; I won't replace the target block."
         } else if sugar_cane {
-            "Sugar cane needs a supported dirt/grass/sand/mud substrate with adjacent water."
+            "Sugar cane needs a supported dirt/grass/sand/podzol/mycelium/moss/sand/mud substrate with adjacent water."
         } else if cactus {
             "Cactus needs sand and clear horizontal space; I won't replace terrain."
         } else if bamboo {
-            "Bamboo needs a supported dirt, grass, sand, gravel, podzol, or mud substrate."
+            "Bamboo needs a supported dirt, grass, sand, gravel, podzol, mycelium, moss, or mud substrate."
         } else if mushroom {
             "Mushrooms can be planted safely on mycelium, podzol, crimson nylium, or warped nylium; ordinary blocks require a verified low light level."
         } else {
