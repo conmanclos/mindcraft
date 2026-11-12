@@ -763,6 +763,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             };
             Ok(BotCommand::ContainerTransfer(x, y, z, slot_range))
         }
+        "optimize_armor" => Ok(BotCommand::OptimizeArmor),
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
