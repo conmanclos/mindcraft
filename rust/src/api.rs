@@ -203,18 +203,20 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&planning_request))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    // Validate the concrete executor payload before presenting a proposal. This
+    // prevents the UI from offering approval for malformed coordinates, recipes,
+    // or other actions that the runtime cannot actually dispatch.
+    let planned_command = command_from_action(proposed_action.clone())?;
 
     if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
-        if let Ok(command) = command_from_action(proposed_action.clone()) {
-            if let Some(sender) = state.status.command_tx.lock().await.clone() {
-                ensure_agent_connected(&state, target.as_deref()).await?;
-                sender.send(AgentCommand { target: target.clone(), command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
-                return Ok(Json(PlanResponse {
-                    proposed_action,
-                    execution: "AUTONOMOUS: command queued without manual approval",
-                    auto_queued: true,
-                }));
-            }
+        if let Some(sender) = state.status.command_tx.lock().await.clone() {
+            ensure_agent_connected(&state, target.as_deref()).await?;
+            sender.send(AgentCommand { target: target.clone(), command: planned_command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
+            return Ok(Json(PlanResponse {
+                proposed_action,
+                execution: "AUTONOMOUS: command queued without manual approval",
+                auto_queued: true,
+            }));
         }
     }
 
