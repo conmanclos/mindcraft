@@ -1,6 +1,6 @@
 # Mindcraft Native (Rust)
 
-This is a Rust-native runtime being developed alongside the original JavaScript/Mineflayer project. Its target is **Minecraft Java Edition 26.1**, pinned to **Azalea 0.16.0+mc26.1**. The native runtime does not use Mineflayer or a JavaScript gameplay bridge.
+This is a Rust-native runtime being developed alongside the original JavaScript/Mineflayer project. Its target is **Minecraft Java Edition 1.21.1**, pinned to **Azalea 0.10.3+mc1.21.1**. The native runtime does not use Mineflayer or a JavaScript gameplay bridge.
 
 ## Current implementation
 
@@ -16,9 +16,9 @@ This is a Rust-native runtime being developed alongside the original JavaScript/
 - A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z` and `place x,y,z` (the bot aims at the requested block, then waits for exact crosshair confirmation before mining with Azalea's automatic best-tool selection or right-clicking with the selected item; the action cancels if line of sight cannot be established), `attack crosshair` (visible entity within 3.5 blocks; always requires explicit approval), and `equip 0-8`, `jump`, `sneak true|false`, and `use_item` (right-click the currently held item; always requires explicit approval) are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; normal navigation disables pathfinder block-mining, and unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
-## Minecraft 26.1 migration
+## Minecraft 1.21.1 migration
 
-Azalea 0.16.0 is the version-specific dependency for Minecraft 26.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The runtime's client, entity, pathfinder, inventory snapshot, hit-result, attack, and block-interaction paths have been updated against the 0.16 API surface. The branch still requires an actual `cargo build` and live-server verification before it can be considered buildable or gameplay-ready. Do not downgrade the target or silently substitute another protocol version to avoid migration work.
+Azalea 0.10.3 is the version-specific dependency for Minecraft 1.21.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The runtime's client, entity, pathfinder, inventory snapshot, hit-result, attack, and block-interaction paths have been updated against the 0.16 API surface. The branch still requires an actual `cargo build` and live-server verification before it can be considered buildable or gameplay-ready. This branch deliberately targets the original 1.21.1 requirement.
 
 ## Build
 
@@ -30,7 +30,7 @@ cp .env.example .env
 cargo build --release
 ```
 
-A successful build has not yet been verified after the 26.1 dependency migration. Treat the runtime as in development until the 26.1 API migration compiles and it joins a live 26.1 server.
+A successful build has not yet been verified after the 1.21.1 dependency pin. Treat the runtime as in development until the 1.21.1 API compatibility compiles and it joins a live 1.21.1 server.
 
 ## Configure
 
@@ -90,6 +90,6 @@ Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guar
 
 ## Important scope boundary
 
-The core action layer now calls Azalea 0.16.0 APIs for chat, stop, follow, look, pathfinding, mining, block interaction, attacking, hotbar selection, jumping, sneaking, and held-item use. Mining and placement are deferred until the bot's crosshair confirms the requested block. These paths are implemented but not yet compile-verified or live-server tested on 26.1; do not treat them as verified gameplay until those checks pass.
+The core action layer now calls Azalea 0.10.3 APIs for chat, stop, follow, look, pathfinding, mining, block interaction, attacking, hotbar selection, jumping, sneaking, and held-item use. Mining and placement are deferred until the bot's crosshair confirms the requested block. These paths are implemented but not yet compile-verified or live-server tested on 26.1; do not treat them as verified gameplay until those checks pass.
 
-The durable specialist task queue supports role-based claims, two-minute leases, heartbeats, and completion, but task claims are not yet automatically tied to in-game execution. Remaining work includes recipe-based crafting, inventory transfers/container management, automatic eating/healing, advanced multi-step construction, autonomous exploration strategy, automated execution/completion of strategic tasks, per-agent role assignment, and full remote API hardening (TLS termination, rate limits, and per-agent authorization). Do not treat this branch as gameplay-ready until a local build and live 26.1 server verification succeed.
+The durable specialist task queue supports role-based claims, two-minute leases, heartbeats, and completion, but task claims are not yet automatically tied to in-game execution. Remaining work includes recipe-based crafting, inventory transfers/container management, automatic eating/healing, advanced multi-step construction, autonomous exploration strategy, automated execution/completion of strategic tasks, per-agent role assignment, and full remote API hardening (TLS termination, rate limits, and per-agent authorization). Do not treat this branch as gameplay-ready until a local build and live 1.21.1 server verification succeed.
