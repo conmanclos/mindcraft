@@ -579,8 +579,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         }
                     }
                 }
-                // Autonomous armor reflex fills empty armor slots from the player's inventory.
-                // It never replaces equipped gear or moves items while another menu is open.
+                // Autonomous armor reflex fills empty slots and replaces only weaker recognized armor.
+                // It preserves equal/better gear and never moves items while another menu is open.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous()) {
                     let should_equip = if let Some(last) = &state.last_auto_armor {
                         let mut last = last.lock().await;
@@ -591,17 +591,36 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false };
                     if should_equip {
                         if let Ok(menu) = bot.menu() {
-                            if let Some((source_slot, target_slot, rank)) = best_empty_armor_slot(&menu) {
+                            if let Some((source_slot, target_slot, rank, needs_swap)) = best_armor_upgrade(&menu) {
                                 if let Ok(inventory) = bot.get_inventory() {
-                                    inventory.shift_click(source_slot);
-                                    bot.wait_updates(2).await;
-                                    let equipped = bot.menu().ok()
-                                        .and_then(|menu| menu.slot(target_slot).map(|item| !item.is_empty()))
-                                        .unwrap_or(false);
-                                    if equipped {
-                                        tracing::info!(username = %bot.username(), source_slot, target_slot, armor_rank = rank, "autonomous survival reflex equipped armor into an empty slot");
+                                    if needs_swap {
+                                        inventory.left_click(source_slot);
+                                        bot.wait_updates(1).await;
+                                        inventory.left_click(target_slot);
+                                        bot.wait_updates(1).await;
+                                        inventory.left_click(source_slot);
+                                        bot.wait_updates(2).await;
                                     } else {
-                                        tracing::warn!(username = %bot.username(), source_slot, target_slot, "armor quick-move was not confirmed by the server");
+                                        inventory.shift_click(source_slot);
+                                        bot.wait_updates(2).await;
+                                    }
+                                    let equipped_rank = bot.menu().ok()
+                                        .and_then(|menu| menu.slot(target_slot).map(|item| {
+                                            if item.is_empty() { None } else {
+                                                armor_item_target(&format!("{:?}", item.kind()))
+                                                    .filter(|(slot, _)| *slot == target_slot)
+                                                    .map(|(_, rank)| rank)
+                                            }
+                                        }))
+                                        .flatten();
+                                    if equipped_rank.is_some_and(|actual| actual >= rank) {
+                                        tracing::info!(username = %bot.username(), source_slot, target_slot, armor_rank = rank, replaced = needs_swap, "autonomous survival reflex equipped a verified armor upgrade");
+                                    } else {
+                                        if needs_swap {
+                                            inventory.left_click(source_slot);
+                                            bot.wait_updates(1).await;
+                                        }
+                                        tracing::warn!(username = %bot.username(), source_slot, target_slot, "armor upgrade was not confirmed by the server");
                                     }
                                 }
                             }
@@ -3177,19 +3196,27 @@ fn armor_item_target(debug_name: &str) -> Option<(usize, u8)> {
     Some((target, rank))
 }
 
-/// Find the highest-tier armor item that can fill an empty armor slot.
-/// Existing equipped armor is never replaced automatically.
-fn best_empty_armor_slot(menu: &azalea_inventory::Menu) -> Option<(usize, usize, u8)> {
+/// Find the strongest recognized armor upgrade. Unknown equipped items and
+/// equal-or-better armor are preserved; weaker recognized armor may be swapped.
+fn best_armor_upgrade(menu: &azalea_inventory::Menu) -> Option<(usize, usize, u8, bool)> {
     menu.try_as_player()?;
     let slots = menu.slots();
-    let mut best: Option<(usize, usize, u8)> = None;
+    let mut best: Option<(usize, usize, u8, bool)> = None;
     for source_slot in menu.player_slots_range() {
         let Some(item) = slots.get(source_slot) else { continue; };
         if item.is_empty() { continue; }
         let Some((target_slot, rank)) = armor_item_target(&format!("{:?}", item.kind())) else { continue; };
-        if slots.get(target_slot).map_or(true, |equipped| !equipped.is_empty()) { continue; }
-        if best.map_or(true, |(_, _, best_rank)| rank > best_rank) {
-            best = Some((source_slot, target_slot, rank));
+        let equipped = slots.get(target_slot)?;
+        let (equipped_rank, needs_swap) = if equipped.is_empty() {
+            (0, false)
+        } else {
+            let Some((equipped_slot, equipped_rank)) = armor_item_target(&format!("{:?}", equipped.kind())) else { continue; };
+            if equipped_slot != target_slot { continue; }
+            (equipped_rank, true)
+        };
+        if rank <= equipped_rank { continue; }
+        if best.map_or(true, |(_, _, best_rank, _)| rank > best_rank) {
+            best = Some((source_slot, target_slot, rank, needs_swap));
         }
     }
     best
