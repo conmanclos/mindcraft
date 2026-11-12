@@ -336,7 +336,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                     if let Some(mut pending) = pending {
                         let hit = bot.get_component::<HitResultComponent>();
                         if let Some(hit) = hit.filter(|hit| !hit.miss && hit.block_pos == pending.position) {
-                            if bot.get_component::<Mining>().is_some() {
+                            if bot.ecs.lock().get::<Mining>(bot.entity).is_some() {
                                 stop_mining(&bot);
                                 pending.attempts = pending.attempts.saturating_add(1);
                                 if pending.attempts >= 20 {
