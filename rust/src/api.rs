@@ -31,6 +31,7 @@ pub struct RuntimeStatus {
     pub command_tx: Mutex<Option<broadcast::Sender<AgentCommand>>>,
     pub world: Mutex<Option<WorldSnapshot>>,
     pub agents: Mutex<HashMap<String, WorldSnapshot>>,
+    pub agent_tokens: Mutex<HashMap<String, String>>,
 }
 
 impl Default for RuntimeStatus {
@@ -41,6 +42,7 @@ impl Default for RuntimeStatus {
             command_tx: Mutex::new(None),
             world: Mutex::new(None),
             agents: Mutex::new(HashMap::new()),
+            agent_tokens: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -129,6 +131,12 @@ struct ExecuteResponse {
 }
 
 #[derive(Serialize)]
+struct AgentCredentialResponse {
+    agent_id: String,
+    token: String,
+}
+
+#[derive(Serialize)]
 struct ClaimResponse {
     task: Option<AgentTask>,
 }
@@ -169,6 +177,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/execute", post(execute))
         .route("/api/goals", get(list_goals).post(create_goal))
         .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
+        .route("/api/agents/:agent_id/credential", post(issue_agent_credential))
         .route("/api/tasks/claim", post(claim_task))
         .route("/api/tasks/:task_id/complete", post(complete_task))
         .route("/api/tasks/:task_id/heartbeat", post(heartbeat_task))
@@ -498,22 +507,63 @@ async fn list_goal_tasks(State(state): State<ApiState>, headers: HeaderMap, Path
     Ok(Json(tasks))
 }
 
-async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
+async fn issue_agent_credential(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(agent_id): Path<String>,
+) -> Result<Json<AgentCredentialResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if !valid_agent_id(&agent_id) {
+        return Err((StatusCode::BAD_REQUEST, "agent ID must be 1-64 safe ASCII characters".into()));
+    }
+    if !state.config.minecraft_accounts.iter().any(|name| name.eq_ignore_ascii_case(&agent_id)) {
+        return Err((StatusCode::BAD_REQUEST, "agent ID must match a configured Minecraft team member".into()));
+    }
+    let token = uuid::Uuid::new_v4().to_string();
+    let mut tokens = state.status.agent_tokens.lock().await;
+    tokens.insert(agent_id.clone(), token.clone());
+    Ok(Json(AgentCredentialResponse { agent_id, token }))
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers.get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+}
+
+fn constant_time_equal(left: &str, right: &str) -> bool {
+    left.as_bytes().len() == right.as_bytes().len()
+        && bool::from(left.as_bytes().ct_eq(right.as_bytes()))
+}
+
+async fn authorize_agent(state: &ApiState, headers: &HeaderMap, agent_id: &str) -> Result<(), StatusCode> {
+    if authorize(state, headers).is_ok() {
+        return Ok(());
+    }
+    let provided = bearer_token(headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let tokens = state.status.agent_tokens.lock().await;
+    let expected = tokens.get(agent_id).ok_or(StatusCode::UNAUTHORIZED)?;
+    if constant_time_equal(provided, expected) { Ok(()) } else { Err(StatusCode::UNAUTHORIZED) }
+}
+
+async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
     let roles = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
     if !valid_agent_id(&request.agent_id) || !roles.contains(&request.role.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens, and role must be supported".into()));
     }
+    authorize_agent(&state, &headers, &request.agent_id).await
+        .map_err(|code| (code, "unauthorized for this agent".into()))?;
     let task = state.store.claim_task(&request.agent_id, &request.role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(ClaimResponse { task }))
 }
 
 async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
     if !valid_agent_id(&request.agent_id) {
         return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
+    authorize_agent(&state, &headers, &request.agent_id).await
+        .map_err(|code| (code, "unauthorized for this agent".into()))?;
     let renewed = state.store.renew_task_lease(task_id, &request.agent_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if !renewed {
@@ -523,10 +573,11 @@ async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(
 }
 
 async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
-    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
     if !valid_agent_id(&request.agent_id) {
         return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
+    authorize_agent(&state, &headers, &request.agent_id).await
+        .map_err(|code| (code, "unauthorized for this agent".into()))?;
     let completed = state.store.complete_task(task_id, &request.agent_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if !completed {
@@ -541,12 +592,8 @@ fn valid_agent_id(value: &str) -> bool {
 }
 
 fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
-    let provided = headers.get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    if provided.as_bytes().len() != state.config.api_token.as_bytes().len()
-        || !bool::from(provided.as_bytes().ct_eq(state.config.api_token.as_bytes())) {
+    let provided = bearer_token(headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    if !constant_time_equal(provided, &state.config.api_token) {
         return Err(StatusCode::UNAUTHORIZED);
     }
     Ok(())
@@ -565,6 +612,13 @@ mod tests {
             reason: "test".into(),
             risk: "low".into(),
         }
+    }
+
+    #[test]
+    fn agent_token_comparison_is_constant_time_and_requires_exact_match() {
+        assert!(constant_time_equal("agent-secret", "agent-secret"));
+        assert!(!constant_time_equal("agent-secret", "other-secret"));
+        assert!(!constant_time_equal("agent-secret", "agent-secret-longer"));
     }
 
     #[test]
