@@ -78,6 +78,10 @@ impl Store {
     pub fn append_message(&self, role: &str, content: &str) -> Result<()> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute("INSERT INTO conversation(role, content) VALUES (?1, ?2)", params![role, content])?;
+        connection.execute(
+            "DELETE FROM conversation WHERE id <= (SELECT COALESCE(MAX(id), 0) - 10000 FROM conversation)",
+            [],
+        )?;
         Ok(())
     }
 
