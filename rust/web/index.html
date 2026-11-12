@@ -166,7 +166,7 @@ async function refreshReviewQueue(){
   for(const task of reviewTasks){
     const option=document.createElement("option");
     option.value=String(task.id);
-    option.textContent="#"+task.id+" · "+(task.assigned_agent||"agent")+" · "+task.role+" · "+task.description;
+    option.textContent="#"+task.id+" · "+(task.assigned_agent||"agent")+" · "+task.role+" · attempts "+task.attempts+"/5 · "+task.description;
     select.appendChild(option);
   }
   $("loadReview").disabled=false;
@@ -182,7 +182,7 @@ $("loadReview").onclick=()=>{
   $("completeTask").disabled=false;
   $("releaseTask").disabled=false;
   $("claimTask").disabled=true;
-  $("taskResult").textContent="Review task #"+task.id+" · "+task.role+" · assigned to "+task.assigned_agent+"\n"+task.description+"\nVerify the in-game result before completing. Release to return it to the pending queue.";
+  $("taskResult").textContent="Review task #"+task.id+" · "+task.role+" · assigned to "+task.assigned_agent+"\n"+task.description+"\nAttempts: "+task.attempts+"/5"+(task.last_error?"\nLast failure: "+task.last_error:"")+"\nVerify the in-game result before completing. Release to return it to the pending queue.";
 };
 $("claimTask").onclick=async()=>{
   try{
