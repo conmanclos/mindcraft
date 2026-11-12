@@ -5,7 +5,7 @@ Mindcraft Desktop is a Tauri 2 macOS application shell around the native Rust Mi
 ## User experience
 
 1. Open the Mindcraft app.
-2. Enter the Minecraft server and choose Microsoft or offline-mode authentication.
+2. Enter the Minecraft server and choose Microsoft authentication or **Cracked / Offline Mode**. Offline mode lets the bot join without a second paid Minecraft account, but only on servers whose owners have explicitly enabled offline/cracked connections (`online-mode=false`). It does not bypass authentication on online-mode servers.
 3. Select an AI provider, model, and API key (the key is stored in macOS Keychain).
 4. Choose Assisted, Balanced, or Autonomous mode.
 5. Save setup and click **Run Mindcraft**.
