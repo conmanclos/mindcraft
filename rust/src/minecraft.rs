@@ -309,13 +309,14 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         crate::reflex::ReflexAction::WarnLowFood => {
                             if should_warn {
                                 if state.mode == "autonomous" {
+                                    let is_primary = state.is_primary;
                                     let mut eating_bot = bot.clone();
                                     tokio::spawn(async move {
                                         match eat_food(&mut eating_bot).await {
                                             Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
                                             Err(error) => {
                                                 tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
-                                                if state.is_primary {
+                                                if is_primary {
                                                     eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
                                                 }
                                             }
