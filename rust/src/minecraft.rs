@@ -330,9 +330,15 @@ fn start_specialist_task(
             };
             tracing::info!(agent = %agent_id, role = %role, task_id = task.id, "specialist claimed durable task");
 
+            let world_context = status.agents.lock().await.get(&agent_id).cloned()
+                .map(|world| format!(
+                    " Current state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
+                    world.position, world.health, world.food, world.saturation, world.inventory
+                ))
+                .unwrap_or_default();
             let prompt = format!(
-                "You are the {} specialist. Complete this assigned task with one safe, concrete Minecraft action. Do not claim completion. If it cannot be performed as one supported action, do not improvise. Assigned task: {}",
-                role, task.description
+                "You are the {} specialist. Complete this assigned task with one safe, concrete Minecraft action. Use the supplied live state when selecting coordinates or materials. Do not claim completion. If it cannot be performed as one supported action, do not improvise. Assigned task: {}{}",
+                role, task.description, world_context
             );
             let planned = match tokio::time::timeout(Duration::from_secs(55), brain.plan(&prompt)).await {
                 Ok(Ok(action)) => action,
@@ -348,6 +354,13 @@ fn start_specialist_task(
                 }
             };
 
+            let still_healthy = status.agents.lock().await.get(&agent_id)
+                .is_some_and(|world| world.health.is_finite() && world.health > 6.0);
+            if !still_healthy {
+                tracing::warn!(agent = %agent_id, task_id = task.id, "specialist action withheld because current health telemetry is missing or critical");
+                store.release_task(task.id, &agent_id)?;
+                return Ok(());
+            }
             if let Err(error) = brain.authorize_action(&planned, false) {
                 tracing::info!(agent = %agent_id, task_id = task.id, %error, "specialist task requires a human-approved action; returning it to the queue");
                 store.release_task(task.id, &agent_id)?;
