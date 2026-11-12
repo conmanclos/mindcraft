@@ -422,8 +422,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 return;
                             };
                             let chunk_storage = world.read().chunks.clone();
-                            client.goto_with_opts(ReachBlockPosGoal::new(position, chunk_storage), PathfinderOpts::new().allow_mining(false)).await;
-                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                            if !goto_cancellable(
+                                &client,
+                                ReachBlockPosGoal::new(position, chunk_storage),
+                                &generation_state,
+                                generation,
+                            ).await {
                                 return;
                             }
                             if !client.exists() || !client.is_goto_target_reached() {
@@ -491,8 +495,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 return;
                             }
                             let chunk_storage = world.read().chunks.clone();
-                            client.goto_with_opts(ReachBlockPosGoal::new(support, chunk_storage), PathfinderOpts::new().allow_mining(false)).await;
-                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
+                            if !goto_cancellable(
+                                &client,
+                                ReachBlockPosGoal::new(support, chunk_storage),
+                                &generation_state,
+                                generation,
+                            ).await {
+                                return;
+                            }
                             if !client.exists() || !client.is_goto_target_reached() {
                                 client.chat("I couldn't reach the support block safely.");
                                 return;
@@ -570,11 +580,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 return;
                             }
                             let chunk_storage = world.read().chunks.clone();
-                            client.goto_with_opts(
+                            if !goto_cancellable(
+                                &client,
                                 ReachBlockPosGoal::new(position, chunk_storage),
-                                PathfinderOpts::new().allow_mining(false),
-                            ).await;
-                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                &generation_state,
+                                generation,
+                            ).await {
                                 return;
                             }
                             if !client.exists() || !client.is_goto_target_reached() {
@@ -732,6 +743,41 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
     Ok(())
 }
 
+/// Pathfind without allowing block destruction, while remaining cancellable by newer commands.
+async fn goto_cancellable<G>(
+    client: &Client,
+    goal: G,
+    generation_state: &Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool
+where
+    G: azalea::pathfinder::goals::Goal + 'static,
+{
+    let mut ticks = client.get_tick_broadcaster();
+    client.start_goto_with_opts(goal, PathfinderOpts::new().allow_mining(false));
+    client.wait_updates(1).await;
+
+    for _ in 0..600 {
+        if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+            || !client.exists()
+        {
+            return false;
+        }
+        if client.is_goto_target_reached() {
+            return true;
+        }
+        if ticks.recv().await.is_err() {
+            return false;
+        }
+    }
+
+    if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+        client.stop_pathfinding();
+        client.walk(WalkDirection::None);
+    }
+    false
+}
+
 /// Abort the current server-side block-destroy action when a newer command supersedes mining.
 fn cancel_active_mining(client: &Client) {
     let mut ecs = client.ecs.write();
@@ -797,10 +843,9 @@ async fn execute_craft(
                 return;
             }
             let chunk_storage = world.read().chunks.clone();
-            bot.goto_with_opts(
-                ReachBlockPosGoal::new(position, chunk_storage),
-                PathfinderOpts::new().allow_mining(false),
-            ).await;
+            if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+                return;
+            }
             if cancelled() { return; }
             if !bot.exists() || !bot.is_goto_target_reached() {
                 bot.chat("I couldn't reach the crafting table without breaking blocks.");
