@@ -10,7 +10,7 @@ main{max-width:980px;margin:40px auto;padding:0 20px}.top{display:flex;justify-c
 h1{font-size:25px;margin:0}.muted{color:var(--muted)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:18px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.stat{padding:12px;background:#12151a;border:1px solid var(--line);border-radius:9px}
 .stat b{display:block;font-size:18px;margin-top:4px}label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
-input,textarea,button{font:inherit;color:var(--text);background:#11141a;border:1px solid var(--line);border-radius:8px;padding:10px}
+input,textarea,button,select{font:inherit;color:var(--text);background:#11141a;border:1px solid var(--line);border-radius:8px;padding:10px}
 input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{cursor:pointer;background:#24415c;border-color:#365d80}button.secondary{background:#252a32;border-color:var(--line)}button:hover{filter:brightness(1.15)}
 #log{white-space:pre-wrap;min-height:100px;max-height:340px;overflow:auto;background:#101318;padding:12px;border-radius:8px;margin:12px 0}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row button{white-space:nowrap}
@@ -32,9 +32,17 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <label for="message">Message</label><textarea id="message" placeholder="Ask Mindcraft a question or mention Mindcraft in Minecraft chat..."></textarea>
 <div class="row"><button id="send">Send message</button><button id="plan" class="secondary">Propose game action</button><button id="execute" class="secondary" disabled>Approve & execute</button><span class="muted" id="hint">Review a proposal before approving it.</span></div>
 <div id="proposal"></div></section>
+<section class="panel"><h2>Strategic goals & specialist agents</h2>
+<label for="goal">Long-term objective</label><textarea id="goal" placeholder="Example: establish a safe starter base near spawn and gather food and wood."></textarea>
+<div class="row"><button id="createGoal">Decompose goal into tasks</button><span class="muted">Tasks are saved in SQLite and claimed by specialist worker IDs.</span></div>
+<div id="goalResult" class="muted" style="white-space:pre-wrap;margin-top:12px"></div>
+<div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Agent ID</label><input id="agentId" value="scout-1"></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
+<div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button></div>
+<div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
+</section>
 </main>
 <script>
-const $=id=>document.getElementById(id);let token="";let lastPlan=null;
+const $=id=>document.getElementById(id);let token="";let lastPlan=null;let currentTask=null;
 function log(s){$("log").textContent += "\n"+s;$("log").scrollTop=$("log").scrollHeight}
 async function api(path,body){const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||data.message||("HTTP "+r.status));return data}
 async function connect(){token=$("token").value.trim();if(!token)throw Error("Enter the API token printed in the terminal.");const s=await api("/api/status");$("mc").textContent=s.minecraft_connected?"Connected":"Not connected";$("mode").textContent=s.autonomy;$("provider").textContent=s.provider;$("model").textContent=s.model;$("health").textContent=s.world?s.world.health+"/20":"Unknown";$("position").textContent=s.world?s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";$("connection").textContent="Connected to local runtime"}
