@@ -54,6 +54,8 @@ struct BotState {
     explore_step: Option<Arc<AtomicUsize>>,
     last_explore_repath: Option<Arc<Mutex<Instant>>>,
     mine_generation: Option<Arc<AtomicUsize>>,
+    task_worker_busy: Option<Arc<AtomicBool>>,
+    last_task_poll: Option<Arc<Mutex<Instant>>>,
     trusted_chat_players: Option<Arc<HashSet<String>>>,
     role: Option<String>,
     is_primary: bool,
@@ -304,10 +306,85 @@ fn make_state(
         explore_step: Some(Arc::new(AtomicUsize::new(0))),
         last_explore_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(20))))),
         mine_generation: Some(Arc::new(AtomicUsize::new(0))),
+        task_worker_busy: Some(Arc::new(AtomicBool::new(false))),
+        last_task_poll: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(15))))),
         trusted_chat_players: Some(trusted_chat_players),
         role: Some(role),
         is_primary,
     }
+}
+
+fn start_specialist_task(
+    bot: Client,
+    brain: Arc<Brain>,
+    store: Arc<Store>,
+    status: Arc<RuntimeStatus>,
+    role: String,
+    busy: Arc<AtomicBool>,
+) {
+    tokio::task::spawn_local(async move {
+        let agent_id = bot.username();
+        let result = async {
+            let Some(task) = store.claim_task(&agent_id, &role)? else {
+                return Ok::<(), anyhow::Error>(());
+            };
+            tracing::info!(agent = %agent_id, role = %role, task_id = task.id, "specialist claimed durable task");
+
+            let prompt = format!(
+                "You are the {} specialist. Complete this assigned task with one safe, concrete Minecraft action. Do not claim completion. If it cannot be performed as one supported action, do not improvise. Assigned task: {}",
+                role, task.description
+            );
+            let planned = match tokio::time::timeout(Duration::from_secs(55), brain.plan(&prompt)).await {
+                Ok(Ok(action)) => action,
+                Ok(Err(error)) => {
+                    tracing::warn!(agent = %agent_id, task_id = task.id, %error, "specialist could not plan its task");
+                    store.release_task(task.id, &agent_id)?;
+                    return Ok(());
+                }
+                Err(_) => {
+                    tracing::warn!(agent = %agent_id, task_id = task.id, "specialist task planning timed out");
+                    store.release_task(task.id, &agent_id)?;
+                    return Ok(());
+                }
+            };
+
+            if let Err(error) = brain.authorize_action(&planned, false) {
+                tracing::info!(agent = %agent_id, task_id = task.id, %error, "specialist task requires a human-approved action; returning it to the queue");
+                store.release_task(task.id, &agent_id)?;
+                return Ok(());
+            }
+            let command = match crate::api::command_from_action(planned) {
+                Ok(command) => command,
+                Err((_, error)) => {
+                    tracing::warn!(agent = %agent_id, task_id = task.id, %error, "specialist task produced an unsupported executor payload");
+                    store.release_task(task.id, &agent_id)?;
+                    return Ok(());
+                }
+            };
+            let sender = status.command_tx.lock().await.clone();
+            let Some(sender) = sender else {
+                store.release_task(task.id, &agent_id)?;
+                return Ok(());
+            };
+            if sender.send(crate::minecraft::AgentCommand {
+                target: Some(agent_id.clone()),
+                command,
+            }).is_err() {
+                store.release_task(task.id, &agent_id)?;
+                return Ok(());
+            }
+            if !store.mark_task_for_review(task.id, &agent_id)? {
+                tracing::error!(agent = %agent_id, task_id = task.id, "action was queued but task could not transition to review");
+            } else {
+                tracing::info!(agent = %agent_id, task_id = task.id, "specialist action queued; task awaits result verification");
+            }
+            Ok(())
+        }.await;
+        if let Err(error) = result {
+            tracing::error!(agent = %bot.username(), role = %role, %error, "specialist task worker failed");
+        }
+        busy.store(false, Ordering::Release);
+    });
 }
 
 async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> {
@@ -349,6 +426,32 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if bot.exists() {
                 let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) else { return Ok(()); };
                 critical_health = health.is_finite() && health <= 6.0;
+
+                // Each specialist bot polls its own durable role queue while in
+                // Autonomous mode. Work is planned off the tick handler so model
+                // latency cannot stall movement, keep-alives, or survival reflexes.
+                if !critical_health && state.brain.as_ref().is_some_and(|brain| brain.is_autonomous()) {
+                    let should_poll = if let Some(last) = &state.last_task_poll {
+                        let mut last = last.lock().await;
+                        if last.elapsed() >= Duration::from_secs(10) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_poll {
+                        if let (Some(busy), Some(brain), Some(store), Some(status), Some(role)) = (
+                            &state.task_worker_busy, &state.brain, &state.store, &state.status, &state.role
+                        ) {
+                            if busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
+                                start_specialist_task(
+                                    bot.clone(), brain.clone(), store.clone(), status.clone(),
+                                    role.clone(), busy.clone(),
+                                );
+                            }
+                        }
+                    }
+                }
+
                 if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
                         let mut last = last.lock().await;
