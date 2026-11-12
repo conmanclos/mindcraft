@@ -60,7 +60,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, goto, mine, place, deposit, equip, jump, sneak, use_item, craft, attack. Do not invent unsupported crafting, inventory-drop, status, or inspection actions. sneak target must be true or false. use_item means right-click the block currently under the crosshair. craft target must be planks, sticks, or crafting_table. deposit target must be container coordinates x,y,z; the bot preserves its hotbar. attack target must be a visible online Minecraft player username.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, goto, mine, place, deposit, withdraw, equip, jump, sneak, use_item, craft, attack. Do not invent unsupported crafting, inventory-drop, status, or inspection actions. sneak target must be true or false. use_item means right-click the block currently under the crosshair. craft target must be planks, sticks, or crafting_table. deposit target must be container coordinates x,y,z; the bot preserves its hotbar. withdraw target must be x,y,z,item_id and only moves matching stacks from that container. attack target must be a visible online Minecraft player username.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
@@ -100,9 +100,9 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "deposit", "equip", "jump", "sneak", "use_item", "craft", "attack", "drop"];
+        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "deposit", "withdraw", "equip", "jump", "sneak", "use_item", "craft", "attack", "drop"];
         if !supported.contains(&action_name.as_str()) {
-            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, jump, sneak, block-targeted item use, basic crafting, inventory deposit, and player-targeted attack", action.action);
+            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, jump, sneak, block-targeted item use, basic crafting, inventory deposit/withdrawal, and player-targeted attack", action.action);
         }
         if !["low", "medium", "high"].contains(&action.risk.to_lowercase().as_str()) {
             bail!("risk must be low, medium, or high");
@@ -117,7 +117,7 @@ impl Brain {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
         let safe = ["look", "follow", "stop", "say", "goto", "jump", "sneak"];
-        let destructive = ["attack", "mine", "place", "drop", "equip", "use_item", "craft", "deposit"];
+        let destructive = ["attack", "mine", "place", "drop", "equip", "use_item", "craft", "deposit", "withdraw"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
