@@ -328,6 +328,19 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 target_lock.lock().await.clone()
             } else { None };
             if let Some(username) = follow_target {
+                if !bot.is_goto_target_reached() {
+                    let follow_stuck = if let Some(last) = &state.last_follow_repath {
+                        last.lock().await.elapsed() >= Duration::from_secs(60)
+                    } else { false };
+                    if follow_stuck {
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        if let Some(last) = &state.last_follow_repath {
+                            *last.lock().await = instant_before(Duration::from_secs(5));
+                        }
+                        tracing::warn!(username = %bot.username(), target = %username, "follow route exceeded 60 seconds; recalculating toward the player's latest position");
+                    }
+                }
                 let should_repath = if let Some(cooldown) = &state.last_follow_repath {
                     let mut last = cooldown.lock().await;
                     if last.elapsed() >= Duration::from_millis(1200) {
