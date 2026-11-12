@@ -40,6 +40,7 @@ pub enum BotCommand {
     BuildMixed(Vec<BuildBlock>),
     Equip(u8),
     OptimizeArmor,
+    InventorySort,
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>, Option<String>),
     ContainerDeposit(i32, i32, i32, Option<String>),
@@ -1299,6 +1300,16 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             execute_armor_upgrade(client).await;
+                        });
+                    }
+                    BotCommand::InventorySort => {
+                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_inventory_sort(client).await;
                         });
                     }
                     BotCommand::Explore(radius) => {
@@ -2773,6 +2784,112 @@ async fn execute_build(
     }
 }
 
+
+
+/// Sort the 27 main-inventory slots by normalized registry item name.
+/// The hotbar, armor, and offhand are deliberately untouched. Only whole-stack
+/// swaps are used; same-item stacks are equivalent and are never merged.
+async fn execute_inventory_sort(bot: Client) {
+    let Ok(menu) = bot.menu() else {
+        bot.chat("I couldn't inspect the player inventory before sorting.");
+        return;
+    };
+    if menu.try_as_player().is_none() {
+        bot.chat("Close the open container before sorting your inventory.");
+        return;
+    }
+    let slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
+    if slots.is_empty() {
+        bot.chat("The player inventory layout is unavailable; nothing was moved.");
+        return;
+    }
+    let snapshot = menu.slots();
+    let key_for_slot = |slot: usize| -> String {
+        snapshot.get(slot).map(|item| {
+            if item.is_empty() { String::new() } else {
+                format!("{:?}", item.kind()).chars()
+                    .filter(|character| character.is_ascii_alphanumeric())
+                    .flat_map(char::to_lowercase)
+                    .collect()
+            }
+        }).unwrap_or_default()
+    };
+    let mut current = slots.iter().map(|slot| key_for_slot(*slot)).collect::<Vec<_>>();
+    let mut desired = current.iter().filter(|key| !key.is_empty()).cloned().collect::<Vec<_>>();
+    desired.sort();
+    desired.resize(slots.len(), String::new());
+    if current == desired {
+        bot.chat("Main inventory is already sorted. Hotbar, armor, and offhand were left unchanged.");
+        return;
+    }
+    let Ok(inventory) = bot.get_inventory() else {
+        bot.chat("I couldn't open the player inventory for sorting.");
+        return;
+    };
+    for target_index in 0..slots.len() {
+        if current[target_index] == desired[target_index] { continue; }
+        let Some(source_index) = (target_index + 1..slots.len())
+            .find(|index| current[*index] == desired[target_index]) else {
+            bot.chat("Inventory sorting stopped because the live slot layout changed; no further slots were moved.");
+            return;
+        };
+        let source_slot = slots[source_index];
+        let target_slot = slots[target_index];
+        inventory.left_click(source_slot);
+        bot.wait_updates(1).await;
+        inventory.left_click(target_slot);
+        bot.wait_updates(1).await;
+        if !current[target_index].is_empty() {
+            inventory.left_click(source_slot);
+            bot.wait_updates(2).await;
+            current.swap(target_index, source_index);
+        } else {
+            bot.wait_updates(2).await;
+            current[target_index] = current[source_index].clone();
+            current[source_index].clear();
+        }
+        let Ok(live_menu) = bot.menu() else {
+            bot.chat("Inventory sorting paused because the player inventory closed. Check the main inventory before retrying.");
+            return;
+        };
+        if live_menu.try_as_player().is_none() {
+            bot.chat("Inventory sorting paused because a container opened. Check the main inventory before retrying.");
+            return;
+        }
+        let live_slots = live_menu.slots();
+        let live_key = |slot: usize| -> String {
+            live_slots.get(slot).map(|item| {
+                if item.is_empty() { String::new() } else {
+                    format!("{:?}", item.kind()).chars()
+                        .filter(|character| character.is_ascii_alphanumeric())
+                        .flat_map(char::to_lowercase)
+                        .collect()
+                }
+            }).unwrap_or_default()
+        };
+        if live_key(target_slot) != current[target_index] || live_key(source_slot) != current[source_index] {
+            bot.chat("The server did not confirm an inventory swap. Sorting stopped; inspect the main inventory before continuing.");
+            return;
+        }
+    }
+    let Ok(final_menu) = bot.menu() else {
+        bot.chat("Sorting finished, but I couldn't read back the final inventory state.");
+        return;
+    };
+    let final_keys = slots.iter().map(|slot| {
+        final_menu.slot(*slot).map(|item| if item.is_empty() { String::new() } else {
+            format!("{:?}", item.kind()).chars()
+                .filter(|character| character.is_ascii_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect()
+        }).unwrap_or_default()
+    }).collect::<Vec<_>>();
+    if final_keys == desired {
+        bot.chat("Main inventory sorted and server-confirmed. Hotbar, armor, and offhand were preserved.");
+    } else {
+        bot.chat("Inventory sorting ended with a mismatch. Inspect the main inventory before issuing another sort.");
+    }
+}
 
 async fn execute_armor_upgrade(bot: Client) {
     let Ok(menu) = bot.menu() else {
