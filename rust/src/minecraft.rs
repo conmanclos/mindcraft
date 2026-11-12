@@ -40,6 +40,7 @@ struct BotState {
     connected: Option<Arc<AtomicBool>>,
     last_reflex: Option<Arc<Mutex<Instant>>>,
     last_auto_eat: Option<Arc<Mutex<Instant>>>,
+    last_auto_armor: Option<Arc<Mutex<Instant>>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
@@ -144,6 +145,7 @@ fn make_state(
         connected: Some(Arc::new(AtomicBool::new(false))),
         last_reflex: Some(last_reflex),
         last_auto_eat: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
+        last_auto_armor: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
@@ -224,6 +226,35 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             };
                             status.agents.lock().await.insert(snapshot.agent.clone(), snapshot.clone());
                             if state.is_primary { *status.world.lock().await = Some(snapshot); }
+                        }
+                    }
+                }
+                // Autonomous armor reflex fills empty armor slots from the player's inventory.
+                // It never replaces equipped gear or moves items while another menu is open.
+                if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous()) {
+                    let should_equip = if let Some(last) = &state.last_auto_armor {
+                        let mut last = last.lock().await;
+                        if last.elapsed() >= Duration::from_secs(30) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_equip {
+                        if let Ok(menu) = bot.menu() {
+                            if let Some((source_slot, target_slot, rank)) = best_empty_armor_slot(&menu) {
+                                if let Ok(inventory) = bot.get_inventory() {
+                                    inventory.shift_click(source_slot);
+                                    bot.wait_updates(2).await;
+                                    let equipped = bot.menu().ok()
+                                        .and_then(|menu| menu.slot(target_slot).map(|item| !item.is_empty()))
+                                        .unwrap_or(false);
+                                    if equipped {
+                                        tracing::info!(username = %bot.username(), source_slot, target_slot, armor_rank = rank, "autonomous survival reflex equipped armor into an empty slot");
+                                    } else {
+                                        tracing::warn!(username = %bot.username(), source_slot, target_slot, "armor quick-move was not confirmed by the server");
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1693,6 +1724,81 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
         name.ends_with("door") && !name.ends_with("trapdoor")
     } else {
         name.ends_with(&selector)
+    }
+}
+
+/// Return an armor equipment slot and material score for a recognized armor item.
+fn armor_item_target(debug_name: &str) -> Option<(usize, u8)> {
+    let compact = |value: &str| -> String {
+        value.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let name = compact(debug_name);
+    let target = if name.ends_with("helmet") {
+        5
+    } else if name.ends_with("chestplate") {
+        6
+    } else if name.ends_with("leggings") {
+        7
+    } else if name.ends_with("boots") {
+        8
+    } else {
+        return None;
+    };
+    let rank = if name.contains("netherite") {
+        6
+    } else if name.contains("diamond") {
+        5
+    } else if name.contains("iron") {
+        4
+    } else if name.contains("chainmail") {
+        3
+    } else if name.contains("golden") || name.contains("gold") {
+        2
+    } else if name.contains("leather") {
+        1
+    } else if name.contains("turtle") && target == 5 {
+        2
+    } else {
+        return None;
+    };
+    Some((target, rank))
+}
+
+/// Find the highest-tier armor item that can fill an empty armor slot.
+/// Existing equipped armor is never replaced automatically.
+fn best_empty_armor_slot(menu: &azalea_inventory::Menu) -> Option<(usize, usize, u8)> {
+    menu.try_as_player()?;
+    let slots = menu.slots();
+    let mut best: Option<(usize, usize, u8)> = None;
+    for source_slot in menu.player_slots_range() {
+        let Some(item) = slots.get(source_slot) else { continue; };
+        if item.is_empty() { continue; }
+        let Some((target_slot, rank)) = armor_item_target(&format!("{:?}", item.kind())) else { continue; };
+        if slots.get(target_slot).map_or(true, |equipped| !equipped.is_empty()) { continue; }
+        if best.map_or(true, |(_, _, best_rank)| rank > best_rank) {
+            best = Some((source_slot, target_slot, rank));
+        }
+    }
+    best
+}
+
+#[cfg(test)]
+mod armor_reflex_tests {
+    use super::armor_item_target;
+
+    #[test]
+    fn armor_classifier_maps_only_known_armor_and_ranks_materials() {
+        assert_eq!(armor_item_target("DiamondHelmet"), Some((5, 5)));
+        assert_eq!(armor_item_target("NetheriteChestplate"), Some((6, 6)));
+        assert_eq!(armor_item_target("IronLeggings"), Some((7, 4)));
+        assert_eq!(armor_item_target("ChainmailBoots"), Some((8, 3)));
+        assert_eq!(armor_item_target("TurtleHelmet"), Some((5, 2)));
+        assert_eq!(armor_item_target("DiamondSword"), None);
+        assert_eq!(armor_item_target("Elytra"), None);
+        assert_eq!(armor_item_target("UnknownItem"), None);
     }
 }
 
