@@ -1,4 +1,4 @@
-use crate::{brain::{Brain, PlannedAction}, config::Config, store::Store};
+use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::BotCommand, store::Store};
 use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
@@ -7,13 +7,21 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{sync::{atomic::AtomicBool, Arc}, time::Duration};
+use std::sync::{atomic::AtomicBool, Arc};
 use subtle::ConstantTimeEq;
+use tokio::sync::{mpsc, Mutex};
 use tower_http::trace::TraceLayer;
+use std::time::Duration;
 
-#[derive(Default)]
 pub struct RuntimeStatus {
     pub minecraft_connected: AtomicBool,
+    pub command_tx: Mutex<Option<mpsc::Sender<BotCommand>>>,
+}
+
+impl Default for RuntimeStatus {
+    fn default() -> Self {
+        Self { minecraft_connected: AtomicBool::new(false), command_tx: Mutex::new(None) }
+    }
 }
 
 #[derive(Clone)]
@@ -30,10 +38,19 @@ pub struct ChatRequest { pub message: String }
 #[derive(Serialize)]
 struct ChatResponse { reply: String }
 
+#[derive(Deserialize)]
+struct ExecuteRequest { action: PlannedAction }
+
 #[derive(Serialize)]
 struct PlanResponse {
     proposed_action: PlannedAction,
     execution: &'static str,
+}
+
+#[derive(Serialize)]
+struct ExecuteResponse {
+    accepted: bool,
+    message: &'static str,
 }
 
 #[derive(Serialize)]
@@ -55,6 +72,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/status", get(status_handler))
         .route("/api/chat", post(chat))
         .route("/api/plan", post(plan))
+        .route("/api/execute", post(execute))
         .with_state(state)
         .layer(TraceLayer::new_for_http());
 
@@ -92,7 +110,11 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     }
     state.store.append_message("user", &request.message)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&request.message))
+    let history = state.store.recent_messages(12)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let context = history.into_iter().map(|(role, text)| format!("{role}: {text}")).collect::<Vec<_>>().join("\n");
+    let prompt = format!("Recent conversation:\n{context}\n\nRespond to the latest user message.");
+    let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     state.store.append_message("assistant", &reply)
@@ -108,7 +130,35 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&request.message))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
-    Ok(Json(PlanResponse { proposed_action, execution: "not_executed; awaiting a live game action adapter" }))
+    Ok(Json(PlanResponse { proposed_action, execution: "proposal only; explicitly approve it to execute" }))
+}
+
+async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ExecuteRequest>) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    state.brain.authorize_action(&request.action)
+        .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+
+    let command = match request.action.action.to_lowercase().as_str() {
+        "say" => BotCommand::Say(request.action.target.unwrap_or(request.action.reason)),
+        "stop" => BotCommand::Stop,
+        "goto" | "mine" => {
+            let coordinates = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
+            let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z".into()))?;
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320 || parsed.iter().any(|v| v.abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "coordinates outside supported world bounds".into()));
+            }
+            let pos = (parsed[0], parsed[1], parsed[2]);
+            if request.action.action.eq_ignore_ascii_case("goto") { BotCommand::Goto(pos.0, pos.1, pos.2) }
+            else { BotCommand::Mine(pos.0, pos.1, pos.2) }
+        }
+        other => return Err((StatusCode::NOT_IMPLEMENTED, format!("executor for '{other}' is not available yet"))),
+    };
+
+    let sender = state.status.command_tx.lock().await.clone()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
+    sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
+    Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
 }
 
 fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
