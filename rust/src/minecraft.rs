@@ -643,9 +643,9 @@ async fn open_target_container(bot: &mut Client, position: BlockPos) -> Result<C
     }
 }
 
-async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize> {
+async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<u32> {
     let handle = open_target_container(bot, position).await?;
-    let mut moved_stacks = 0usize;
+    let mut moved_items = 0u32;
 
     for _ in 0..36 {
         let menu = handle.menu()
@@ -668,13 +668,13 @@ async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize
             .ok_or_else(|| anyhow::anyhow!("container closed during inventory transfer"))?;
         let after = inventory_slot_count(&updated, source as u16);
         if after < before {
-            moved_stacks += 1;
+            moved_items = moved_items.saturating_add(before - after);
         } else {
             break;
         }
     }
 
-    Ok(moved_stacks)
+    Ok(moved_items)
 }
 
 fn normalize_item_name(debug_name: &str) -> String {
