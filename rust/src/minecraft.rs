@@ -53,6 +53,7 @@ pub enum BotCommand {
     Sneak(bool),
     UseItem,
     Craft(String),
+    Deposit(i32, i32, i32),
 }
 
 #[derive(Clone, Component, Default)]
@@ -544,6 +545,19 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             }
                         });
                     }
+                    BotCommand::Deposit(x, y, z) => {
+                        let mut storage_bot = bot.clone();
+                        tokio::spawn(async move {
+                            let position = BlockPos::new(x, y, z);
+                            match deposit_inventory(&mut storage_bot, position).await {
+                                Ok(count) => storage_bot.chat(&format!("Stored {count} inventory stacks in the chest.")),
+                                Err(error) => {
+                                    tracing::warn!(%error, ?position, "inventory deposit failed");
+                                    storage_bot.chat("I couldn't safely deposit items into that container.");
+                                }
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -604,6 +618,52 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
     Ok(())
 }
 
+
+
+async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize> {
+    let mut ticks = bot.get_tick_broadcaster();
+    bot.look_at(position.center());
+    wait_ticks(&mut ticks, 4).await?;
+
+    let hit = bot.get_component::<HitResultComponent>()
+        .ok_or_else(|| anyhow::anyhow!("crosshair target is unavailable"))?;
+    if hit.miss || hit.block_pos != position {
+        anyhow::bail!("the requested container is not under the crosshair");
+    }
+
+    let handle = bot.open_container_at(position).await
+        .ok_or_else(|| anyhow::anyhow!("no openable container exists at the requested position"))?;
+    let mut moved_stacks = 0usize;
+
+    for _ in 0..36 {
+        let menu = handle.menu()
+            .ok_or_else(|| anyhow::anyhow!("container closed during inventory transfer"))?;
+        let player_slots = menu.player_slots_range();
+        let hotbar_slots = menu.hotbar_slots_range();
+        let source = player_slots.find(|slot| {
+            !hotbar_slots.contains(slot)
+                && menu.slots().get(*slot).is_some_and(|item| !item.is_empty())
+        });
+        let Some(source) = source else {
+            break;
+        };
+        let before = inventory_slot_count(&menu, source as u16);
+        drop(menu);
+
+        click_quick_move(bot, &handle, source as u16).await?;
+
+        let updated = handle.menu()
+            .ok_or_else(|| anyhow::anyhow!("container closed during inventory transfer"))?;
+        let after = inventory_slot_count(&updated, source as u16);
+        if after < before {
+            moved_stacks += 1;
+        } else {
+            break;
+        }
+    }
+
+    Ok(moved_stacks)
+}
 
 async fn wait_ticks(
     ticks: &mut tokio::sync::broadcast::Receiver<()>,
