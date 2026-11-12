@@ -208,6 +208,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let mut receiver = receiver.lock().await;
                 while let Ok(command) = receiver.try_recv() { queued.push(command); }
             }
+            let critical_health = health.is_finite() && health <= 6.0;
+            if critical_health {
+                if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                // A low-health reflex has priority over stale movement/combat/build commands.
+                queued.retain(|command| matches!(command, BotCommand::Stop | BotCommand::Say(_)));
+            }
             let follow_target = if let Some(target_lock) = &state.follow_target {
                 target_lock.lock().await.clone()
             } else { None };
