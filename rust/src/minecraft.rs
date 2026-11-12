@@ -474,6 +474,14 @@ fn safe_food_priority(name: &str) -> Option<u8> {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
+    // Some edible-looking items are harmful or intentionally excluded from
+    // autonomous consumption. Check denials before the positive substring list.
+    if ["poisonouspotato", "rottenflesh", "spidereye", "pufferfish"]
+        .iter()
+        .any(|needle| compact.contains(needle))
+    {
+        return None;
+    }
     [
         ("goldencarrot", 10), ("cookedbeef", 10), ("cookedporkchop", 10),
         ("goldenapple", 10), ("cookedmutton", 8), ("cookedrabbit", 8),
@@ -494,6 +502,9 @@ mod food_tests {
             > safe_food_priority("itemstack { kind: bread }").unwrap());
         assert_eq!(safe_food_priority("itemstack { kind: potion }"), None);
         assert_eq!(safe_food_priority("itemstack { kind: rotten_flesh }"), None);
+        assert_eq!(safe_food_priority("itemstack { kind: poisonous_potato }"), None);
+        assert_eq!(safe_food_priority("itemstack { kind: spider_eye }"), None);
+        assert_eq!(safe_food_priority("itemstack { kind: pufferfish }"), None);
         assert_eq!(safe_food_priority("itemstack { kind: golden_apple }"), Some(10));
         assert_eq!(safe_food_priority("ItemStack { kind: CookedBeef }"), Some(10));
         assert_eq!(safe_food_priority("ItemStack { kind: BakedPotato }"), Some(7));
