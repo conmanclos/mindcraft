@@ -60,7 +60,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, status, inspect, goto, mine, place, equip, craft, use_item, attack, drop.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, goto, mine, place, equip, attack. Do not invent unsupported crafting, item-use, inventory-drop, status, or inspection actions.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
@@ -100,9 +100,9 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "status", "inspect", "goto", "mine", "place", "equip", "craft", "use_item", "attack", "drop"];
+        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "equip", "attack", "drop"];
         if !supported.contains(&action_name.as_str()) {
-            bail!("unknown action '{}'", action.action);
+            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, and crosshair attack", action.action);
         }
         if !["low", "medium", "high"].contains(&action.risk.to_lowercase().as_str()) {
             bail!("risk must be low, medium, or high");
@@ -116,8 +116,8 @@ impl Brain {
     pub fn authorize_action(&self, action: &PlannedAction, explicit_approval: bool) -> Result<()> {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
-        let safe = ["look", "follow", "stop", "say", "status", "inspect", "goto"];
-        let destructive = ["attack", "mine", "place", "drop", "equip", "craft", "use_item"];
+        let safe = ["look", "follow", "stop", "say", "goto"];
+        let destructive = ["attack", "mine", "place", "drop", "equip"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
