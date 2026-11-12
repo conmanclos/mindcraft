@@ -64,6 +64,24 @@ Safe config diagnostic:
 cargo run --release -- doctor
 ```
 
+## HTTP API
+
+The dashboard is served from `/`. `GET /api/health` is public; all other API routes require `Authorization: Bearer <MINDCRAFT_API_TOKEN>`.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/status` | Connected swarm count, autonomy/provider state, position, health, inventory |
+| `POST /api/chat` | Provider-backed chat with recent conversation and live bot context |
+| `POST /api/plan` | Generate and policy-check a structured action proposal |
+| `POST /api/execute` | Explicitly approve and queue a supported game action |
+| `GET/POST /api/goals` | List goals or decompose a new strategic goal into specialist tasks |
+| `GET /api/goals/{id}/tasks` | List a goal's tasks |
+| `POST /api/tasks/claim` | Atomically claim the highest-priority pending task for a role |
+| `POST /api/tasks/{id}/heartbeat` | Renew a two-minute task lease |
+| `POST /api/tasks/{id}/complete` | Complete a task owned by the requesting agent |
+
+Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guardian`. Claims include an agent ID so multiple workers can share the same SQLite database without taking the same live task.
+
 ## Important scope boundary
 
 This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, look-at explicit block coordinates, pathfinding to explicit block coordinates, starting a mining operation at explicit coordinates, and selecting a hotbar slot (0-8). The AI also answers Minecraft chat when players mention its name. The task coordinator is durable and supports multiple named workers claiming tasks by role. The live swarm shares a bounded command queue; task claims are not yet automatically tied to in-game task execution. Crafting, inventory management, combat, building/placement, exploration goals, additional account/session lifecycle hardening, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
