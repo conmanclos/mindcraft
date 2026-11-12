@@ -524,7 +524,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 if mining_ticks.recv().await.is_err() { return; }
                             }
                             cancel_active_mining(&client);
-                            client.chat("Mining did not finish within 30 seconds; the block may be too hard, protected, or unreachable.");
+                            client.wait_ticks(2).await;
+                            if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
+                                client.chat(format!("Block broken at {}, {}, {}. Check nearby drops and inventory.", position.x, position.y, position.z));
+                            } else {
+                                client.chat("Mining did not finish within 30 seconds; the block may be too hard, protected, or unreachable.");
+                            }
                         });
                     }
                     BotCommand::Place(x, y, z) => {
