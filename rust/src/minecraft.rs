@@ -121,13 +121,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::Tick => {
             if let Some(status) = &state.status {
-                if let (Ok(position), Ok(health)) = (bot.position(), bot.health()) {
-                    let inventory = bot.menu().map(|menu| {
-                        menu.slots().iter().enumerate()
-                            .filter(|(_, item)| !item.is_empty())
-                            .map(|(slot, item)| format!("{slot}: {item:?}"))
-                            .collect::<Vec<_>>()
-                    }).unwrap_or_default();
+                if bot.exists() {
+                    let position = bot.position();
+                    let health = bot.health();
+                    let inventory = bot.menu().slots().iter().enumerate()
+                        .filter(|(_, item)| !item.is_empty())
+                        .map(|(slot, item)| format!("{slot}: {item:?}"))
+                        .collect::<Vec<_>>();
                     *status.world.lock().await = Some(crate::api::WorldSnapshot {
                         agent: bot.username(),
                         position: [position.x as f64, position.y as f64, position.z as f64],
@@ -168,9 +168,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false }
                 } else { false };
                 if should_repath {
-                    let goal = bot.player_uuid_by_username(&username).ok().flatten()
+                    let goal = bot.player_uuid_by_username(&username)
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
-                        .and_then(|entity| entity.position().ok())
+                        .map(|entity| entity.position())
                         .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
                     if let Some(goal) = goal {
                         bot.start_goto(BlockPosGoal(goal));
