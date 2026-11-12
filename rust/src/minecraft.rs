@@ -8,6 +8,7 @@ use tokio::sync::{mpsc, Mutex};
 pub enum BotCommand {
     Say(String),
     Stop,
+    AttackCrosshair,
     Follow(String),
     Look(i32, i32, i32),
     Goto(i32, i32, i32),
@@ -219,6 +220,30 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::Say(text) => {
                         let safe: String = text.chars().take(240).collect();
                         if !safe.trim().is_empty() { bot.chat(safe); }
+                    }
+                    BotCommand::AttackCrosshair => {
+                        if !bot.has_attack_cooldown() {
+                            if let azalea::HitResult::Entity(hit) = bot.hit_result() {
+                                if !hit.miss {
+                                    let target = bot.entity_ref_for(hit.entity);
+                                    let target_position = target.position();
+                                    let own_position = bot.position();
+                                    let dx = target_position.x - own_position.x;
+                                    let dy = target_position.y - own_position.y;
+                                    let dz = target_position.z - own_position.z;
+                                    if dx * dx + dy * dy + dz * dz <= 12.25 {
+                                        bot.look_at(target_position);
+                                        bot.attack(hit.entity);
+                                    } else {
+                                        bot.chat("Target is outside safe melee range.");
+                                    }
+                                } else {
+                                    bot.chat("No visible entity is in my crosshair.");
+                                }
+                            } else {
+                                bot.chat("No visible entity is in my crosshair.");
+                            }
+                        }
                     }
                     BotCommand::Stop => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
