@@ -41,7 +41,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="row"><button id="createGoal">Decompose goal into tasks</button><span class="muted">Tasks are saved in SQLite and claimed by specialist worker IDs.</span></div>
 <div id="goalResult" class="muted" style="white-space:pre-wrap;margin-top:12px"></div>
 <div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Task worker ID (not a Minecraft username)</label><input id="agentId" value="Scout"><div class="muted">Use 1-64 letters, numbers, dots, underscores, or hyphens.</div></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
-<div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="planTask" class="secondary" disabled>Plan claimed task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button></div>
+<div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="planTask" class="secondary" disabled>Plan claimed task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button><button id="releaseTask" class="secondary" disabled>Release task</button></div>
 <div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
 </section>
 </main>
@@ -58,7 +58,7 @@ function startTaskHeartbeat(){
   taskHeartbeat=setInterval(async()=>{
     if(!currentTask)return;
     try{await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgentId});}
-    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;currentTaskAgentId=null;$("completeTask").disabled=true;$("planTask").disabled=true;$("claimTask").disabled=false;}
+    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;currentTaskAgentId=null;$("completeTask").disabled=true;$("releaseTask").disabled=true;$("planTask").disabled=true;$("claimTask").disabled=false;}
   },45000);
 }
 function log(s){$("log").textContent+="\n"+s;$("log").scrollTop=$("log").scrollHeight}
@@ -149,6 +149,7 @@ $("claimTask").onclick=async()=>{
     currentTaskAgentId=currentTask?agent_id:null;
     if(currentTask)startTaskHeartbeat();else stopTaskHeartbeat();
     $("completeTask").disabled=!currentTask;
+    $("releaseTask").disabled=!currentTask;
     $("planTask").disabled=!currentTask;
     $("claimTask").disabled=!!currentTask;
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
@@ -164,6 +165,20 @@ $("planTask").onclick=async()=>{
   }catch(e){$("taskResult").textContent="Task lease renewal failed; check the connection and retry. The current lease may expire if it cannot be renewed. "+e.message}
 };
 setInterval(()=>{if(token)connect().catch(()=>{})},5000);
+$("releaseTask").onclick=async()=>{
+  try{
+    if(!currentTask)throw Error("Claim a task first.");
+    $("releaseTask").disabled=true;
+    await api("/api/tasks/"+currentTask.id+"/release",{agent_id:currentTaskAgentId});
+    $("taskResult").textContent="Task #"+currentTask.id+" released back to the pending queue.";
+    currentTask=null;
+    currentTaskAgentId=null;
+    stopTaskHeartbeat();
+    $("completeTask").disabled=true;
+    $("planTask").disabled=true;
+    $("claimTask").disabled=false;
+  }catch(e){$("taskResult").textContent="Task release failed: "+e.message;$("releaseTask").disabled=!currentTask}
+};
 $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
@@ -175,6 +190,7 @@ $("completeTask").onclick=async()=>{
     currentTaskAgentId=null;
     stopTaskHeartbeat();
     $("planTask").disabled=true;
+    $("releaseTask").disabled=true;
     $("claimTask").disabled=false;
   }catch(e){$("taskResult").textContent="Completion failed: "+e.message;$("completeTask").disabled=!currentTask}
 };
