@@ -818,9 +818,12 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
 
     let handle = bot.open_inventory()
         .ok_or_else(|| anyhow::anyhow!("close the currently open container before crafting"))?;
-    if handle.menu().is_none() {
-        anyhow::bail!("player inventory is not available");
+    let initial_menu = handle.menu()
+        .ok_or_else(|| anyhow::anyhow!("player inventory is not available"))?;
+    if (0..=4).any(|slot| initial_menu.slots().get(slot).is_some_and(|item| !item.is_empty())) {
+        anyhow::bail!("clear the player crafting grid before starting another recipe");
     }
+    drop(initial_menu);
 
     for &grid_slot in &grid_slots {
         let menu = handle.menu()
