@@ -1891,13 +1891,13 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "arrow" => Some((true, "arrow", &[(1, "flint"), (4, "stick"), (7, "feather")])),
         "paper" => Some((true, "paper", &[(1, "sugar_cane"), (2, "sugar_cane"), (3, "sugar_cane")])),
         "glass_pane" => Some((true, "glass_pane", &[(1, "glass"), (2, "glass"), (3, "glass"), (4, "glass"), (5, "glass"), (6, "glass")])),
-        "door" => Some((true, "door", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
-        "trapdoor" => Some((true, "trapdoor", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks")])),
-        "slab" => Some((true, "slab", &[(1, "planks"), (2, "planks"), (3, "planks")])),
-        "stairs" => Some((true, "stairs", &[(1, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
-        "fence" => Some((true, "fence", &[(1, "planks"), (2, "stick"), (3, "planks"), (4, "planks"), (5, "stick"), (6, "planks")])),
-        "sign" => Some((true, "sign", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks"), (8, "stick")])),
-        "boat" => Some((true, "boat", &[(4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
+        "door" => Some((true, "wooden_door", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
+        "trapdoor" => Some((true, "wooden_trapdoor", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks")])),
+        "slab" => Some((true, "wooden_slab", &[(1, "planks"), (2, "planks"), (3, "planks")])),
+        "stairs" => Some((true, "wooden_stairs", &[(1, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
+        "fence" => Some((true, "wooden_fence", &[(1, "planks"), (2, "stick"), (3, "planks"), (4, "planks"), (5, "stick"), (6, "planks")])),
+        "sign" => Some((true, "wooden_sign", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks"), (8, "stick")])),
+        "boat" => Some((true, "wooden_boat", &[(4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
         "bowl" => Some((true, "bowl", &[(1, "planks"), (3, "planks"), (5, "planks")])),
         "furnace" => Some((true, "furnace", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (6, "cobblestone"), (7, "cobblestone"), (8, "cobblestone"), (9, "cobblestone")])),
         "chest" => Some((true, "chest", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
@@ -1914,7 +1914,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "wooden_pressure_plate" => Some((false, "wooden_pressure_plate", &[(1, "planks"), (2, "planks")])),
         "stone_pressure_plate" => Some((false, "stone_pressure_plate", &[(1, "cobblestone"), (2, "cobblestone")])),
         "lever" => Some((true, "lever", &[(2, "stick"), (5, "cobblestone")])),
-        "fence_gate" => Some((true, "fence_gate", &[(1, "planks"), (2, "stick"), (3, "planks"), (4, "planks"), (5, "stick"), (6, "planks")])),
+        "fence_gate" => Some((true, "wooden_fence_gate", &[(1, "planks"), (2, "stick"), (3, "planks"), (4, "planks"), (5, "stick"), (6, "planks")])),
         "flower_pot" => Some((true, "flower_pot", &[(2, "brick"), (4, "brick"), (6, "brick")])),
         "glass_bottle" => Some((true, "glass_bottle", &[(1, "glass"), (3, "glass"), (5, "glass")])),
         "item_frame" => Some((true, "item_frame", &[(1, "stick"), (2, "stick"), (3, "stick"), (4, "stick"), (5, "leather"), (6, "stick"), (7, "stick"), (8, "stick"), (9, "stick")])),
@@ -3230,10 +3230,15 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     let selector = compact(selector);
     if selector.is_empty() { return false; }
     let name = compact(debug_name);
+    let wood_type = ["oak", "spruce", "birch", "jungle", "acacia", "darkoak",
+        "mangrove", "cherry", "bamboo", "crimson", "warped", "paleoak"]
+        .iter().any(|wood| name.starts_with(wood));
     if selector == "log" {
         name.ends_with("log") || name.ends_with("stem") || name.ends_with("wood") || name.ends_with("hyphae")
     } else if selector == "door" {
         name.ends_with("door") && !name.ends_with("trapdoor")
+    } else if selector == "woodendoor" {
+        wood_type && name.ends_with("door") && !name.ends_with("trapdoor")
     } else if selector == "planks" {
         name.ends_with("planks")
     } else if selector == "slab" {
@@ -3243,9 +3248,25 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     } else if selector == "coalorcharcoal" {
         name == "coal" || name == "charcoal"
     } else if selector == "woodenslab" {
-        ["oakslab", "spruceslab", "birchslab", "jungleslab", "acaciaslab", "darkoakslab",
-         "mangroveslab", "cherryslab", "bambooslab", "bamboomosaicslab", "crimsonslab",
-         "warpedslab", "paleoakslab"].contains(&name.as_str())
+        wood_type && name.ends_with("slab")
+    } else if selector == "woodenstairs" {
+        wood_type && name.ends_with("stairs")
+    } else if selector == "woodenfence" {
+        wood_type && name.ends_with("fence")
+    } else if selector == "woodensign" {
+        wood_type && name.ends_with("sign")
+    } else if selector == "woodenboat" {
+        (wood_type && name.ends_with("boat")) || name == "bambooraft"
+    } else if selector == "woodentrapdoor" {
+        wood_type && name.ends_with("trapdoor")
+    } else if selector == "woodenbutton" {
+        wood_type && name.ends_with("button")
+    } else if selector == "woodenpressureplate" {
+        wood_type && name.ends_with("pressureplate")
+    } else if selector == "woodenfencegate" {
+        wood_type && name.ends_with("fencegate")
+    } else if selector == "bed" {
+        name.ends_with("bed")
     } else {
         name == selector
     }
