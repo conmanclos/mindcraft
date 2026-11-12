@@ -541,8 +541,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             match client.hit_result() {
                                 Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == Direction::Up => {
                                     client.block_interact(support);
-                                    client.wait_ticks(2).await;
-                                    let placed = world.read().get_block_state(position).is_some_and(|block| !block.is_air());
+                                    let mut placed = false;
+                                    for _ in 0..10 {
+                                        if world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                                            placed = true;
+                                            break;
+                                        }
+                                        client.wait_ticks(1).await;
+                                    }
                                     if placed {
                                         client.chat(format!("Placed a block at {}, {}, {}.", x, y, z));
                                     } else {
