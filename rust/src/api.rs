@@ -182,7 +182,7 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         return Err((StatusCode::BAD_REQUEST, "planning request must contain 1-4000 bytes".into()));
     }
     let world_context = state.status.world.lock().await.clone().map(|world| format!(
-        "\\nCurrent Minecraft state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
+        "\nCurrent Minecraft state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
         world.position, world.health, world.food, world.saturation, world.inventory
     )).unwrap_or_default();
     let planning_request = format!("Player request: {}{world_context}", request.message);
