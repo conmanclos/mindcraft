@@ -722,16 +722,36 @@ async fn use_held_item_for_duration(bot: &mut Client, ticks_to_hold: usize) -> R
 fn is_safe_food_item(name: &str) -> bool {
     matches!(
         name,
-        "apple" | "golden_apple" | "enchanted_golden_apple" | "bread"
-            | "beef" | "porkchop" | "chicken" | "mutton" | "rabbit"
+        "apple" | "bread"
+            | "beef" | "porkchop" | "mutton" | "rabbit"
             | "cod" | "salmon" | "tropical_fish"
             | "cooked_beef" | "cooked_porkchop" | "cooked_chicken"
             | "cooked_mutton" | "cooked_rabbit" | "cooked_cod" | "cooked_salmon"
             | "baked_potato" | "potato" | "carrot" | "golden_carrot" | "beetroot"
             | "beetroot_soup" | "mushroom_stew" | "rabbit_stew" | "pumpkin_pie"
             | "cookie" | "melon_slice" | "sweet_berries" | "glow_berries"
-            | "chorus_fruit" | "dried_kelp" | "honey_bottle"
+            | "dried_kelp" | "honey_bottle"
     )
+}
+
+fn food_priority(name: &str) -> u8 {
+    match name {
+        "cooked_beef" | "cooked_porkchop" => 10,
+        "golden_carrot" => 9,
+        "cooked_mutton" | "cooked_rabbit" | "cooked_cod" | "cooked_salmon" => 8,
+        "bread" | "pumpkin_pie" | "baked_potato" | "mushroom_stew" | "rabbit_stew" | "beetroot_soup" => 7,
+        "honey_bottle" => 6,
+        "beef" | "porkchop" | "mutton" | "rabbit" | "cod" | "salmon" => 5,
+        "carrot" | "potato" | "beetroot" | "melon_slice" => 4,
+        "apple" | "cookie" | "sweet_berries" | "glow_berries" | "tropical_fish" => 3,
+        _ => 1,
+    }
+}
+
+fn best_food_slot(menu: &Menu, slots: impl Iterator<Item = usize>) -> Option<(usize, String)> {
+    slots
+        .filter_map(|slot| food_name_in_slot(menu, slot).map(|name| (slot, name)))
+        .max_by_key(|(_, name)| food_priority(name))
 }
 
 fn food_name_in_slot(menu: &Menu, slot: usize) -> Option<String> {
@@ -747,14 +767,10 @@ async fn eat_food(bot: &mut Client) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("player inventory is not available"))?;
     let hotbar_range = menu.hotbar_slots_range();
 
-    let (hotbar_slot, food_name) = if let Some(slot) = hotbar_range.clone()
-        .find(|slot| food_name_in_slot(&menu, *slot).is_some())
-    {
-        let name = food_name_in_slot(&menu, slot).expect("food slot was just verified");
-        (slot, name)
+    let (hotbar_slot, food_name) = if let Some(found) = best_food_slot(&menu, hotbar_range.clone()) {
+        found
     } else {
-        let source_slot = menu.player_slots_without_hotbar_range()
-            .find(|slot| food_name_in_slot(&menu, *slot).is_some())
+        let (source_slot, _) = best_food_slot(&menu, menu.player_slots_without_hotbar_range())
             .ok_or_else(|| anyhow::anyhow!("no safe food exists in the player inventory"))?;
         let empty_hotbar_slot = hotbar_range.clone()
             .find(|slot| menu.slots().get(*slot).is_some_and(|item| item.is_empty()))
