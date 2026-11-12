@@ -1,7 +1,7 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*};
-use std::{sync::Arc, time::{Duration, Instant}};
+use azalea::{pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
+use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug)]
@@ -21,57 +21,90 @@ struct BotState {
     bot_name: Option<String>,
     last_reply: Option<Arc<Mutex<Instant>>>,
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
+    connected: Option<Arc<AtomicBool>>,
 }
 
 pub async fn connect(
     server: String,
-    username: String,
+    accounts: Vec<String>,
     auth_mode: String,
     microsoft_email: Option<String>,
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
 ) -> Result<()> {
-    tracing::info!(%server, %username, auth_mode = %auth_mode, "connecting Minecraft client");
-    let account = if auth_mode == "microsoft" {
-        let email = microsoft_email.ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
-        tracing::info!("starting Azalea Microsoft device-code authentication");
-        Account::microsoft(email.as_str()).await?
-    } else {
-        Account::offline(username.clone())
-    };
+    tracing::info!(%server, account_count = accounts.len(), auth_mode = %auth_mode, "starting Minecraft agent swarm");
     let (command_tx, command_rx) = mpsc::channel(64);
     *status.command_tx.lock().await = Some(command_tx);
-    let state = BotState {
-        brain: Some(brain),
-        status: Some(status.clone()),
-        bot_name: Some(username),
-        last_reply: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)))),
-        commands: Some(Arc::new(Mutex::new(command_rx))),
-    };
-    let result = ClientBuilder::new()
-        .set_handler(handle)
-        .set_state(state)
-        .start(account, server.as_str())
-        .await;
-    status.minecraft_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+    let shared_receiver = Arc::new(Mutex::new(command_rx));
+    let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
+
+    let mut builder = SwarmBuilder::new().set_handler(handle);
+    if auth_mode == "microsoft" {
+        let email = microsoft_email.ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
+        tracing::info!("starting Azalea Microsoft device-code authentication");
+        let account = Account::microsoft(email.as_str()).await?;
+        let state = make_state(
+            accounts.first().cloned().unwrap_or_else(|| "Mindcraft".into()),
+            brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(),
+        );
+        builder = builder.add_account_with_state(account, state);
+    } else {
+        for username in accounts {
+            let state = make_state(
+                username.clone(), brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(),
+            );
+            builder = builder.add_account_with_state(Account::offline(username), state);
+        }
+    }
+
+    let result = builder.join_delay(Duration::from_millis(500)).start(server.as_str()).await;
+    status.minecraft_connected.store(false, Ordering::Relaxed);
+    status.connected_agents.store(0, Ordering::Relaxed);
     *status.command_tx.lock().await = None;
-    tracing::warn!("Azalea client stopped: {result:?}");
+    tracing::warn!("Azalea swarm stopped: {result:?}");
     Ok(())
+}
+
+fn make_state(
+    username: String,
+    brain: Arc<Brain>,
+    status: Arc<RuntimeStatus>,
+    commands: Arc<Mutex<mpsc::Receiver<BotCommand>>>,
+    last_reply: Arc<Mutex<Instant>>,
+) -> BotState {
+    BotState {
+        brain: Some(brain),
+        status: Some(status),
+        bot_name: Some(username),
+        last_reply: Some(last_reply),
+        commands: Some(commands),
+        connected: Some(Arc::new(AtomicBool::new(false))),
+    }
 }
 
 async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> {
     match event {
         Event::Spawn => {
-            if let Some(status) = &state.status {
-                status.minecraft_connected.store(true, std::sync::atomic::Ordering::Relaxed);
+            if let Some(connected) = &state.connected {
+                if !connected.swap(true, Ordering::Relaxed) {
+                    if let Some(status) = &state.status {
+                        let count = status.connected_agents.fetch_add(1, Ordering::Relaxed) + 1;
+                        status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                    }
+                }
             }
-            tracing::info!(username = %bot.username(), "Minecraft bot spawned and ready");
+            tracing::info!(username = %bot.username(), "Minecraft agent spawned and ready");
         }
         Event::Disconnect(_) => {
-            if let Some(status) = &state.status {
-                status.minecraft_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+            if let Some(connected) = &state.connected {
+                if connected.swap(false, Ordering::Relaxed) {
+                    if let Some(status) = &state.status {
+                        let count = status.connected_agents.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
+                        status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                    }
+                }
             }
-            tracing::warn!("Minecraft connection lost; Azalea reconnect policy will handle retry");
+            tracing::warn!(username = %bot.username(), "Minecraft agent disconnected; Azalea reconnect policy will handle retry");
         }
         Event::Tick => {
             if let Some(status) = &state.status {
@@ -97,15 +130,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                     }
-                    BotCommand::Look(x, y, z) => {
-                        bot.look_at(BlockPos::new(x, y, z).center());
-                    }
-                    BotCommand::Goto(x, y, z) => {
-                        bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
-                    }
-                    BotCommand::Mine(x, y, z) => {
-                        bot.start_mining(BlockPos::new(x, y, z));
-                    }
+                    BotCommand::Look(x, y, z) => bot.look_at(BlockPos::new(x, y, z).center()),
+                    BotCommand::Goto(x, y, z) => bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z))),
+                    BotCommand::Mine(x, y, z) => bot.start_mining(BlockPos::new(x, y, z)),
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
                 }
             }
@@ -113,7 +140,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Chat(message) => {
             let sender = message.sender();
             let content = message.content();
-            tracing::info!(sender = ?sender, %content, "Minecraft chat");
+            tracing::info!(bot = %bot.username(), sender = ?sender, %content, "Minecraft chat");
 
             let from_self = sender.as_deref() == state.bot_name.as_deref();
             let addressed_to_bot = sender.is_some() && content.to_lowercase().contains("mindcraft");
@@ -129,7 +156,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 if allowed {
                     if let Some(brain) = &state.brain {
                         let prompt = format!(
-                            "A Minecraft player addressed you in server chat. Respond as a concise teammate.                              Do not claim to have performed any in-game action. Message: {content}"
+                            "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action. Message: {content}"
                         );
                         match brain.reply(&prompt).await {
                             Ok(reply) => {
