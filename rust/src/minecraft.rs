@@ -1097,22 +1097,39 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Harvest(x, y, z) => {
                         let position = BlockPos::new(x, y, z);
-                        let mature = bot.world().ok()
-                            .and_then(|world| world.read().get_block_state(position))
-                            .is_some_and(|block| is_mature_crop(&format!("{block:?}")));
-                        if !mature {
-                            bot.chat("Harvest only targets mature wheat, carrots, potatoes, beetroot, or nether wart crops; nothing was mined.");
-                        } else if let Some(status) = state.status.as_ref() {
-                            if let Some(sender) = status.command_tx.lock().await.clone() {
-                                if sender.send(AgentCommand {
-                                    target: Some(bot.username()),
-                                    command: BotCommand::Mine(x, y, z),
-                                }).is_err() {
-                                    bot.chat("The mining dispatcher is unavailable; the mature crop was left untouched.");
-                                }
-                            } else {
-                                bot.chat("The mining dispatcher is unavailable; the mature crop was left untouched.");
+                        let harvest_target = bot.world().ok().and_then(|world| {
+                            let world = world.read();
+                            let block = world.get_block_state(position)?;
+                            let name = format!("{block:?}").to_ascii_lowercase();
+                            if is_mature_crop(&name) || is_pumpkin_or_melon_fruit(&name) {
+                                return Some(position);
                             }
+                            if !is_mature_pumpkin_or_melon_stem(&name) {
+                                return None;
+                            }
+                            [
+                                position.up(1), position.down(1), position.north(1),
+                                position.south(1), position.east(1), position.west(1),
+                            ].into_iter().find(|candidate| {
+                                world.get_block_state(*candidate)
+                                    .is_some_and(|fruit| is_pumpkin_or_melon_fruit(&format!("{fruit:?}")))
+                            })
+                        });
+                        if let Some(target) = harvest_target {
+                            if let Some(status) = state.status.as_ref() {
+                                if let Some(sender) = status.command_tx.lock().await.clone() {
+                                    if sender.send(AgentCommand {
+                                        target: Some(bot.username()),
+                                        command: BotCommand::Mine(target.x, target.y, target.z),
+                                    }).is_err() {
+                                        bot.chat("The mining dispatcher is unavailable; the mature crop or fruit was left untouched.");
+                                    }
+                                } else {
+                                    bot.chat("The mining dispatcher is unavailable; the mature crop or fruit was left untouched.");
+                                }
+                            }
+                        } else {
+                            bot.chat("Harvest targets mature wheat, carrots, potatoes, beetroot, nether wart, or a pumpkin/melon fruit beside a mature stem. Nothing was mined.");
                         }
                     }
                     BotCommand::Plant(x, y, z) => {
@@ -2048,6 +2065,28 @@ async fn place_block_at(
         }
     }
     false
+}
+
+fn is_pumpkin_or_melon_fruit(debug_name: &str) -> bool {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    (compact.contains("pumpkin") || compact.contains("melon"))
+        && !compact.contains("stem") && !compact.contains("seeds")
+}
+
+fn is_mature_pumpkin_or_melon_stem(debug_name: &str) -> bool {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if !(compact.contains("pumpkinstem") || compact.contains("melonstem")) { return false; }
+    let lower = debug_name.to_ascii_lowercase();
+    let Some(age_tail) = lower.split_once("age").map(|(_, tail)| tail) else { return false; };
+    let digits = age_tail.trim_start_matches(|character: char| !character.is_ascii_digit())
+        .chars().take_while(char::is_ascii_digit).collect::<String>();
+    digits.parse::<u8>().is_ok_and(|age| age >= 7)
 }
 
 fn is_mature_crop(debug_name: &str) -> bool {
