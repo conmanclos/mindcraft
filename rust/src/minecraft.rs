@@ -83,7 +83,7 @@ pub async fn connect(
                     Ok(true) => break,
                     Ok(false) => {
                         let memory = goal_store.memory_context(3_000).unwrap_or_default();
-                        let context = format!("{DEFAULT_GOAL}\\n{memory}");
+                        let context = format!("{DEFAULT_GOAL}\n{memory}");
                         match tokio::time::timeout(Duration::from_secs(50), goal_brain.decompose_goal(&context)).await {
                             Ok(Ok(drafts)) => {
                                 let tasks = drafts.iter().map(|draft| {
