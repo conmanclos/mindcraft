@@ -209,6 +209,21 @@ mod tests {
     }
 
     #[test]
+    fn planner_rejects_invalid_risk_and_unsafe_targets() {
+        let brain = brain("balanced");
+        let invalid_risk = PlannedAction {
+            action: "goto".into(), target: Some("1,64,1".into()),
+            reason: String::new(), risk: "unknown".into(),
+        };
+        assert!(brain.validate_action(&invalid_risk).is_err());
+        let control_target = PlannedAction {
+            action: "say".into(), target: Some("hello\\n/stop".into()),
+            reason: String::new(), risk: "low".into(),
+        };
+        assert!(brain.validate_action(&control_target).is_err());
+    }
+
+    #[test]
     fn drop_is_blocked_until_executor_exists() {
         let action = PlannedAction { action:"drop".into(), target:Some("diamond".into()), reason:String::new(), risk:"high".into() };
         assert!(brain("autonomous").authorize_action(&action, true).is_err());
