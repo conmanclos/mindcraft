@@ -330,6 +330,17 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let planned_command = command_from_action(proposed_action.clone())?;
 
     if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
+        if proposed_action.action.eq_ignore_ascii_case("smelt_parallel") {
+            let BotCommand::SmeltQueue(jobs) = planned_command else {
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "parallel smelting planner returned an unexpected command".into()));
+            };
+            dispatch_parallel_smelt_jobs(&state, jobs, target.clone()).await?;
+            return Ok(Json(PlanResponse {
+                proposed_action,
+                execution: "AUTONOMOUS: parallel furnace jobs dispatched to separate connected bots",
+                auto_queued: true,
+            }));
+        }
         if let Some(sender) = state.status.command_tx.lock().await.clone() {
             ensure_agent_connected(&state, target.as_deref()).await?;
             sender.send(AgentCommand { target: target.clone(), command: planned_command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
