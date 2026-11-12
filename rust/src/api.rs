@@ -836,7 +836,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             let filter = if parts.len() == 4 {
                 let item = parts[3].to_ascii_lowercase();
-                if item.is_empty() || item.len() > 32
+                if item.is_empty() || item == "air" || item.len() > 32
                     || !item.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
                     return Err((StatusCode::BAD_REQUEST, "deposit item filter must be an exact item name using letters, numbers, and underscores".into()));
                 }
