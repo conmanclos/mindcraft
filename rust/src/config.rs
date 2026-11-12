@@ -46,20 +46,28 @@ impl Config {
             .map(|value| value.split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned).collect::<Vec<_>>())
             .filter(|accounts| !accounts.is_empty())
             .unwrap_or_else(|| vec![minecraft_username.clone()]);
-        if minecraft_auth == "microsoft" && minecraft_accounts.len() != 1 {
-            bail!("Microsoft auth currently supports one account; use MINDCRAFT_MC_ACCOUNTS for multiple offline accounts");
-        }
         if minecraft_accounts.len() > 8 {
             bail!("MINDCRAFT_MC_ACCOUNTS is limited to 8 clients per runtime");
         }
-        if minecraft_auth == "offline" {
-            let mut unique = std::collections::HashSet::new();
-            for account in &minecraft_accounts {
-                if !(3..=16).contains(&account.len())
-                    || !account.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                    || !unique.insert(account.to_lowercase()) {
-                    bail!("offline usernames must be unique Minecraft names (3-16 letters, digits, or underscores)");
-                }
+        let mut unique_accounts = std::collections::HashSet::new();
+        for account in &minecraft_accounts {
+            if !(3..=16).contains(&account.len())
+                || !account.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                || !unique_accounts.insert(account.to_ascii_lowercase()) {
+                bail!("Minecraft bot usernames must be unique valid names (3-16 letters, digits, or underscores)");
+            }
+        }
+        if minecraft_auth == "microsoft" {
+            let emails = microsoft_email.as_deref().unwrap_or_default()
+                .split(',').map(str::trim).filter(|email| !email.is_empty()).collect::<Vec<_>>();
+            if emails.len() != minecraft_accounts.len() {
+                bail!("MINDCRAFT_MICROSOFT_EMAIL must contain one comma-separated account email for each MINDCRAFT_MC_ACCOUNTS username");
+            }
+            if emails.iter().any(|email| {
+                email.len() > 254 || email.chars().any(char::is_whitespace)
+                    || !email.split_once('@').is_some_and(|(local, domain)| !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.'))
+            }) {
+                bail!("MINDCRAFT_MICROSOFT_EMAIL must contain valid comma-separated email addresses");
             }
         }
         let minecraft_server = env::var("MINDCRAFT_MC_SERVER").ok()
