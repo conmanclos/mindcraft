@@ -128,7 +128,7 @@ fn exploration_offset(max_radius: i32, step: usize) -> (i32, i32) {
     let max_radius = max_radius.clamp(8, 128) as f64;
     let radius = (8.0 + step as f64 * 1.5).min(max_radius);
     let angle = step as f64 * 2.399_963_229_728_653;
-    ((radius * angle.cos()).round() as i32, (radius * angle.sin()).round() as i32)
+    ((radius * angle.cos()).trunc() as i32, (radius * angle.sin()).trunc() as i32)
 }
 
 #[cfg(test)]
@@ -140,7 +140,7 @@ mod exploration_tests {
         let mut previous = None;
         for step in 0..256 {
             let (x, z) = exploration_offset(64, step);
-            assert!((x * x + z * z) as f64 <= 64.0 * 64.0 + 1.0);
+            assert!((x * x + z * z) as f64 <= 64.0 * 64.0);
             assert_ne!(Some((x, z)), previous);
             previous = Some((x, z));
         }
