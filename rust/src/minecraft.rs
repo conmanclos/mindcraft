@@ -337,8 +337,8 @@ fn start_specialist_task(
                 ))
                 .unwrap_or_default();
             let prompt = format!(
-                "You are the {} specialist. Complete this assigned task with one safe, concrete Minecraft action. Use the supplied live state when selecting coordinates or materials. Do not claim completion. If it cannot be performed as one supported action, do not improvise. Assigned task: {}{}",
-                role, task.description, world_context
+                "You are executing a {}-specialist task. Complete it with one safe, concrete Minecraft action. Use the supplied live state when selecting coordinates or materials. Do not claim completion. If it cannot be performed as one supported action, do not improvise. Assigned task: {}{}",
+                task.role, task.description, world_context
             );
             let planned = match tokio::time::timeout(Duration::from_secs(55), brain.plan(&prompt)).await {
                 Ok(Ok(action)) => action,
