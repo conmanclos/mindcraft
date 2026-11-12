@@ -125,14 +125,14 @@ fn validate_offline_accounts(raw: &str, fallback: &str) -> Result<String, String
     let source = if raw.trim().is_empty() { fallback.trim() } else { raw.trim() };
     let parsed = source.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>();
     if parsed.is_empty() || parsed.len() > 8 {
-        return Err("Enter between 1 and 8 offline bot usernames.".into());
+        return Err("Enter between 1 and 8 bot usernames.".into());
     }
     let mut unique = std::collections::HashSet::new();
     for name in &parsed {
         if !(3..=16).contains(&name.len())
             || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             || !unique.insert(name.to_ascii_lowercase()) {
-            return Err("Offline bot usernames must be unique, 3-16 letters, numbers, or underscores.".into());
+            return Err("Bot usernames must be unique, 3-16 letters, numbers, or underscores.".into());
         }
     }
     Ok(parsed.join(","))
@@ -168,21 +168,25 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.username.trim().is_empty() {
         return Err("Enter the Minecraft bot username.".into());
     }
-    if setup.auth == "offline" && (!(3..=16).contains(&setup.username.trim().len()) || !setup.username.trim().chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
-        return Err("Offline-mode usernames must be 3-16 letters, numbers, or underscores.".into());
-    }
     if !["offline", "microsoft"].contains(&setup.auth.as_str()) {
         return Err("Choose a supported Minecraft sign-in method.".into());
     }
-    if setup.auth == "microsoft" && setup.microsoft_email.trim().is_empty() {
-        return Err("Enter the Microsoft account email.".into());
+    let accounts = validate_offline_accounts(&setup.accounts, &setup.username)?;
+    if setup.auth == "microsoft" {
+        let emails = setup.microsoft_email.split(',').map(str::trim).filter(|email| !email.is_empty()).collect::<Vec<_>>();
+        if emails.len() != accounts.split(',').count() {
+            return Err("Enter one comma-separated Microsoft account email for each bot username.".into());
+        }
+        let mut unique_emails = std::collections::HashSet::new();
+        for email in emails {
+            if email.len() > 254 || email.chars().any(char::is_whitespace)
+                || !email.split_once('@').is_some_and(|(local, domain)| !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.'))
+                || !unique_emails.insert(email.to_ascii_lowercase()) {
+                return Err("Microsoft account emails must be valid, unique addresses.".into());
+            }
+        }
     }
     let trusted_players = validate_trusted_players(&setup.trusted_players)?;
-    let accounts = if setup.auth == "offline" {
-        validate_offline_accounts(&setup.accounts, &setup.username)?
-    } else {
-        setup.username.trim().to_owned()
-    };
     if !["openai", "openai-compatible", "anthropic", "google", "ollama"].contains(&setup.provider.as_str()) {
         return Err("Choose a supported AI provider.".into());
     }
@@ -205,7 +209,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     let entry = Entry::new("com.mindcraft.minecraft", &key_account).map_err(|e| e.to_string())?;
     if setup.api_key.trim().is_empty() {
         if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) && entry.get_password().is_err() {
-            return Err("This AI provider requires an API key. Enter it once to store it in Keychain.".into());
+            return Err("This AI provider requires an API key. Enter it once to store it in the operating system credential store.".into());
         }
         // Never carry a previously stored hosted-provider key into a
         // user-configured OpenAI-compatible endpoint unless the user enters
