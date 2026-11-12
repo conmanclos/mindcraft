@@ -48,6 +48,7 @@ const $=id=>document.getElementById(id);
 let token="";
 let lastPlan=null;
 let currentTask=null;
+let currentTaskAgent=null;
 function log(s){$("log").textContent+="\n"+s;$("log").scrollTop=$("log").scrollHeight}
 async function api(path,body){
   const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
@@ -129,18 +130,32 @@ $("claimTask").onclick=async()=>{
     const role=$("agentRole").value;
     const r=await api("/api/tasks/claim",{agent_id,role});
     currentTask=r.task;
+    currentTaskAgent=agent_id;
     $("completeTask").disabled=!currentTask;
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
   }catch(e){$("taskResult").textContent="Claim failed: "+e.message}
 };
 setInterval(()=>{if(token)connect().catch(()=>{})},5000);
+setInterval(async()=>{
+  if(!token||!currentTask||!currentTaskAgent)return;
+  try{
+    await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgent});
+    $("taskResult").textContent="Task #"+currentTask.id+" lease renewed.\\n"+JSON.stringify(currentTask,null,2);
+  }catch(e){
+    $("taskResult").textContent="Task #"+currentTask.id+" lease lost: "+e.message;
+    currentTask=null;
+    currentTaskAgent=null;
+    $("completeTask").disabled=true;
+  }
+},45000);
 $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
-    const agent_id=$("agentId").value.trim();
+    const agent_id=currentTaskAgent;
     await api("/api/tasks/"+currentTask.id+"/complete",{agent_id});
     $("taskResult").textContent="Task #"+currentTask.id+" marked complete.";
     currentTask=null;
+    currentTaskAgent=null;
     $("completeTask").disabled=true;
   }catch(e){$("taskResult").textContent="Completion failed: "+e.message}
 };
