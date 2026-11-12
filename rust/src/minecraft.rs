@@ -424,6 +424,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         let position = BlockPos::new(x, y, z);
                         let generation = state.mine_generation.as_ref().map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        cancel_active_mining(&bot);
                         let generation_state = state.mine_generation.clone();
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
@@ -573,6 +574,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::Craft(recipe, table) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        cancel_active_mining(&bot);
                         let generation_state = state.mine_generation.clone();
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
@@ -587,6 +589,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::ContainerTransfer(x, y, z, slot) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        cancel_active_mining(&bot);
                         let generation_state = state.mine_generation.clone();
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
