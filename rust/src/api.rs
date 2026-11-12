@@ -21,6 +21,7 @@ pub struct WorldSnapshot {
 
 pub struct RuntimeStatus {
     pub minecraft_connected: AtomicBool,
+    pub connected_agents: std::sync::atomic::AtomicUsize,
     pub command_tx: Mutex<Option<mpsc::Sender<BotCommand>>>,
     pub world: Mutex<Option<WorldSnapshot>>,
 }
@@ -29,6 +30,7 @@ impl Default for RuntimeStatus {
     fn default() -> Self {
         Self {
             minecraft_connected: AtomicBool::new(false),
+            connected_agents: std::sync::atomic::AtomicUsize::new(0),
             command_tx: Mutex::new(None),
             world: Mutex::new(None),
         }
@@ -90,6 +92,7 @@ struct StatusResponse {
     version: &'static str,
     minecraft_target: &'static str,
     minecraft_connected: bool,
+    connected_agents: usize,
     autonomy: String,
     provider: String,
     model: String,
@@ -135,6 +138,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
         version: env!("CARGO_PKG_VERSION"),
         minecraft_target: "1.21.1",
         minecraft_connected: state.status.minecraft_connected.load(std::sync::atomic::Ordering::Relaxed),
+        connected_agents: state.status.connected_agents.load(std::sync::atomic::Ordering::Relaxed),
         autonomy: state.config.mode.clone(),
         provider: state.config.provider.clone(),
         model: state.config.model.clone(),
