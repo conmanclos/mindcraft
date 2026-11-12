@@ -73,6 +73,18 @@ struct RateWindow {
 const API_RATE_LIMIT: u32 = 180;
 const API_RATE_WINDOW: Duration = Duration::from_secs(60);
 
+fn consume_rate_window(window: &mut RateWindow, now: Instant) -> bool {
+    if now.duration_since(window.started) >= API_RATE_WINDOW {
+        window.started = now;
+        window.requests = 0;
+    }
+    if window.requests >= API_RATE_LIMIT {
+        return false;
+    }
+    window.requests += 1;
+    true
+}
+
 async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next) -> Response {
     let credential = request.headers().get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok()).unwrap_or("anonymous");
@@ -89,17 +101,12 @@ async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next)
         ).into_response();
     }
     let window = windows.entry(key).or_insert(RateWindow { started: now, requests: 0 });
-    if now.duration_since(window.started) >= API_RATE_WINDOW {
-        window.started = now;
-        window.requests = 0;
-    }
-    if window.requests >= API_RATE_LIMIT {
+    if !consume_rate_window(window, now) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(serde_json::json!({"error":"API request rate limit exceeded; retry after the current 60-second window"})),
         ).into_response();
     }
-    window.requests += 1;
     drop(windows);
     next.run(request).await
 }
@@ -661,21 +668,15 @@ mod tests {
     }
 
     #[test]
-    fn api_rate_window_resets_after_sixty_seconds() {
+    fn api_rate_window_enforces_limit_and_resets_after_sixty_seconds() {
         let now = Instant::now();
-        let mut window = RateWindow { started: now, requests: API_RATE_LIMIT };
-        assert!(now.duration_since(window.started) < API_RATE_WINDOW);
-        if now.duration_since(window.started) >= API_RATE_WINDOW {
-            window.started = now;
-            window.requests = 0;
+        let mut window = RateWindow { started: now, requests: 0 };
+        for _ in 0..API_RATE_LIMIT {
+            assert!(consume_rate_window(&mut window, now));
         }
-        assert_eq!(window.requests, API_RATE_LIMIT);
-        let later = now + API_RATE_WINDOW;
-        if later.duration_since(window.started) >= API_RATE_WINDOW {
-            window.started = later;
-            window.requests = 0;
-        }
-        assert_eq!(window.requests, 0);
+        assert!(!consume_rate_window(&mut window, now));
+        assert!(consume_rate_window(&mut window, now + API_RATE_WINDOW));
+        assert_eq!(window.requests, 1);
     }
 
     #[test]
