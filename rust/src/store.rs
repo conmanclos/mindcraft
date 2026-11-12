@@ -423,7 +423,7 @@ impl Store {
         tx.execute(
             "UPDATE agent_tasks SET status='cancelled', assigned_agent=NULL, lease_until=NULL,
              updated_at=CURRENT_TIMESTAMP
-             WHERE status IN ('pending','claimed')
+             WHERE status IN ('pending','claimed','review')
                AND goal_id IN (SELECT id FROM goals WHERE status='failed')",
             [],
         )?;
@@ -523,7 +523,7 @@ impl Store {
             tx.execute(
                 "UPDATE agent_tasks SET status='cancelled', assigned_agent=NULL, lease_until=NULL,
                  updated_at=CURRENT_TIMESTAMP
-                 WHERE goal_id=?1 AND id!=?2 AND status IN ('pending','claimed')",
+                 WHERE goal_id=?1 AND id!=?2 AND status IN ('pending','claimed','review')",
                 params![goal_id, task_id],
             )?;
         }
