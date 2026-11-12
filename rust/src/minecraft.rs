@@ -1841,7 +1841,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
     match recipe {
         "planks" => Some((false, "planks", &[(1, "log")])),
         "sticks" => Some((false, "stick", &[(1, "planks"), (3, "planks")])),
-        "torch" => Some((false, "torch", &[(1, "coal"), (3, "stick")])),
+        "torch" => Some((false, "torch", &[(1, "coal_or_charcoal"), (3, "stick")])),
         "crafting_table" => Some((false, "crafting_table", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks")])),
         "wooden_pickaxe" => Some((true, "wooden_pickaxe", &[(1, "planks"), (2, "planks"), (3, "planks"), (5, "stick"), (8, "stick")])),
         "wooden_axe" => Some((true, "wooden_axe", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "stick"), (8, "stick")])),
@@ -1924,7 +1924,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "polished_granite" => Some((false, "polished_granite", &[(1, "granite"), (2, "granite"), (3, "granite"), (4, "granite")])),
         "polished_deepslate" => Some((false, "polished_deepslate", &[(1, "cobbled_deepslate"), (2, "cobbled_deepslate"), (3, "cobbled_deepslate"), (4, "cobbled_deepslate")])),
         "loom" => Some((false, "loom", &[(1, "string"), (2, "string"), (3, "planks"), (4, "planks")])),
-        "campfire" => Some((true, "campfire", &[(2, "stick"), (4, "stick"), (5, "coal"), (6, "stick"), (7, "log"), (8, "log"), (9, "log")])),
+        "campfire" => Some((true, "campfire", &[(2, "stick"), (4, "stick"), (5, "coal_or_charcoal"), (6, "stick"), (7, "log"), (8, "log"), (9, "log")])),
         "brewing_stand" => Some((true, "brewing_stand", &[(2, "blaze_rod"), (4, "cobblestone"), (5, "cobblestone"), (6, "cobblestone")])),
         "stonecutter" => Some((true, "stonecutter", &[(2, "iron_ingot"), (4, "stone"), (5, "stone"), (6, "stone")])),
         "grindstone" => Some((true, "grindstone", &[(1, "stick"), (2, "stone_slab"), (3, "stick"), (4, "planks"), (6, "planks")])),
