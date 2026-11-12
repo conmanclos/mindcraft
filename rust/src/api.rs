@@ -814,14 +814,27 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::SmeltQueue(jobs))
         }
         "container_deposit" => {
-            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z for a container deposit".into()))?;
-            let parsed = raw.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
-                .map_err(|_| (StatusCode::BAD_REQUEST, "container deposit target must be integer x,y,z coordinates".into()))?;
-            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z or x,y,z,exact_item_name for a filtered container deposit".into()))?;
+            let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
+            if parts.len() != 3 && parts.len() != 4 {
+                return Err((StatusCode::BAD_REQUEST, "container deposit accepts x,y,z with an optional exact item-name filter".into()));
+            }
+            let parsed = parts[..3].iter().map(|value| value.parse::<i32>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "container deposit coordinates must be integers".into()))?;
+            if parsed[1] < -64 || parsed[1] > 320
                 || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
                 return Err((StatusCode::BAD_REQUEST, "container deposit requires valid world coordinates".into()));
             }
-            Ok(BotCommand::ContainerDeposit(parsed[0], parsed[1], parsed[2]))
+            let filter = if parts.len() == 4 {
+                let item = parts[3].to_ascii_lowercase();
+                if item.is_empty() || item.len() > 32
+                    || !item.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
+                    return Err((StatusCode::BAD_REQUEST, "deposit item filter must be an exact item name using letters, numbers, and underscores".into()));
+                }
+                Some(item)
+            } else { None };
+            Ok(BotCommand::ContainerDeposit(parsed[0], parsed[1], parsed[2], filter))
         }
         "container_transfer" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot, start-end, or all".into()))?;
