@@ -297,9 +297,17 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             if parts.next().is_some() {
                 return Err((StatusCode::BAD_REQUEST, "craft target accepts at most one @x,y,z crafting-table coordinate".into()));
             }
-            let supported = ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "furnace", "chest", "bread", "ladder"];
+            let supported = [
+                "planks", "sticks", "torch", "crafting_table",
+                "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe",
+                "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe",
+                "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe",
+                "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe",
+                "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl",
+                "furnace", "chest", "bread", "ladder",
+            ];
             if !supported.contains(&recipe.as_str()) {
-                return Err((StatusCode::NOT_IMPLEMENTED, "supported recipes: planks, sticks, torch, crafting_table, wooden/stone tools, furnace, chest, bread, ladder".into()));
+                return Err((StatusCode::NOT_IMPLEMENTED, "supported recipes include planks, sticks, torches, wooden/stone/iron/diamond tools, doors, trapdoors, slabs, stairs, fences, signs, boats, bowls, furnaces, chests, bread, and ladders".into()));
             }
             let requires_table = !["planks", "sticks", "torch", "crafting_table"].contains(&recipe.as_str());
             if requires_table && table.is_none() {
