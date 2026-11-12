@@ -62,6 +62,8 @@ impl Config {
             }
         }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
+        let default_base_url = if provider == "ollama" { "http://127.0.0.1:11434/v1" } else { "https://api.openai.com/v1" };
+        let base_url = env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| default_base_url.into());
         if provider == "openai" && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required when MINDCRAFT_PROVIDER=openai");
         }
@@ -83,7 +85,7 @@ impl Config {
             provider,
             model: env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into()),
             api_key,
-            base_url: env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".into()),
+            base_url,
             minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
             minecraft_username,
             minecraft_accounts,
