@@ -1,18 +1,18 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
 use azalea::{
-    ecs::prelude::Resource,
+    BlockPos,
     pathfinder::{goals::{BlockPosGoal, RadiusGoal}, PathfinderClientExt},
     prelude::*,
     swarm::{Swarm, SwarmBuilder, SwarmEvent},
 };
-use azalea_client::{
+use azalea::{
+    entity::{indexing::EntityUuidIndex, Position},
     interact::HitResultComponent,
     inventory::SetSelectedHotbarSlotEvent,
     movement::{StartWalkEvent, WalkDirection},
+    world::MinecraftEntityId,
 };
-use azalea_entity::{indexing::EntityUuidIndex, Position};
-use azalea_world::MinecraftEntityId;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
