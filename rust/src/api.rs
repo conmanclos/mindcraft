@@ -454,6 +454,67 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
     Ok(positions)
 }
 
+
+#[derive(Deserialize)]
+struct SchematicDocument {
+    blocks: Vec<SchematicBlock>,
+}
+
+#[derive(Deserialize)]
+struct SchematicBlock {
+    x: i32,
+    y: i32,
+    z: i32,
+    material: String,
+}
+
+/// Parse a compact JSON schematic with relative coordinates and an absolute
+/// origin. The 64-block and 32-block relative bounds keep model/API payloads
+/// bounded and prevent accidental world-scale construction plans.
+fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, String)> {
+    let spec = raw.strip_prefix("schematic:")
+        .ok_or((StatusCode::BAD_REQUEST, "schematic target must start with schematic:".into()))?;
+    if spec.len() > 12_000 {
+        return Err((StatusCode::BAD_REQUEST, "schematic JSON exceeds the 12000-byte limit".into()));
+    }
+    let (json, origin_raw) = spec.split_once('|')
+        .ok_or((StatusCode::BAD_REQUEST, "schematic syntax is schematic:{\"blocks\":[...]}|origin_x,origin_y,origin_z".into()))?;
+    if origin_raw.contains('|') {
+        return Err((StatusCode::BAD_REQUEST, "schematic accepts exactly one origin separator".into()));
+    }
+    let (ox, oy, oz) = parse_blueprint_origin(origin_raw)?;
+    let document: SchematicDocument = serde_json::from_str(json)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "schematic must be valid JSON with a blocks array".into()))?;
+    if document.blocks.is_empty() || document.blocks.len() > 64 {
+        return Err((StatusCode::BAD_REQUEST, "schematic must contain 1-64 blocks".into()));
+    }
+    let mut seen = HashSet::new();
+    let mut blocks = Vec::with_capacity(document.blocks.len());
+    for block in document.blocks {
+        let material = block.material.trim().to_ascii_lowercase();
+        if material.is_empty() || material.len() > 32
+            || !material.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
+            || material == "air" {
+            return Err((StatusCode::BAD_REQUEST, "each schematic material must be an exact non-air item name using letters, numbers, and underscores".into()));
+        }
+        if [block.x, block.y, block.z].iter().any(|value| value.unsigned_abs() > 32) {
+            return Err((StatusCode::BAD_REQUEST, "schematic-relative coordinates must stay within 32 blocks of the origin".into()));
+        }
+        let x = ox.checked_add(block.x).ok_or((StatusCode::BAD_REQUEST, "schematic x coordinate overflow".into()))?;
+        let y = oy.checked_add(block.y).ok_or((StatusCode::BAD_REQUEST, "schematic y coordinate overflow".into()))?;
+        let z = oz.checked_add(block.z).ok_or((StatusCode::BAD_REQUEST, "schematic z coordinate overflow".into()))?;
+        if !(-64..=320).contains(&y) || [x, y, z].iter().any(|value| value.unsigned_abs() > 30_000_000) {
+            return Err((StatusCode::BAD_REQUEST, "schematic block is outside supported Minecraft world bounds".into()));
+        }
+        if !seen.insert((x, y, z)) {
+            return Err((StatusCode::BAD_REQUEST, "schematic cannot contain duplicate block coordinates".into()));
+        }
+        blocks.push(BuildBlock { material, x, y, z });
+    }
+    blocks.sort_by_key(|block| (block.y, block.x, block.z));
+    Ok(blocks)
+}
+
 fn parse_build_spec(raw: &str) -> Result<(Option<String>, Vec<(i32, i32, i32)>), (StatusCode, String)> {
     let (material, coordinates) = match raw.split_once('@') {
         Some((material, coordinates)) if !material.trim().to_ascii_lowercase().starts_with("blueprint:") => {
@@ -504,9 +565,13 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::Explore(radius))
         }
         "build" => {
-            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be semicolon-separated x,y,z positions, optionally prefixed with exact_hotbar_item@".into()))?;
-            let (material, positions) = parse_build_spec(&raw)?;
-            Ok(BotCommand::Build(material, positions))
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be coordinates, a built-in blueprint, or a JSON schematic".into()))?;
+            if raw.starts_with("schematic:") {
+                Ok(BotCommand::BuildMixed(parse_schematic_spec(&raw)?))
+            } else {
+                let (material, positions) = parse_build_spec(&raw)?;
+                Ok(BotCommand::Build(material, positions))
+            }
         }
         "craft" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a recipe name, optionally followed by @x,y,z for a crafting table".into()))?;
