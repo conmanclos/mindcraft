@@ -1,11 +1,11 @@
 use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_spec, smelt_spec, AgentCommand, BotCommand}, store::{AgentTask, Goal, Store}};
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Request, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Json, Request, Router,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::{hash_map::DefaultHasher, HashMap, HashSet}, hash::{Hash, Hasher}, sync::{atomic::AtomicBool, Arc}, time::Instant};
