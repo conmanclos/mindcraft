@@ -17,7 +17,7 @@ main{max-width:900px;margin:0 auto;padding:42px 28px 60px}.brand{display:flex;al
 </head>
 <body><main>
 <header class="brand"><div class="mark">⛏</div><div><h1>Mindcraft</h1><div class="muted">Your AI teammate for Minecraft 26.1</div></div></header>
-<div class="eyebrow">First-time setup</div><h2 style="font-size:29px;margin:5px 0">Let's get you into your world.</h2><p class="muted">Configure your server and AI teammate once. Mindcraft will save the setup on this Mac.</p>
+<div class="eyebrow">First-time setup</div><h2 style="font-size:29px;margin:5px 0">Let's get you into your world.</h2><p class="muted">Configure your server and AI teammate once. Mindcraft will save the setup on this device.</p>
 <div class="steps"><div class="step active"></div><div class="step active"></div><div class="step active"></div></div>
 <section class="panel"><h2>1. Minecraft connection</h2><p>Tell Mindcraft which Java server to join.</p><div class="grid">
 <div class="field wide"><label for="server">Server address</label><input id="server" placeholder="play.example.com:25565" autocomplete="off"></div>
@@ -27,7 +27,7 @@ main{max-width:900px;margin:0 auto;padding:42px 28px 60px}.brand{display:flex;al
 <div class="field wide" id="emailField"><label for="email">Microsoft account email</label><input id="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
 <div class="field wide"><label for="trustedPlayers">Trusted in-game command senders (optional)</label><input id="trustedPlayers" autocomplete="off" placeholder="YourMinecraftName, FriendName"><div class="field-note">Only these Minecraft usernames may trigger autonomous game actions through server chat. Leave blank to allow chat replies but block chat-triggered actions. Dashboard actions still follow your selected approval mode.</div></div>
 </div></section>
-<section class="panel"><h2>2. AI teammate</h2><p>Choose the model that makes decisions. API keys are stored in macOS Keychain, not in the config file.</p><div class="grid">
+<section class="panel"><h2>2. AI teammate</h2><p>Choose the model that makes decisions. API keys are stored in the operating system credential store, not in the config file.</p><div class="grid">
 <div class="field"><label for="provider">AI provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama (local)</option><option value="openai-compatible">OpenAI-compatible API</option></select></div>
 <div class="field"><label for="model">Model name</label><input id="model" value="gpt-5.1" autocomplete="off"></div>
 <div class="field wide" id="keyField"><label for="key">Provider API key</label><input id="key" type="password" autocomplete="off" placeholder="Paste API key"></div>
@@ -86,7 +86,7 @@ function toggleAuth(){const microsoft=$("auth").value==="microsoft";$("emailFiel
 $("provider").onchange=toggleProvider;$("auth").onchange=toggleAuth;toggleProvider();toggleAuth();
 $("save").onclick=async()=>{try{
 const setup={server:$("server").value.trim(),username:$("username").value.trim(),accounts:$("accounts").value.trim(),auth:$("auth").value,microsoftEmail:$("email").value.trim(),trustedPlayers:$("trustedPlayers").value.trim(),provider:$("provider").value,model:$("model").value.trim(),apiKey:$("key").value,baseUrl:$("baseUrl").value.trim(),autonomy:$("autonomy").value};
-await invoke("save_setup",{setup});$("key").value="";$("run").disabled=false;message("Setup saved on this Mac. Your provider key is stored in Keychain.",true);
+await invoke("save_setup",{setup});$("key").value="";$("run").disabled=false;message("Setup saved on this Mac. Your provider key is stored in the operating system credential store.",true);
 }catch(e){message(String(e))}};
 $("run").onclick=async()=>{try{$("run").disabled=true;message("Starting the Rust runtime…");const launch=await invoke("start_runtime");token=launch.token;apiBase="http://127.0.0.1:"+launch.apiPort;$("stop").disabled=false;$("live").classList.remove("hidden");$("controls").classList.remove("hidden");$("goals").classList.remove("hidden");$("liveTitle").textContent="Mindcraft is starting";$("liveDescription").textContent="Waiting for the Minecraft connection…";message("Runtime launched. Checking your Minecraft connection.",true);pollStatus();refreshGoals().catch(()=>{});$("memoryPanel").classList.remove("hidden");refreshMemories().catch(()=>{});poll=setInterval(pollStatus,2500)}catch(e){$("run").disabled=false;message(String(e))}};
 $("stop").onclick=async()=>{try{await invoke("stop_runtime");clearInterval(poll);clearTaskHeartbeat();claimedTask=null;claimedAgentId=null;$("claimTask").disabled=false;$("completeTask").disabled=true;$("planClaimedTask").disabled=true;$("stop").disabled=true;$("run").disabled=false;$("liveTitle").textContent="Stopped";$("liveDescription").textContent="Mindcraft is not running.";message("Mindcraft stopped.",true)}catch(e){message(String(e))}};
