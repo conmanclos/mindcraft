@@ -435,7 +435,7 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
 
 fn parse_build_spec(raw: &str) -> Result<(Option<String>, Vec<(i32, i32, i32)>), (StatusCode, String)> {
     let (material, coordinates) = match raw.split_once('@') {
-        Some((material, coordinates)) if !material.trim().eq_ignore_ascii_case("blueprint") => {
+        Some((material, coordinates)) if !material.trim().to_ascii_lowercase().starts_with("blueprint:") => {
             let material = material.trim().to_ascii_lowercase();
             if material.is_empty() || material.len() > 32
                 || !material.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
