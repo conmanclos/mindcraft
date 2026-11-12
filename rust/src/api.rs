@@ -217,8 +217,8 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
     match action.action.to_lowercase().as_str() {
         "say" => {
             let text = action.target.unwrap_or(action.reason);
-            if text.trim().is_empty() || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
-                return Err((StatusCode::BAD_REQUEST, "say accepts plain chat text only; slash commands and control characters are blocked".into()));
+            if text.trim().is_empty() || text.len() > 256 || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
+                return Err((StatusCode::BAD_REQUEST, "say accepts 1-256 bytes of plain chat text only; slash commands and control characters are blocked".into()));
             }
             Ok(BotCommand::Say(text))
         }
