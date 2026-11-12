@@ -42,24 +42,23 @@ async fn main() -> Result<()> {
             let brain = Arc::new(brain::Brain::new(config.clone()));
             let status = Arc::new(api::RuntimeStatus::default());
 
-            if let Some(server) = config.minecraft_server.clone() {
-                let bot_brain = brain.clone();
-                let bot_status = status.clone();
-                let bot_username = config.minecraft_username.clone();
-                tokio::spawn(async move {
-                    if let Err(error) = minecraft::connect(server, bot_username, bot_brain, bot_status).await {
-                        tracing::error!(%error, "Minecraft runtime stopped");
-                    }
-                });
-            } else {
-                tracing::warn!("MINDCRAFT_MC_SERVER is unset; dashboard/API will start without a Minecraft connection");
-            }
-
             tracing::info!(bind = %config.bind, mode = %config.mode, "Mindcraft runtime starting");
             if config.api_token_was_generated {
                 tracing::warn!(token = %config.api_token, "Generated one-time dashboard API token; copy it now");
             }
-            api::serve(config, brain, store, status).await?;
+
+            if let Some(server) = config.minecraft_server.clone() {
+                let bot_brain = brain.clone();
+                let bot_status = status.clone();
+                let bot_username = config.minecraft_username.clone();
+                tokio::select! {
+                    result = api::serve(config.clone(), brain, store, status) => result?,
+                    result = minecraft::connect(server, bot_username, bot_brain, bot_status) => result?,
+                }
+            } else {
+                tracing::warn!("MINDCRAFT_MC_SERVER is unset; dashboard/API will start without a Minecraft connection");
+                api::serve(config, brain, store, status).await?;
+            }
         }
         Command::Chat { prompt } => {
             let brain = brain::Brain::new(config);
