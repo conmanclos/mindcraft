@@ -19,7 +19,7 @@ Do not connect this bot to public servers with coding enabled. This project allo
 
 # Native Rust Runtime
 
-A separate Rust-native implementation is being developed alongside this original Mineflayer application. It targets Minecraft Java Edition 26.1 and pins Azalea 0.16.0+mc26.1. It is native Rust, not a JavaScript translation layer. The Azalea gameplay integration still requires migration and build/live-server verification against the 26.1 API.
+A separate Rust-native implementation is being developed alongside this original Mineflayer application. It targets Minecraft Java Edition 26.1 and pins Azalea 0.16.0+mc26.1. It is native Rust, not a JavaScript translation layer. Core gameplay calls have been updated against Azalea 0.16.0; a successful build and live-server verification against 26.1 are still outstanding.
 
 See [RUST_NATIVE.md](RUST_NATIVE.md) and [rust/README.md](rust/README.md) for setup and the exact current implementation boundary. The Rust runtime is still under active development and has not yet been build-verified or live-server tested; the original JavaScript instructions below remain unchanged.
 
