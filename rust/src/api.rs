@@ -874,23 +874,30 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 || [x, y, z].iter().any(|value| value.unsigned_abs() > 30_000_000) {
                 return Err((StatusCode::BAD_REQUEST, "container transfer requires valid world coordinates and exactly one slot selector".into()));
             }
-            let slot_range = if selector.eq_ignore_ascii_case("all") {
-                None
+            let (slot_range, item_filter) = if selector.eq_ignore_ascii_case("all") {
+                (None, None)
+            } else if let Some(raw_item) = selector.strip_prefix("item:") {
+                let item = raw_item.trim().to_ascii_lowercase();
+                if item.is_empty() || item == "air" || item.len() > 32
+                    || !item.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
+                    return Err((StatusCode::BAD_REQUEST, "item filter must use an exact non-air item name with letters, numbers, and underscores".into()));
+                }
+                (None, Some(item))
             } else {
                 let (first, last) = match selector.split_once('-') {
                     Some((first, last)) => (first.trim(), last.trim()),
                     None => (selector, selector),
                 };
                 let first = first.parse::<u16>()
-                    .map_err(|_| (StatusCode::BAD_REQUEST, "slot selector must be 0-89, a range such as 0-26, or all".into()))?;
+                    .map_err(|_| (StatusCode::BAD_REQUEST, "selector must be 0-89, a range such as 0-26, all, or item:exact_name".into()))?;
                 let last = last.parse::<u16>()
-                    .map_err(|_| (StatusCode::BAD_REQUEST, "slot selector must be 0-89, a range such as 0-26, or all".into()))?;
+                    .map_err(|_| (StatusCode::BAD_REQUEST, "selector must be 0-89, a range such as 0-26, all, or item:exact_name".into()))?;
                 if first > last || last > 89 {
                     return Err((StatusCode::BAD_REQUEST, "slot range must be ordered and stay within 0-89".into()));
                 }
-                Some((first, last))
+                (Some((first, last)), None)
             };
-            Ok(BotCommand::ContainerTransfer(x, y, z, slot_range))
+            Ok(BotCommand::ContainerTransfer(x, y, z, slot_range, item_filter))
         }
         "optimize_armor" => Ok(BotCommand::OptimizeArmor),
         "use_item" => Ok(BotCommand::UseItem),
