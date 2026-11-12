@@ -137,7 +137,10 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) && entry.get_password().is_err() {
             return Err("This AI provider requires an API key. Enter it once to store it in Keychain.".into());
         }
-        if setup.provider == "ollama" {
+        // Never carry a previously stored hosted-provider key into a
+        // user-configured OpenAI-compatible endpoint unless the user enters
+        // that key explicitly for this setup.
+        if !["openai", "anthropic", "google"].contains(&setup.provider.as_str()) {
             let _ = entry.delete_credential();
         }
     } else {
