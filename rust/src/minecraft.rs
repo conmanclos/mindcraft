@@ -227,7 +227,15 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         match bot.hit_result() {
                             HitResult::Block(hit) if !hit.miss && hit.block_pos == pending.position => {
                                 match pending.kind {
-                                    PendingBlockActionKind::Mine => bot.start_mining(pending.position),
+                                    PendingBlockActionKind::Mine => {
+                                        let mining_bot = bot.clone();
+                                        let position = pending.position;
+                                        tokio::spawn(async move {
+                                            if let Err(error) = mining_bot.mine_with_auto_tool(position).await {
+                                                tracing::warn!(%error, ?position, "automatic tool-assisted mining failed");
+                                            }
+                                        });
+                                    }
                                     PendingBlockActionKind::Place => bot.block_interact(pending.position),
                                 }
                             }
