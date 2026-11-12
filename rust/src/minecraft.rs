@@ -755,6 +755,8 @@ fn release_held_item(bot: &Client) -> Result<()> {
 }
 
 async fn use_held_item_for_duration(bot: &mut Client, ticks_to_hold: usize) -> Result<()> {
+    bot.stop_pathfinding();
+    stop_walking(bot);
     use_held_item(bot)?;
     let mut ticks = bot.get_tick_broadcaster();
     wait_ticks(&mut ticks, ticks_to_hold).await?;
