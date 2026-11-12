@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::hit_result::HitResult, pathfinder::{PathfinderClientExt, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::hit_result::HitResult, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -414,7 +414,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 return;
                             };
                             let chunk_storage = world.read().chunks.clone();
-                            client.goto(ReachBlockPosGoal::new(position, chunk_storage)).await;
+                            client.goto_with_opts(ReachBlockPosGoal::new(position, chunk_storage), PathfinderOpts::new().allow_mining(false)).await;
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
                             }
