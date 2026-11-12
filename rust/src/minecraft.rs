@@ -22,7 +22,7 @@ pub enum BotCommand {
     Build(Option<String>, Vec<(i32, i32, i32)>),
     Equip(u8),
     Explore(u16),
-    ContainerTransfer(i32, i32, i32, u16),
+    ContainerTransfer(i32, i32, i32, Option<(u16, u16)>),
     Craft(String, Option<(i32, i32, i32)>),
     Smelt(String, (i32, i32, i32), u8),
 }
@@ -1124,7 +1124,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
                         });
                     }
-                    BotCommand::ContainerTransfer(x, y, z, slot) => {
+                    BotCommand::ContainerTransfer(x, y, z, slot_range) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
                         let generation_state = state.mine_generation.clone();
@@ -1186,12 +1186,36 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         drop(container);
                                         return;
                                     }
-                                    let slot_before = container.slots()
-                                        .and_then(|slots| slots.get(slot as usize).cloned());
-                                    if let Some(item_before) = slot_before.filter(|item| !item.is_empty()) {
+                                    let Some(menu) = container.menu().ok().flatten() else {
+                                        client.chat("The container menu closed before I could inspect its slots.");
+                                        drop(container);
+                                        return;
+                                    };
+                                    let container_slot_count = *menu.player_slots_range().start();
+                                    let slots: Vec<usize> = match slot_range {
+                                        Some((first, last)) if usize::from(last) < container_slot_count => {
+                                            (usize::from(first)..=usize::from(last)).collect()
+                                        }
+                                        Some(_) => {
+                                            client.chat("The requested slot range is outside this container's actual slots.");
+                                            drop(container);
+                                            return;
+                                        }
+                                        None => (0..container_slot_count).collect(),
+                                    };
+                                    let mut moved_count = 0usize;
+                                    let mut skipped_count = 0usize;
+                                    for slot in slots {
+                                        if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                            drop(container);
+                                            return;
+                                        }
+                                        let before = container.slots()
+                                            .and_then(|items| items.get(slot).cloned());
+                                        let Some(item_before) = before.filter(|item| !item.is_empty()) else { continue; };
                                         let before_count = item_before.count();
                                         let before_kind = item_before.kind();
-                                        container.shift_click(slot as usize);
+                                        container.shift_click(slot);
                                         let mut moved = false;
                                         for _ in 0..10 {
                                             client.wait_ticks(1).await;
@@ -1200,21 +1224,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                                 return;
                                             }
                                             moved = container.slots()
-                                                .and_then(|slots| slots.get(slot as usize).map(|item| {
+                                                .and_then(|items| items.get(slot).map(|item| {
                                                     item.is_empty() || item.count() < before_count || item.kind() != before_kind
                                                 }))
                                                 .unwrap_or(false);
                                             if moved { break; }
                                         }
                                         if moved {
+                                            moved_count += 1;
                                             tracing::info!(username = %client.username(), slot, ?position, "container slot transfer observed");
-                                            client.chat("The selected inventory slot changed after the transfer.");
                                         } else {
-                                            client.chat("The selected slot did not change; the transfer may have been rejected or the destination may be full.");
+                                            skipped_count += 1;
                                         }
-                                    } else {
-                                        client.chat("That inventory slot is empty, unavailable, or the container closed.");
                                     }
+                                    client.chat(format!("Container transfer finished: {moved_count} slot(s) changed; {skipped_count} non-empty slot(s) could not be moved. The rest were empty."));
                                     drop(container);
                                 }
                                 Ok(None) => client.chat("I could not open that block as a container."),
