@@ -1,4 +1,4 @@
-use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_spec, AgentCommand, BotCommand}, store::{AgentTask, Goal, Store}};
+use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_spec, smelt_spec, AgentCommand, BotCommand}, store::{AgentTask, Goal, Store}};
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
@@ -308,6 +308,22 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             Ok(BotCommand::Craft(recipe, table))
         }
+        "smelt" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be an allowlisted input@x,y,z with a furnace coordinate".into()))?;
+            let (input, coordinates) = raw.split_once('@')
+                .ok_or((StatusCode::BAD_REQUEST, "smelt target must use input@x,y,z syntax".into()))?;
+            let input = input.trim().to_ascii_lowercase();
+            if smelt_spec(&input).is_none() {
+                return Err((StatusCode::NOT_IMPLEMENTED, "that input is not in the runtime's explicit smelting allowlist".into()));
+            }
+            let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "smelt furnace target must be x,y,z".into()))?;
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+                || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "smelt furnace coordinates are outside supported world bounds".into()));
+            }
+            Ok(BotCommand::Smelt(input, (parsed[0], parsed[1], parsed[2])))
+        }
         "container_transfer" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot for a container transfer".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
@@ -488,6 +504,16 @@ mod tests {
         assert!(command_from_action(action("say", Some(oversized_message.as_str()))).is_err());
         assert!(command_from_action(action("say", Some(max_supplementary_message.as_str()))).is_ok());
         assert!(command_from_action(action("say", Some(oversized_supplementary_message.as_str()))).is_err());
+    }
+
+    #[test]
+    fn smelting_requires_an_allowlisted_input_and_valid_furnace_coordinate() {
+        assert!(command_from_action(action("smelt", Some("raw_iron@0,64,0"))).is_ok());
+        assert!(command_from_action(action("smelt", Some("beef@0,64,0"))).is_ok());
+        assert!(command_from_action(action("smelt", Some("unknown_item@0,64,0"))).is_err());
+        assert!(command_from_action(action("smelt", Some("raw_iron"))).is_err());
+        assert!(command_from_action(action("smelt", Some("raw_iron@0,999,0"))).is_err());
+        assert!(command_from_action(action("smelt", Some("raw_iron@0,64,0@1,2,3"))).is_err());
     }
 
     #[test]
