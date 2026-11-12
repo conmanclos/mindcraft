@@ -42,11 +42,101 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 </section>
 </main>
 <script>
-const $=id=>document.getElementById(id);let token="";let lastPlan=null;let currentTask=null;
-function log(s){$("log").textContent += "\n"+s;$("log").scrollTop=$("log").scrollHeight}
-async function api(path,body){const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||data.message||("HTTP "+r.status));return data}
-async function connect(){token=$("token").value.trim();if(!token)throw Error("Enter the API token printed in the terminal.");const s=await api("/api/status");$("mc").textContent=s.minecraft_connected?"Connected":"Not connected";$("mode").textContent=s.autonomy;$("provider").textContent=s.provider;$("model").textContent=s.model;$("health").textContent=s.world?s.world.health+"/20":"Unknown";$("position").textContent=s.world?s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";$("connection").textContent="Connected to local runtime"}
+const $=id=>document.getElementById(id);
+let token="";
+let lastPlan=null;
+let currentTask=null;
+function log(s){$("log").textContent+="\\n"+s;$("log").scrollTop=$("log").scrollHeight}
+async function api(path,body){
+  const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error(data.error||data.message||("HTTP "+r.status));
+  return data;
+}
+async function connect(){
+  token=$("token").value.trim();
+  if(!token)throw Error("Enter the API token printed in the terminal.");
+  const s=await api("/api/status");
+  $("mc").textContent=s.minecraft_connected?"Connected":"Not connected";
+  $("mode").textContent=s.autonomy;
+  $("provider").textContent=s.provider;
+  $("model").textContent=s.model;
+  $("health").textContent=s.world?s.world.health+"/20":"Unknown";
+  $("position").textContent=s.world?s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";
+  $("connection").textContent="Connected to local runtime";
+}
 $("connect").onclick=()=>connect().catch(e=>{$("connection").textContent=e.message});
-$("send").onclick=async()=>{try{if(!token)await connect();const message=$("message").value.trim();if(!message)return;log("You: "+message);$("message").value="";$("send").disabled=true;const r=await api("/api/chat",{message});log("Mindcraft: "+r.reply)}catch(e){log("Error: "+e.message)}finally{$("send").disabled=false}};
-$("plan").onclick=async()=>{try{if(!token)await connect();const message=$("message").value.trim();if(!message)throw Error("Describe the action you want planned in the message box.");$("plan").disabled=true;const r=await api("/api/plan",{message});$("proposal").style.display="block";$("proposal").textContent=JSON.stringify(r.proposed_action,null,2)+"\nExecution: "+r.execution}catch(e){$("proposal").style.display="block";$("proposal").textContent="Plan rejected: "+e.message}finally{$("plan").disabled=false}};
+$("send").onclick=async()=>{
+  try{
+    if(!token)await connect();
+    const message=$("message").value.trim();
+    if(!message)return;
+    log("You: "+message);
+    $("message").value="";
+    $("send").disabled=true;
+    const r=await api("/api/chat",{message});
+    log("Mindcraft: "+r.reply);
+  }catch(e){log("Error: "+e.message)}
+  finally{$("send").disabled=false}
+};
+$("plan").onclick=async()=>{
+  try{
+    if(!token)await connect();
+    const message=$("message").value.trim();
+    if(!message)throw Error("Describe the action you want planned in the message box.");
+    $("plan").disabled=true;
+    const r=await api("/api/plan",{message});
+    lastPlan=r.proposed_action;
+    $("execute").disabled=false;
+    $("proposal").style.display="block";
+    $("proposal").textContent=JSON.stringify(lastPlan,null,2)+"\\n"+r.execution;
+  }catch(e){
+    lastPlan=null;
+    $("execute").disabled=true;
+    $("proposal").style.display="block";
+    $("proposal").textContent="Plan rejected: "+e.message;
+  }finally{$("plan").disabled=false}
+};
+$("execute").onclick=async()=>{
+  try{
+    if(!lastPlan)throw Error("Generate a plan first.");
+    $("execute").disabled=true;
+    const r=await api("/api/execute",{action:lastPlan});
+    log("Runtime: "+r.message);
+    lastPlan=null;
+  }catch(e){log("Execution rejected: "+e.message)}
+  finally{$("execute").disabled=!lastPlan}
+};
+$("createGoal").onclick=async()=>{
+  try{
+    if(!token)await connect();
+    const description=$("goal").value.trim();
+    if(!description)throw Error("Enter a goal first.");
+    $("createGoal").disabled=true;
+    const r=await api("/api/goals",{description});
+    $("goalResult").textContent="Created goal #"+r.goal_id+"\\n"+JSON.stringify(r.tasks,null,2);
+  }catch(e){$("goalResult").textContent="Goal planning failed: "+e.message}
+  finally{$("createGoal").disabled=false}
+};
+$("claimTask").onclick=async()=>{
+  try{
+    if(!token)await connect();
+    const agent_id=$("agentId").value.trim();
+    const role=$("agentRole").value;
+    const r=await api("/api/tasks/claim",{agent_id,role});
+    currentTask=r.task;
+    $("completeTask").disabled=!currentTask;
+    $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
+  }catch(e){$("taskResult").textContent="Claim failed: "+e.message}
+};
+$("completeTask").onclick=async()=>{
+  try{
+    if(!currentTask)throw Error("Claim a task first.");
+    const agent_id=$("agentId").value.trim();
+    await api("/api/tasks/"+currentTask.id+"/complete",{agent_id});
+    $("taskResult").textContent="Task #"+currentTask.id+" marked complete.";
+    currentTask=null;
+    $("completeTask").disabled=true;
+  }catch(e){$("taskResult").textContent="Completion failed: "+e.message}
+};
 </script></body></html>
