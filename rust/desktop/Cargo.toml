@@ -13,4 +13,5 @@ dotenvy = "0.15"
 keyring = { version = "3", features = ["apple-native"] }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
+url = "2"
 uuid = { version = "1", features = ["v4"] }
