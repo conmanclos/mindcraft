@@ -2431,23 +2431,49 @@ async fn execute_smelt(
         bot.chat("The furnace input, fuel, or output slot is occupied. I won't mix with an existing smelting job.");
         return;
     }
-    let Some(input_source) = menu.player_slots_range().find(|slot| {
-        slots.get(*slot).is_some_and(|item| {
-            !item.is_empty() && item.count() >= count
-                && smelt_input_matches(&format!("{:?}", item.kind()), &input)
-        })
-    }) else {
-        bot.chat(format!("I need at least {count} {input} in one inventory stack."));
+    let mut input_groups: Vec<(String, u16, Vec<(usize, u8)>)> = Vec::new();
+    for slot in menu.player_slots_range() {
+        let Some(item) = slots.get(slot) else { continue; };
+        if item.is_empty() { continue; }
+        let debug_name = format!("{:?}", item.kind());
+        if !smelt_input_matches(&debug_name, &input) { continue; }
+        let canonical: String = debug_name.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if let Some(group) = input_groups.iter_mut().find(|group| group.0 == canonical) {
+            group.1 += u16::from(item.count());
+            group.2.push((slot, item.count()));
+        } else {
+            input_groups.push((canonical, u16::from(item.count()), vec![(slot, item.count())]));
+        }
+    }
+    let Some((_, total_input, input_sources)) = input_groups.into_iter()
+        .filter(|(_, total, _)| *total >= u16::from(count))
+        .min_by_key(|(_, total, _)| *total - u16::from(count)) else {
+        bot.chat(format!("I need {count} matching {input} across one or more inventory stacks of the same item."));
         return;
     };
 
-    container.left_click(input_source);
-    for _ in 0..count {
-        if cancelled() { drop(container); return; }
-        container.right_click(0);
-        bot.wait_ticks(1).await;
+    let mut remaining_input = count;
+    for (input_source, available) in input_sources {
+        if remaining_input == 0 { break; }
+        let amount = remaining_input.min(available);
+        container.left_click(input_source);
+        for _ in 0..amount {
+            if cancelled() { drop(container); return; }
+            container.right_click(0);
+            bot.wait_ticks(1).await;
+        }
+        container.left_click(input_source);
+        remaining_input -= amount;
     }
-    container.left_click(input_source);
+    if remaining_input != 0 {
+        container.shift_click(0);
+        bot.wait_ticks(2).await;
+        bot.chat("I couldn't assemble the complete input batch; I returned the accepted input.");
+        return;
+    }
     let mut input_placed = false;
     for _ in 0..5 {
         bot.wait_ticks(1).await;
@@ -2631,7 +2657,18 @@ fn smelt_input_matches(debug_name: &str, selector: &str) -> bool {
         "gold_ore" => name == "goldore" || name == "deepslategoldore",
         "copper_ore" => name == "copperore" || name == "deepslatecopperore",
         "sand" => name == "sand" || name == "redsand",
-        "log" => (name.ends_with("log") || name.ends_with("wood")) && !name.ends_with("stem"),
+        "log" => [
+            "oaklog", "strippedoaklog", "sprucelog", "strippedsprucelog",
+            "birchlog", "strippedbirchlog", "junglelog", "strippedjunglelog",
+            "acacialog", "strippedacacialog", "darkoaklog", "strippeddarkoaklog",
+            "mangrovelog", "strippedmangrovelog", "cherrylog", "strippedcherrylog",
+            "paleoaklog", "strippedpaleoaklog",
+            "oakwood", "strippedoakwood", "sprucewood", "strippedsprucewood",
+            "birchwood", "strippedbirchwood", "junglewood", "strippedjunglewood",
+            "acaciawood", "strippedacaciawood", "darkoakwood", "strippeddarkoakwood",
+            "mangrovewood", "strippedmangrovewood", "cherrywood", "strippedcherrywood",
+            "paleoakwood", "strippedpaleoakwood",
+        ].contains(&name.as_str()),
         _ => name == compact(selector),
     }
 }
