@@ -1,4 +1,4 @@
-use crate::{api::RuntimeStatus, brain::Brain};
+use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
 use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
@@ -33,6 +33,7 @@ pub struct AgentCommand {
 struct BotState {
     brain: Option<Arc<Brain>>,
     status: Option<Arc<RuntimeStatus>>,
+    store: Option<Arc<Store>>,
     last_reply: Option<Arc<Mutex<Instant>>>,
     commands: Option<Arc<Mutex<broadcast::Receiver<AgentCommand>>>>,
     connected: Option<Arc<AtomicBool>>,
@@ -57,6 +58,7 @@ pub async fn connect(
     microsoft_email: Option<String>,
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
+    store: Arc<Store>,
 ) -> Result<()> {
     tracing::info!(%server, account_count = accounts.len(), auth_mode = %auth_mode, "starting Minecraft agent swarm");
     loop {
@@ -94,7 +96,7 @@ pub async fn connect(
             // Untargeted commands remain primary-only for backwards-compatible safety.
             let command_receiver = Some(Arc::new(Mutex::new(command_tx.subscribe())));
             let state = make_state(
-                brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
+                brain.clone(), status.clone(), store.clone(), command_receiver, shared_reply_cooldown.clone(),
                 Arc::new(Mutex::new(None)), Arc::new(Mutex::new(instant_before(Duration::from_secs(20)))), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
@@ -119,6 +121,7 @@ fn instant_before(duration: Duration) -> Instant {
 fn make_state(
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
+    store: Arc<Store>,
     commands: Option<Arc<Mutex<broadcast::Receiver<AgentCommand>>>>,
     last_reply: Arc<Mutex<Instant>>,
     follow_target: Arc<Mutex<Option<String>>>,
@@ -128,6 +131,7 @@ fn make_state(
     BotState {
         brain: Some(brain),
         status: Some(status),
+        store: Some(store),
         last_reply: Some(last_reply),
         commands,
         connected: Some(Arc::new(AtomicBool::new(false))),
