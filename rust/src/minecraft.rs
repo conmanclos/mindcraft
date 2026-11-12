@@ -104,6 +104,7 @@ pub async fn connect(
         status.connected_agents.store(0, Ordering::Relaxed);
         *status.command_tx.lock().await = None;
         *status.world.lock().await = None;
+        status.agents.lock().await.clear();
         tracing::warn!("Azalea swarm exited: {result:?}; reconnecting in 5 seconds");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
@@ -160,6 +161,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     if let Some(status) = &state.status {
                         let count = status.connected_agents.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
                         status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                        status.agents.lock().await.remove(&bot.username());
+                        if state.is_primary { *status.world.lock().await = None; }
                     }
                 }
             }
@@ -172,8 +175,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let health = bot.health();
                 let hunger = bot.hunger();
                 critical_health = health.is_finite() && health <= 6.0;
-                if state.is_primary {
-                    if let Some(status) = &state.status {
+                if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
                         let mut last = last.lock().await;
                         if last.elapsed() >= Duration::from_secs(1) {
@@ -190,15 +192,16 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 format!("{slot}: {description}")
                             })
                             .collect::<Vec<_>>();
-                        *status.world.lock().await = Some(crate::api::WorldSnapshot {
+                        let snapshot = crate::api::WorldSnapshot {
                             agent: bot.username(),
                             position: [position.x as f64, position.y as f64, position.z as f64],
                             health,
                             food: hunger.food,
                             saturation: hunger.saturation,
                             inventory,
-                        });
-                    }
+                        };
+                        status.agents.lock().await.insert(snapshot.agent.clone(), snapshot.clone());
+                        if state.is_primary { *status.world.lock().await = Some(snapshot); }
                     }
                 }
                 // Autonomous survival may eat only recognized food already in the hotbar.
