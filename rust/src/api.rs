@@ -430,3 +430,26 @@ mod tests {
         }
     }
 }
+
+    fn routing_config(auth: &str) -> Config {
+        Config {
+            bind: "127.0.0.1:8787".parse().unwrap(),
+            api_token: "0123456789abcdef0123456789abcdef".into(),
+            api_token_was_generated: false,
+            mode: "balanced".into(), provider: "ollama".into(), model: "test".into(),
+            api_key: String::new(), base_url: "http://127.0.0.1:11434/v1".into(),
+            minecraft_server: Some("localhost".into()), minecraft_username: "Mindcraft".into(),
+            minecraft_accounts: vec!["Mindcraft".into(), "Scout".into(), "Builder".into()],
+            minecraft_auth: auth.into(), microsoft_email: None,
+            database: std::path::PathBuf::from(":memory:"),
+        }
+    }
+
+    #[test]
+    fn agent_routing_is_limited_to_configured_offline_team_members() {
+        let config = routing_config("offline");
+        assert_eq!(resolve_agent_target(&config, Some("sCoUt".into())).unwrap().as_deref(), Some("Scout"));
+        assert_eq!(resolve_agent_target(&config, None).unwrap(), None);
+        assert!(resolve_agent_target(&config, Some("unknown".into())).is_err());
+        assert!(resolve_agent_target(&routing_config("microsoft"), Some("Mindcraft".into())).is_err());
+    }
