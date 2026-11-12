@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
         }
         Command::Doctor => {
             println!("Mindcraft native runtime");
-            println!("Minecraft target: 1.21.1 (Azalea 0.10.3+mc1.21.1)");
+            println!("Minecraft target: 26.1 (Azalea 0.16.0+mc26.1)");
             println!("Provider: {}", config.provider);
             println!("Model: {}", config.model);
             println!("Minecraft server configured: {}", config.minecraft_server.is_some());
