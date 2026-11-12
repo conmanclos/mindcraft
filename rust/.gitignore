@@ -1,3 +1,4 @@
 .env
 mindcraft.sqlite3*
 target/
+desktop/binaries/mindcraft
