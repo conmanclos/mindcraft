@@ -165,8 +165,8 @@ impl Brain {
         if self.config.mode == "assisted" && !explicit_approval {
             bail!("assisted mode requires explicit approval for every action ('{}')", action.action);
         }
-        if ["attack", "use_item", "container_transfer"].contains(&action_name.as_str()) && !explicit_approval {
-            bail!("attack, generic item use, and container inventory transfers always require explicit user approval, including in autonomous mode");
+        if ["attack", "use_item", "container_transfer", "container_deposit"].contains(&action_name.as_str()) && !explicit_approval {
+            bail!("attack, generic item use, and all container transfers (including deposits) always require explicit user approval, including in autonomous mode");
         }
         // Never let an LLM-provided risk label downgrade a dangerous executor.
         // The runtime assigns a minimum risk from the action itself, then takes the
