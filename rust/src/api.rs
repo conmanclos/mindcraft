@@ -466,7 +466,6 @@ mod tests {
             assert!(command_from_action(action("equip", Some(slot))).is_err());
         }
     }
-}
 
     fn routing_config(auth: &str) -> Config {
         Config {
@@ -507,3 +506,4 @@ mod tests {
         assert!(resolve_agent_target(&config, Some("unknown".into())).is_err());
         assert!(resolve_agent_target(&routing_config("microsoft"), Some("Mindcraft".into())).is_err());
     }
+}
