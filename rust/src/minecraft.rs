@@ -355,6 +355,10 @@ async fn run_specialist_task(
                 }
             }
         };
+        if action.action.eq_ignore_ascii_case("smelt_parallel") {
+            let _ = store.release_task(task.id, &agent_id);
+            anyhow::bail!("parallel smelting must be dispatched through the multi-agent API planner, not a single specialist worker");
+        }
         let still_healthy = status.agents.lock().await.get(&agent_id)
             .is_some_and(|snapshot| snapshot.health.is_finite() && snapshot.health > 6.0);
         if !still_healthy {
