@@ -72,6 +72,12 @@ async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next)
     let now = Instant::now();
     let mut windows = state.rate_limits.lock().await;
     windows.retain(|_, window| now.duration_since(window.started) < API_RATE_WINDOW * 2);
+    if windows.len() >= 4096 && !windows.contains_key(&key) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error":"API rate-limit capacity is full; retry shortly"})),
+        ).into_response();
+    }
     let window = windows.entry(key).or_insert(RateWindow { started: now, requests: 0 });
     if now.duration_since(window.started) >= API_RATE_WINDOW {
         window.started = now;
