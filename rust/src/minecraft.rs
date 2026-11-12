@@ -417,11 +417,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
                             }
-                            if !client.is_goto_target_reached() {
+                            if !client.exists() || !client.is_goto_target_reached() {
                                 client.chat("I couldn't reach that block safely.");
                                 return;
                             }
-                            client.look_at(position.center());
+                            let Ok(own_position) = client.position() else { return; };
+                            let target_position = position.center();
+                            let dx = own_position.x - target_position.x;
+                            let dy = own_position.y - target_position.y;
+                            let dz = own_position.z - target_position.z;
+                            if dx * dx + dy * dy + dz * dz > 20.25 {
+                                client.chat("That block is still outside the 4.5-block mining reach.");
+                                return;
+                            }
+                            client.look_at(target_position);
                             client.wait_updates(1).await;
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
