@@ -22,6 +22,9 @@ if ! cargo tauri --help >/dev/null 2>&1; then
   cargo install tauri-cli --version '^2'
 fi
 
+echo "Compiling and running native Rust unit tests..."
+cargo test
+
 echo "Building the native Minecraft 26.1 Rust runtime..."
 cargo build --release --bin mindcraft
 mkdir -p desktop/binaries
