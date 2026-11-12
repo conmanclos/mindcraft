@@ -1394,6 +1394,13 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "diamond_chestplate" => Some((true, "diamond_chestplate", &[(1, "diamond"), (3, "diamond"), (4, "diamond"), (5, "diamond"), (6, "diamond"), (7, "diamond"), (8, "diamond"), (9, "diamond")])),
         "diamond_leggings" => Some((true, "diamond_leggings", &[(1, "diamond"), (2, "diamond"), (3, "diamond"), (4, "diamond"), (6, "diamond"), (7, "diamond"), (9, "diamond")])),
         "diamond_boots" => Some((true, "diamond_boots", &[(4, "diamond"), (6, "diamond"), (7, "diamond"), (9, "diamond")])),
+        "shears" => Some((true, "shears", &[(4, "iron_ingot"), (6, "iron_ingot")])),
+        "bucket" => Some((true, "bucket", &[(2, "iron_ingot"), (4, "iron_ingot"), (6, "iron_ingot")])),
+        "bow" => Some((true, "bow", &[(2, "stick"), (3, "string"), (4, "stick"), (6, "string"), (8, "stick"), (9, "string")])),
+        "fishing_rod" => Some((true, "fishing_rod", &[(3, "stick"), (5, "stick"), (6, "string"), (7, "stick"), (9, "string")])),
+        "arrow" => Some((true, "arrow", &[(1, "flint"), (4, "stick"), (7, "feather")])),
+        "paper" => Some((false, "paper", &[(1, "sugar_cane"), (2, "sugar_cane"), (3, "sugar_cane")])),
+        "glass_pane" => Some((true, "glass_pane", &[(1, "glass"), (2, "glass"), (3, "glass"), (4, "glass"), (5, "glass"), (6, "glass")])),
         "door" => Some((true, "door", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         "trapdoor" => Some((true, "trapdoor", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks")])),
         "slab" => Some((true, "slab", &[(1, "planks"), (2, "planks"), (3, "planks")])),
@@ -2128,7 +2135,7 @@ mod recipe_tests {
 
     #[test]
     fn allowlisted_recipes_fit_their_declared_crafting_grid() {
-        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe", "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe", "golden_pickaxe", "golden_axe", "golden_sword", "golden_shovel", "golden_hoe", "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe", "leather_helmet", "leather_chestplate", "leather_leggings", "leather_boots", "iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots", "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl", "furnace", "chest", "bread", "ladder"] {
+        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe", "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe", "golden_pickaxe", "golden_axe", "golden_sword", "golden_shovel", "golden_hoe", "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe", "leather_helmet", "leather_chestplate", "leather_leggings", "leather_boots", "iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots", "shears", "bucket", "bow", "fishing_rod", "arrow", "paper", "glass_pane", "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl", "furnace", "chest", "bread", "ladder"] {
             let (requires_table, _, ingredients) = recipe_spec(recipe).expect("recipe must be allowlisted");
             let grid_size = if requires_table { 9 } else { 4 };
             let mut used = std::collections::HashSet::new();
