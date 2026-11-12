@@ -230,8 +230,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     // Wait for that update so the right-click cannot consume
                                     // whatever item happened to be selected previously.
                                     bot.wait_updates(1).await;
-                                    bot.start_use_item();
-                                    tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
+                                    if bot.selected_hotbar_slot().ok() == Some(hotbar_index) {
+                                        bot.start_use_item();
+                                        tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
+                                    } else {
+                                        tracing::warn!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous food reflex skipped because hotbar selection was not confirmed");
+                                    }
                                 }
                             }
                         }
