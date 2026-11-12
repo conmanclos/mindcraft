@@ -2473,6 +2473,13 @@ async fn execute_build_mixed(
         return;
     }
 
+    struct MaterialPlan {
+        material: String,
+        // (hotbar menu slot, available count, optional main-inventory source slot)
+        slots: Vec<(usize, usize, Option<usize>)>,
+        current: usize,
+    }
+
     let mut requirements: Vec<(String, usize)> = Vec::new();
     for block in &blocks {
         if let Some((_, count)) = requirements.iter_mut().find(|(material, _)| material == &block.material) {
@@ -2482,94 +2489,117 @@ async fn execute_build_mixed(
         }
     }
 
-    // Preflight every material before moving anything, reserving distinct empty
-    // hotbar slots so a partial inventory setup cannot overwrite existing gear.
-    let hotbar_start = *menu.hotbar_slots_range().start();
+    // Preflight all material totals before moving anything. A material may be
+    // assembled from several stacks, but every moved stack goes only into an
+    // empty hotbar slot; existing hotbar items are never overwritten.
     let mut reserved_hotbar = Vec::new();
-    let mut material_slots: Vec<(String, usize, Option<usize>, usize)> = Vec::new();
-    for (material, required) in &requirements {
-        let existing = menu.hotbar_slots_range().find(|slot| {
-            menu.slot(*slot).is_some_and(|item| {
-                !item.is_empty()
-                    && item.count() as usize >= *required
-                    && item_name_matches_exact(&format!("{:?}", item.kind()), material)
-            })
-        });
-        if let Some(slot) = existing {
-            material_slots.push((material.clone(), slot, None, *required));
-            continue;
+    let mut plans = Vec::new();
+    for (material, required) in requirements {
+        let mut slots = Vec::new();
+        let mut total = 0usize;
+        for slot in menu.hotbar_slots_range() {
+            let Some(item) = menu.slot(slot) else { continue; };
+            if item.is_empty() || !item_name_matches_exact(&format!("{:?}", item.kind()), &material) {
+                continue;
+            }
+            let count = item.count() as usize;
+            slots.push((slot, count, None));
+            total += count;
+            if total >= required { break; }
         }
-        let source = menu.player_slots_without_hotbar_range().find(|slot| {
-            menu.slot(*slot).is_some_and(|item| {
-                !item.is_empty()
-                    && item.count() as usize >= *required
-                    && item_name_matches_exact(&format!("{:?}", item.kind()), material)
-            })
-        });
-        let destination = menu.hotbar_slots_range().find(|slot| {
-            menu.slot(*slot).is_some_and(|item| item.is_empty())
-                && !reserved_hotbar.contains(slot)
-        });
-        let (Some(source), Some(destination)) = (source, destination) else {
-            bot.chat(format!("The schematic needs {required} {material} blocks in one stack and an empty hotbar slot for each material not already on the hotbar. I made no inventory changes."));
+        if total < required {
+            for source in menu.player_slots_without_hotbar_range() {
+                let Some(item) = menu.slot(source) else { continue; };
+                if item.is_empty() || !item_name_matches_exact(&format!("{:?}", item.kind()), &material) {
+                    continue;
+                }
+                let destination = menu.hotbar_slots_range().find(|slot| {
+                    menu.slot(*slot).is_some_and(|item| item.is_empty())
+                        && !reserved_hotbar.contains(slot)
+                });
+                let Some(destination) = destination else { break; };
+                let count = item.count() as usize;
+                reserved_hotbar.push(destination);
+                slots.push((destination, count, Some(source)));
+                total += count;
+                if total >= required { break; }
+            }
+        }
+        if total < required {
+            bot.chat(format!("The schematic needs {required} {material} blocks across inventory stacks, plus an empty hotbar slot for each stack moved from the main inventory. I made no inventory changes."));
             return;
-        };
-        reserved_hotbar.push(destination);
-        material_slots.push((material.clone(), destination, Some(source), *required));
+        }
+        plans.push(MaterialPlan { material, slots, current: 0 });
     }
 
-    for (material, destination, source, required) in &material_slots {
-        let Some(source) = source else { continue; };
-        if cancelled() { return; }
-        let Ok(inventory) = bot.get_inventory() else {
-            bot.chat("I couldn't open the player inventory to prepare schematic materials.");
-            return;
-        };
-        inventory.left_click(*source);
-        bot.wait_updates(1).await;
-        if cancelled() {
+    for plan in &plans {
+        for (destination, required_count, source) in &plan.slots {
+            let Some(source) = source else { continue; };
+            if cancelled() { return; }
+            let Ok(inventory) = bot.get_inventory() else {
+                bot.chat("I couldn't open the player inventory to prepare schematic materials.");
+                return;
+            };
             inventory.left_click(*source);
             bot.wait_updates(1).await;
-            return;
-        }
-        inventory.left_click(*destination);
-        bot.wait_updates(2).await;
-        let verified = bot.menu().ok().is_some_and(|current| {
-            current.slot(*destination).is_some_and(|item| {
-                !item.is_empty()
-                    && item.count() as usize >= *required
-                    && item_name_matches_exact(&format!("{:?}", item.kind()), material)
-            })
-        });
-        if !verified {
-            let source_empty = bot.menu().ok()
-                .and_then(|current| current.slot(*source).map(|item| item.is_empty()))
-                .unwrap_or(false);
-            if source_empty {
+            if cancelled() {
                 inventory.left_click(*source);
                 bot.wait_updates(1).await;
+                return;
             }
-            bot.chat(format!("The server did not confirm the complete {material} stack in the hotbar; the schematic was not started."));
-            return;
+            inventory.left_click(*destination);
+            bot.wait_updates(2).await;
+            let verified = bot.menu().ok().is_some_and(|current| {
+                current.slot(*destination).is_some_and(|item| {
+                    !item.is_empty()
+                        && item.count() as usize >= *required_count
+                        && item_name_matches_exact(&format!("{:?}", item.kind()), &plan.material)
+                })
+            });
+            if !verified {
+                let source_empty = bot.menu().ok()
+                    .and_then(|current| current.slot(*source).map(|item| item.is_empty()))
+                    .unwrap_or(false);
+                if source_empty {
+                    inventory.left_click(*source);
+                    bot.wait_updates(1).await;
+                }
+                bot.chat(format!("The server did not confirm the complete {} stack in the hotbar; the schematic was not started.", plan.material));
+                return;
+            }
         }
     }
 
-    let mut selected_material: Option<String> = None;
+    let hotbar_start = bot.menu().ok()
+        .map(|menu| *menu.hotbar_slots_range().start());
+    let Some(hotbar_start) = hotbar_start else {
+        bot.chat("I couldn't inspect the hotbar after preparing schematic materials.");
+        return;
+    };
+    let mut selected_slot: Option<usize> = None;
     for (index, block) in blocks.iter().enumerate() {
         if cancelled() || !bot.exists() { return; }
-        let Some((_, slot, _, _)) = material_slots.iter().find(|(material, _, _, _)| material == &block.material) else {
+        let Some(plan) = plans.iter_mut().find(|plan| plan.material == block.material) else {
             bot.chat("A schematic material was not prepared; construction stopped before placement.");
             return;
         };
-        let hotbar_index = (*slot - hotbar_start) as u8;
-        if selected_material.as_deref() != Some(block.material.as_str()) {
+        while plan.current < plan.slots.len() && plan.slots[plan.current].1 == 0 {
+            plan.current += 1;
+        }
+        if plan.current >= plan.slots.len() {
+            bot.chat(format!("The prepared {} stacks ran out at schematic block {}.", block.material, index + 1));
+            return;
+        }
+        let slot = plan.slots[plan.current].0;
+        if selected_slot != Some(slot) {
+            let hotbar_index = (slot - hotbar_start) as u8;
             bot.set_selected_hotbar_slot(hotbar_index);
             bot.wait_updates(1).await;
             if bot.selected_hotbar_slot().ok() != Some(hotbar_index) {
                 bot.chat(format!("The server did not confirm selection of {} for schematic block {}.", block.material, index + 1));
                 return;
             }
-            selected_material = Some(block.material.clone());
+            selected_slot = Some(slot);
         }
         let target = BlockPos::new(block.x, block.y, block.z);
         if !place_block_at(&bot, target, &generation_state, generation).await {
@@ -2578,6 +2608,7 @@ async fn execute_build_mixed(
             }
             return;
         }
+        plan.slots[plan.current].1 = plan.slots[plan.current].1.saturating_sub(1);
     }
     if !cancelled() {
         bot.chat(format!("Custom mixed-material schematic confirmed for all {} blocks.", blocks.len()));
