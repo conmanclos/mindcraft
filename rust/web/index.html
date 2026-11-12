@@ -140,6 +140,7 @@ $("createGoal").onclick=async()=>{
 };
 $("claimTask").onclick=async()=>{
   try{
+    $("claimTask").disabled=true;
     if(!token)await connect();
     const agent_id=$("agentId").value.trim();
     const role=$("agentRole").value;
@@ -151,7 +152,7 @@ $("claimTask").onclick=async()=>{
     $("planTask").disabled=!currentTask;
     $("claimTask").disabled=!!currentTask;
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
-  }catch(e){$("taskResult").textContent="Claim failed: "+e.message}
+  }catch(e){$("claimTask").disabled=false;$("taskResult").textContent="Claim failed: "+e.message}
 };
 $("planTask").onclick=()=>{
   if(!currentTask) return;
