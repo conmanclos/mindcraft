@@ -332,8 +332,16 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     if let Some(brain) = &state.brain {
                         let brain = brain.clone();
                         let bot = bot.clone();
+                        let world_context = if let Some(status) = &state.status {
+                            status.world.lock().await.clone().map(|world| format!(
+                                " Current game state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
+                                world.position, world.health, world.food, world.saturation, world.inventory
+                            )).unwrap_or_default()
+                        } else {
+                            String::new()
+                        };
                         let prompt = format!(
-                            "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action. Message: {content}"
+                            "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action.{world_context} Message: {content}"
                         );
                         // Never await a provider request inside the Minecraft event handler:
                         // LLM latency must not stall ticks, movement, or keep-alive processing.
