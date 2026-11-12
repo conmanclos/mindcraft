@@ -307,29 +307,14 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                                 bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
                                 tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
                             }
+                            if hunger.food <= 6 {
+                                schedule_auto_eat(&bot, &state);
+                            }
                         }
                         crate::reflex::ReflexAction::WarnLowFood => {
                             if should_warn {
                                 if state.mode == "autonomous" {
-                                    let is_primary = state.is_primary;
-                                    if let Some(eating_flag) = state.is_eating.clone() {
-                                        if !eating_flag.swap(true, Ordering::Relaxed) {
-                                            let mut eating_bot = bot.clone();
-                                            tokio::spawn(async move {
-                                                let result = eat_food(&mut eating_bot).await;
-                                                eating_flag.store(false, Ordering::Relaxed);
-                                                match result {
-                                                    Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
-                                                    Err(error) => {
-                                                        tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
-                                                        if is_primary {
-                                                            eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
-                                                        }
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    }
+                                    schedule_auto_eat(&bot, &state);
                                 } else if state.is_primary {
                                     bot.chat("Reflex safety: food is low. Approve a use_item action or switch to Autonomous mode to allow safe automatic eating.");
                                 }
@@ -694,6 +679,34 @@ async fn open_target_container(bot: &mut Client, position: BlockPos) -> Result<C
     }
 }
 
+
+fn schedule_auto_eat(bot: &Client, state: &BotState) {
+    if state.mode != "autonomous" {
+        return;
+    }
+    let Some(eating_flag) = state.is_eating.clone() else {
+        return;
+    };
+    if eating_flag.swap(true, Ordering::Relaxed) {
+        return;
+    }
+
+    let is_primary = state.is_primary;
+    let mut eating_bot = bot.clone();
+    tokio::spawn(async move {
+        let result = eat_food(&mut eating_bot).await;
+        eating_flag.store(false, Ordering::Relaxed);
+        match result {
+            Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
+            Err(error) => {
+                tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
+                if is_primary {
+                    eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
+                }
+            }
+        }
+    });
+}
 
 fn next_sequence(bot: &Client) -> Result<u32> {
     let mut ecs = bot.ecs.lock();
