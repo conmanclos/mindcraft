@@ -433,7 +433,24 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
-                        bot.start_goto_with_opts(BlockPosGoal(BlockPos::new(x, y, z)), PathfinderOpts::new().allow_mining(false));
+                        let destination = BlockPos::new(x, y, z);
+                        let Ok(world) = bot.world() else {
+                            bot.chat("I can't read the loaded world to validate that destination.");
+                            continue;
+                        };
+                        if world.read().get_block_state(destination).is_none() {
+                            bot.chat("That destination is outside the currently loaded world; move closer and try again.");
+                            continue;
+                        }
+                        let Ok(own_position) = bot.position() else { continue; };
+                        let dx = own_position.x - (x as f64 + 0.5);
+                        let dy = own_position.y - (y as f64 + 0.5);
+                        let dz = own_position.z - (z as f64 + 0.5);
+                        if dx * dx + dy * dy + dz * dz > 256.0 * 256.0 {
+                            bot.chat("That destination is more than 256 blocks away; use closer waypoints so pathfinding stays bounded.");
+                            continue;
+                        }
+                        bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
                     }
                     BotCommand::Mine(x, y, z) => {
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
