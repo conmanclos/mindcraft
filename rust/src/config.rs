@@ -48,6 +48,16 @@ impl Config {
         if minecraft_auth == "microsoft" && minecraft_accounts.len() != 1 {
             bail!("Microsoft auth currently supports one account; use MINDCRAFT_MC_ACCOUNTS for multiple offline accounts");
         }
+        if minecraft_auth == "offline" {
+            let mut unique = std::collections::HashSet::new();
+            for account in &minecraft_accounts {
+                if !(3..=16).contains(&account.len())
+                    || !account.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    || !unique.insert(account.to_lowercase()) {
+                    bail!("offline usernames must be unique Minecraft names (3-16 letters, digits, or underscores)");
+                }
+            }
+        }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
         if provider == "openai" && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required when MINDCRAFT_PROVIDER=openai");
