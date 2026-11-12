@@ -5,6 +5,14 @@ use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Orderin
 use tokio::sync::{broadcast, Mutex};
 
 #[derive(Debug, Clone)]
+pub struct BuildBlock {
+    pub material: String,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+#[derive(Debug, Clone)]
 pub enum BotCommand {
     Say(String),
     Stop,
@@ -20,6 +28,7 @@ pub enum BotCommand {
     Plant(i32, i32, i32),
     Harvest(i32, i32, i32),
     Build(Option<String>, Vec<(i32, i32, i32)>),
+    BuildMixed(Vec<BuildBlock>),
     Equip(u8),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>),
