@@ -544,15 +544,38 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::Smelt(input, (parsed[0], parsed[1], parsed[2]), count))
         }
         "container_transfer" => {
-            let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot for a container transfer".into()))?;
-            let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
-                .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z,slot".into()))?;
-            if parsed.len() != 4 || parsed[1] < -64 || parsed[1] > 320
-                || parsed[..3].iter().any(|v| v.unsigned_abs() > 30_000_000)
-                || !(0..=89).contains(&parsed[3]) {
-                return Err((StatusCode::BAD_REQUEST, "container transfer requires valid world coordinates and a slot from 0 to 89".into()));
+            let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot, start-end, or all".into()))?;
+            let mut parts = coordinates.split(',');
+            let parse_coordinate = |value: Option<&str>| value
+                .ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot, start-end, or all".into()))?
+                .trim().parse::<i32>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "container coordinates must be integers".into()));
+            let x = parse_coordinate(parts.next())?;
+            let y = parse_coordinate(parts.next())?;
+            let z = parse_coordinate(parts.next())?;
+            let selector = parts.next().map(str::trim)
+                .ok_or((StatusCode::BAD_REQUEST, "container transfer requires a slot, range, or all selector".into()))?;
+            if parts.next().is_some() || y < -64 || y > 320
+                || [x, y, z].iter().any(|value| value.unsigned_abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "container transfer requires valid world coordinates and exactly one slot selector".into()));
             }
-            Ok(BotCommand::ContainerTransfer(parsed[0], parsed[1], parsed[2], parsed[3] as u16))
+            let slot_range = if selector.eq_ignore_ascii_case("all") {
+                None
+            } else {
+                let (first, last) = match selector.split_once('-') {
+                    Some((first, last)) => (first.trim(), last.trim()),
+                    None => (selector, selector),
+                };
+                let first = first.parse::<u16>()
+                    .map_err(|_| (StatusCode::BAD_REQUEST, "slot selector must be 0-89, a range such as 0-26, or all".into()))?;
+                let last = last.parse::<u16>()
+                    .map_err(|_| (StatusCode::BAD_REQUEST, "slot selector must be 0-89, a range such as 0-26, or all".into()))?;
+                if first > last || last > 89 {
+                    return Err((StatusCode::BAD_REQUEST, "slot range must be ordered and stay within 0-89".into()));
+                }
+                Some((first, last))
+            };
+            Ok(BotCommand::ContainerTransfer(x, y, z, slot_range))
         }
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
@@ -1050,7 +1073,7 @@ mod tests {
 
     #[test]
     fn container_transfer_coordinates_and_slot_are_bounded() {
-        assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,27"))), Ok(BotCommand::ContainerTransfer(1,64,-2,27))));
+        assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,27"))), Ok(BotCommand::ContainerTransfer(1,64,-2,Some((27,27))))));
         for target in ["1,64,2", "1,64,2,101", "1,321,2,4", "x,64,2,4"] {
             assert!(command_from_action(action("container_transfer", Some(target))).is_err());
         }
