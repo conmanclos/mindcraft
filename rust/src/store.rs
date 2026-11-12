@@ -384,13 +384,13 @@ impl Store {
     pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let goal_id: Option<i64> = tx.query_row(
-            "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2
+        let task: Option<(i64, String, String)> = tx.query_row(
+            "SELECT goal_id, role, description FROM agent_tasks WHERE id=?1 AND assigned_agent=?2
              AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).optional()?;
-        let Some(goal_id) = goal_id else {
+        let Some((goal_id, role, description)) = task else {
             tx.commit()?;
             return Ok(false);
         };
@@ -414,6 +414,19 @@ impl Store {
                SELECT 1 FROM agent_tasks WHERE goal_id=?1 AND status!='complete'
              )",
             [goal_id],
+        )?;
+        // Completion is only accepted after the worker owner explicitly
+        // confirms the result; preserve that verified outcome as episodic memory.
+        let memory_subject = format!("verified-task-{task_id}");
+        let memory_content = format!("Verified completion by {agent_id} for the {role} task: {description}");
+        tx.execute(
+            "INSERT INTO memories(kind, subject, content, confidence, importance, source)
+             VALUES ('episodic', ?1, ?2, 1.0, 35, 'verified_task')
+             ON CONFLICT(kind, subject) DO UPDATE SET
+               content=excluded.content, confidence=excluded.confidence,
+               importance=excluded.importance, source=excluded.source,
+               updated_at=CURRENT_TIMESTAMP, last_accessed_at=CURRENT_TIMESTAMP",
+            params![memory_subject, memory_content],
         )?;
         tx.commit()?;
         Ok(true)
