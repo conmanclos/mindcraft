@@ -123,7 +123,7 @@ impl Store {
         )?;
         let rows = statement.query_map([goal_id], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?
         }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
