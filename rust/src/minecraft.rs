@@ -2,9 +2,9 @@ use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
 use azalea::{account::microsoft::MicrosoftAccountOpts, pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
 use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{broadcast, Mutex};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BotCommand {
     Say(String),
     Stop,
@@ -19,12 +19,19 @@ pub enum BotCommand {
     Equip(u8),
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentCommand {
+    /// None routes to the primary client; Some(username) routes to exactly one offline-mode client.
+    pub target: Option<String>,
+    pub command: BotCommand,
+}
+
 #[derive(Clone, Component, Default)]
 struct BotState {
     brain: Option<Arc<Brain>>,
     status: Option<Arc<RuntimeStatus>>,
     last_reply: Option<Arc<Mutex<Instant>>>,
-    commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
+    commands: Option<Arc<Mutex<broadcast::Receiver<AgentCommand>>>>,
     connected: Option<Arc<AtomicBool>>,
     last_reflex: Option<Arc<Mutex<Instant>>>,
     last_auto_eat: Option<Arc<Mutex<Instant>>>,
@@ -67,9 +74,8 @@ pub async fn connect(
             anyhow::bail!("at least one Minecraft account is required");
         }
 
-        let (command_tx, command_rx) = mpsc::channel(64);
-        *status.command_tx.lock().await = Some(command_tx);
-        let shared_receiver = Arc::new(Mutex::new(command_rx));
+        let (command_tx, _) = broadcast::channel(128);
+        *status.command_tx.lock().await = Some(command_tx.clone());
         let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
         let shared_reflex_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)));
         let shared_follow_target = Arc::new(Mutex::new(None));
@@ -77,7 +83,9 @@ pub async fn connect(
         let mut builder = SwarmBuilder::new().set_handler(handle);
         for (index, account) in accounts_to_join.into_iter().enumerate() {
             let is_primary = index == 0;
-            let command_receiver = if is_primary { Some(shared_receiver.clone()) } else { None };
+            // Every connected client receives the same command stream and filters by target.
+            // Untargeted commands remain primary-only for backwards-compatible safety.
+            let command_receiver = Some(Arc::new(Mutex::new(command_tx.subscribe())));
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
                 shared_follow_target.clone(), shared_reflex_cooldown.clone(), is_primary,
@@ -98,7 +106,7 @@ pub async fn connect(
 fn make_state(
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
-    commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
+    commands: Option<Arc<Mutex<broadcast::Receiver<AgentCommand>>>>,
     last_reply: Arc<Mutex<Instant>>,
     follow_target: Arc<Mutex<Option<String>>>,
     last_reflex: Arc<Mutex<Instant>>,
@@ -242,7 +250,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let mut queued = Vec::new();
             if let Some(receiver) = &state.commands {
                 let mut receiver = receiver.lock().await;
-                while let Ok(command) = receiver.try_recv() { queued.push(command); }
+                while let Ok(envelope) = receiver.try_recv() {
+                    let matches_target = match envelope.target.as_deref() {
+                        Some(target) => target.eq_ignore_ascii_case(&bot.username()),
+                        None => state.is_primary,
+                    };
+                    if matches_target { queued.push(envelope.command); }
+                }
             }
             if critical_health {
                 if let Some(target) = &state.follow_target { *target.lock().await = None; }
@@ -414,7 +428,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                                     None
                                                 };
                                                 if let Some(sender) = sender {
-                                                    match sender.try_send(command) {
+                                                    match sender.send(AgentCommand { target: None, command }) {
                                                         Ok(()) => {
                                                             if bot.exists() && !action.action.eq_ignore_ascii_case("say") {
                                                                 bot.chat("On it.");
