@@ -31,7 +31,9 @@ Do not update Azalea to a different Minecraft protocol version as a workaround.
 Edit `.env`:
 
 - `MINDCRAFT_MC_SERVER=127.0.0.1:25565`
-- `MINDCRAFT_MC_USERNAME=Mindcraft`
+- `MINDCRAFT_MC_USERNAME=Mindcraft` (offline account mode)
+- `MINDCRAFT_MC_AUTH=offline|microsoft`
+- `MINDCRAFT_MICROSOFT_EMAIL=you@example.com` when using Microsoft device-code authentication
 - `MINDCRAFT_PROVIDER=ollama` (or `openai`, `openai-compatible`, `anthropic`, `google`)
 - `MINDCRAFT_MODEL=llama3.1`
 - `MINDCRAFT_BASE_URL=http://127.0.0.1:11434/v1` for Ollama
@@ -39,7 +41,7 @@ Edit `.env`:
 - `MINDCRAFT_MODE=assisted|balanced|autonomous`
 - `MINDCRAFT_BIND=127.0.0.1:8787`
 
-Secrets are read from environment variables and are not written to SQLite. Keep the bind address on loopback unless you set a strong `MINDCRAFT_API_TOKEN` and put the service behind a trusted TLS reverse proxy. The initial Azalea connector uses offline account mode; it is intended for local/offline-mode servers until Microsoft account authentication is integrated.
+Secrets are read from environment variables and are not written to SQLite. Keep the bind address on loopback unless you set a strong `MINDCRAFT_API_TOKEN` and put the service behind a trusted TLS reverse proxy. Azalea supports offline account mode for local/offline-mode servers and Microsoft device-code authentication for online-mode servers. No Microsoft password is accepted or stored by this application.
 
 ## Run
 
@@ -63,4 +65,4 @@ cargo run --release -- doctor
 
 ## Important scope boundary
 
-This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, look-at explicit block coordinates, pathfinding to explicit block coordinates, starting a mining operation at explicit coordinates, and selecting a hotbar slot (0-8). The AI also answers Minecraft chat when addressed by name or via whisper. The task coordinator is durable and supports multiple named workers claiming tasks by role, but those worker agents are not yet separate Azalea clients and task completion is not automatically tied to in-game execution. Crafting, inventory management, combat, building/placement, exploration goals, Microsoft account authentication, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
+This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, look-at explicit block coordinates, pathfinding to explicit block coordinates, starting a mining operation at explicit coordinates, and selecting a hotbar slot (0-8). The AI also answers Minecraft chat when addressed by name or via whisper. The task coordinator is durable and supports multiple named workers claiming tasks by role, but those worker agents are not yet separate Azalea clients and task completion is not automatically tied to in-game execution. Crafting, inventory management, combat, building/placement, exploration goals, additional account/session lifecycle hardening, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
