@@ -2195,7 +2195,7 @@ fn is_plantable_seed(debug_name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato"]
+    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart"]
         .contains(&compact.as_str())
 }
 
@@ -2212,10 +2212,7 @@ async fn plant_crop_at(
     if cancelled() || !bot.exists() { return false; }
     let Ok(world) = bot.world() else { return false; };
     let Some(soil) = world.read().get_block_state(farmland) else { return false; };
-    if !format!("{soil:?}").to_ascii_lowercase().contains("farmland") {
-        bot.chat("Planting requires an existing farmland block; I won't till or replace terrain automatically.");
-        return false;
-    }
+    let soil_name = format!("{soil:?}").to_ascii_lowercase();
     let crop_position = farmland.up(1);
     if !world.read().get_block_state(crop_position).is_some_and(|block| block.is_air()) {
         bot.chat("The block above that farmland is occupied; I won't overwrite it.");
@@ -2232,9 +2229,20 @@ async fn plant_crop_at(
             !item.is_empty() && is_plantable_seed(&format!("{:?}", item.kind()))
         })
     }) else {
-        bot.chat("I need wheat, beetroot, pumpkin, or melon seeds, or carrots or potatoes, in the hotbar to plant.");
+        bot.chat("I need wheat, beetroot, pumpkin, or melon seeds, carrots, potatoes, or nether wart in the hotbar to plant.");
         return false;
     };
+    let seed_name = slots.get(seed_slot).map(|item| format!("{:?}", item.kind())).unwrap_or_default().to_ascii_lowercase();
+    let nether_wart = seed_name.contains("nether_wart") || seed_name.contains("netherwart");
+    if (nether_wart && !soil_name.contains("soul_sand") && !soil_name.contains("soulsand"))
+        || (!nether_wart && !soil_name.contains("farmland")) {
+        bot.chat(if nether_wart {
+            "Nether wart must be planted on soul sand; I won't replace the target block."
+        } else {
+            "This crop requires farmland; I won't till or replace terrain automatically."
+        });
+        return false;
+    }
     let hotbar_start = *menu.hotbar_slots_range().start();
     let hotbar_index = (seed_slot - hotbar_start) as u8;
     bot.set_selected_hotbar_slot(hotbar_index);
