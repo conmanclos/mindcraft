@@ -194,6 +194,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/goals", get(list_goals).post(create_goal))
         .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
         .route("/api/agents/:agent_id/credential", post(issue_agent_credential).delete(revoke_agent_credential))
+        .route("/api/tasks/review", get(list_review_tasks))
         .route("/api/tasks/claim", post(claim_task))
         .route("/api/tasks/:task_id/complete", post(complete_task))
         .route("/api/tasks/:task_id/release", post(release_task))
@@ -611,6 +612,15 @@ async fn authorize_agent(state: &ApiState, headers: &HeaderMap, agent_id: &str) 
     } else {
         Err(StatusCode::UNAUTHORIZED)
     }
+}
+
+async fn list_review_tasks(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AgentTask>>, StatusCode> {
+    authorize(&state, &headers)?;
+    let tasks = state.store.list_review_tasks().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(tasks))
 }
 
 async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
