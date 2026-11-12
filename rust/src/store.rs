@@ -488,12 +488,14 @@ mod tests {
         let goal = store.create_goal("Build a safe starter base").unwrap();
         let task = store.add_task(goal, "builder", "Build a small shelter", 80).unwrap();
 
-        assert!(store.claim_task("scout-1", "scout").unwrap().is_none());
         let claimed = store.claim_task("builder-1", "builder").unwrap().unwrap();
         assert_eq!(claimed.id, task);
         assert_eq!(claimed.assigned_agent.as_deref(), Some("builder-1"));
         assert!(claimed.lease_until.is_some());
         assert!(store.renew_task_lease(task, "builder-1").unwrap());
+        // A different-role worker may fall back to this task only while it is
+        // eligible; it must not steal a task that is actively leased.
+        assert!(store.claim_task("scout-1", "scout").unwrap().is_none());
         assert!(store.claim_task("builder-2", "builder").unwrap().is_none());
 
         assert!(!store.complete_task(task, "builder-2").unwrap());
