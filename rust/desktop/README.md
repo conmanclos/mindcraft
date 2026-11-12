@@ -15,19 +15,18 @@ The app stores its non-secret configuration, SQLite database, and Azalea Microso
 
 ## Packaging
 
-The release packager must build the Rust runtime for the target Mac architecture and copy it to `binaries/mindcraft` before invoking Tauri bundling:
+Build on the Mac that will run the app (the script targets the current Mac architecture). Install Rust nightly and the Tauri v2 CLI once, then run the checked-in build script:
 
 ```sh
 cd rust
-cargo build --release --bin mindcraft
-mkdir -p desktop/binaries
-cp target/release/mindcraft desktop/binaries/mindcraft
-cd desktop
-cargo tauri build --bundles app,dmg
+cargo install tauri-cli --version '^2'
+bash build-macos.sh
 ```
+
+The script builds the runtime from the correct `rust/` Cargo project, stages the binary into the Tauri resources directory, and builds the `.app` and `.dmg` bundles.
 
 The resulting app bundles the native runtime as a resource. Apple Silicon and Intel distribution should be built separately unless a verified universal2 runtime is produced. Sign and notarize the app before public distribution.
 
 ## Current development status
 
-This is the initial desktop shell and setup workflow. It still requires integration testing on macOS, a release-packaging script, app signing/notarization, and a verified 26.1-compatible Rust runtime. The existing Azalea gameplay code must be migrated to Azalea 0.16 before the app can truthfully promise a successful in-game launch. Microsoft authentication and Keychain behavior also require an end-to-end Mac test. No CI or GitHub Actions are used.
+This is the initial desktop shell and setup workflow. It still requires a successful native build, macOS integration testing, and a live Minecraft 26.1 server test before it can be called ready. The build script and Azalea 0.16.0+mc26.1 integration are now in place, but neither has been compile-verified in this environment. Microsoft authentication, app-scoped auth caching, and Keychain behavior also require an end-to-end Mac test. Sign and notarize before public distribution. No CI or GitHub Actions are used.
