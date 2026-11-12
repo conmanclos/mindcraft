@@ -1303,13 +1303,15 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         });
                     }
                     BotCommand::InventorySort => {
-                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
                         cancel_active_mining(&bot);
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            execute_inventory_sort(client).await;
+                            execute_inventory_sort(client, generation_state, generation).await;
                         });
                     }
                     BotCommand::Explore(radius) => {
@@ -2789,7 +2791,13 @@ async fn execute_build(
 /// Sort the 27 main-inventory slots by normalized registry item name.
 /// The hotbar, armor, and offhand are deliberately untouched. Only whole-stack
 /// swaps are used; same-item stacks are equivalent and are never merged.
-async fn execute_inventory_sort(bot: Client) {
+async fn execute_inventory_sort(
+    bot: Client,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     let Ok(menu) = bot.menu() else {
         bot.chat("I couldn't inspect the player inventory before sorting.");
         return;
@@ -2827,6 +2835,10 @@ async fn execute_inventory_sort(bot: Client) {
         return;
     };
     for target_index in 0..slots.len() {
+        if cancelled() {
+            bot.chat("Inventory sorting cancelled after the current safe slot operation.");
+            return;
+        }
         if current[target_index] == desired[target_index] { continue; }
         let Some(source_index) = (target_index + 1..slots.len())
             .find(|index| current[*index] == desired[target_index]) else {
@@ -2872,10 +2884,18 @@ async fn execute_inventory_sort(bot: Client) {
             return;
         }
     }
+    if cancelled() {
+        bot.chat("Inventory sorting cancelled; the completed slot operations were preserved.");
+        return;
+    }
     let Ok(final_menu) = bot.menu() else {
         bot.chat("Sorting finished, but I couldn't read back the final inventory state.");
         return;
     };
+    if final_menu.try_as_player().is_none() {
+        bot.chat("Sorting finished, but a container is now open; inspect the player inventory before relying on the result.");
+        return;
+    }
     let final_keys = slots.iter().map(|slot| {
         final_menu.slot(*slot).map(|item| if item.is_empty() { String::new() } else {
             format!("{:?}", item.kind()).chars()
