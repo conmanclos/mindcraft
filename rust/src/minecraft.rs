@@ -838,7 +838,7 @@ async fn execute_craft(
         return;
     };
     let player_menu = menu.try_as_player().is_some();
-    let table_menu = matches!(&menu, azalea_inventory::Menu::Crafting(_));
+    let table_menu = matches!(&menu, azalea_inventory::Menu::Crafting { .. });
     if (requires_table && !table_menu) || (!player_menu && !table_menu) {
         bot.chat("That block did not open a crafting-table menu. I won't click an unrelated container.");
         return;
