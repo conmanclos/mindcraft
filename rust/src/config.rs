@@ -76,6 +76,12 @@ impl Config {
             }
             api_token = uuid::Uuid::new_v4().to_string();
         }
+        if api_token.chars().any(char::is_whitespace) {
+            bail!("MINDCRAFT_API_TOKEN must not contain whitespace");
+        }
+        if !bind.ip().is_loopback() && api_token.len() < 32 {
+            bail!("MINDCRAFT_API_TOKEN must be at least 32 characters when binding outside loopback");
+        }
 
         Ok(Self {
             bind,
