@@ -261,7 +261,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 // Autonomous survival may eat only recognized food already in the hotbar.
                 // Never consume arbitrary held items, potions, or items from an open container.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
-                    && hunger.food <= 12
+                    && (hunger.food <= 12 || health <= 10.0)
                 {
                     let should_eat = if let Some(last) = &state.last_auto_eat {
                         let mut last = last.lock().await;
@@ -272,7 +272,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false };
                     if should_eat {
                         if let Ok(menu) = bot.menu() {
-                            if let Some((slot, _)) = best_safe_food_slot(&menu) {
+                            let food_candidate = if health <= 10.0 {
+                                best_golden_apple_slot(&menu).or_else(|| {
+                                    if hunger.food <= 12 { best_safe_food_slot(&menu) } else { None }
+                                })
+                            } else {
+                                best_safe_food_slot(&menu)
+                            };
+                            if let Some((slot, _)) = food_candidate {
                                 let hotbar = menu.hotbar_slots_range();
                                 if hotbar.contains(&slot) {
                                     let hotbar_index = (slot - *hotbar.start()) as u8;
@@ -1802,6 +1809,17 @@ mod armor_reflex_tests {
     }
 }
 
+/// Find a golden apple in the hotbar for emergency low-health regeneration.
+fn best_golden_apple_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> {
+    menu.try_as_player()?;
+    let slots = menu.slots();
+    menu.hotbar_slots_range().filter_map(|slot| {
+        let item = slots.get(slot)?;
+        (!item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), "golden_apple"))
+            .then_some((slot, 10))
+    }).next()
+}
+
 /// Return the best recognized, ordinary food item in the player's hotbar.
 /// Debug formatting is used only to identify the registry item name; unknown items fail closed.
 fn best_safe_food_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> {
@@ -1865,7 +1883,18 @@ mod recipe_tests {
 
 #[cfg(test)]
 mod food_tests {
-    use super::safe_food_priority;
+    use super::{best_golden_apple_slot, safe_food_priority};
+
+    #[test]
+    fn emergency_golden_apple_lookup_is_player_inventory_only() {
+        let player = azalea_inventory::Menu::Player(azalea_inventory::Player::default());
+        assert!(best_golden_apple_slot(&player).is_none());
+        let chest = azalea_inventory::Menu::Generic9x3 {
+            contents: azalea_inventory::SlotList::default(),
+            player: azalea_inventory::SlotList::default(),
+        };
+        assert!(best_golden_apple_slot(&chest).is_none());
+    }
 
     #[test]
     fn item_name_matching_ignores_enum_case_and_separators() {
