@@ -362,7 +362,7 @@ impl Store {
                  attempts=0, available_at=CURRENT_TIMESTAMP,
                  last_error=CASE WHEN last_error IS NULL THEN NULL ELSE 'previous failure: ' || last_error END,
                  updated_at=CURRENT_TIMESTAMP
-                 WHERE goal_id=?1 AND status IN ('failed','cancelled')",
+                 WHERE goal_id=?1 AND status IN ('failed','cancelled','review')",
                 [goal_id],
             )?;
         }
