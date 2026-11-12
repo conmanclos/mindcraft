@@ -38,6 +38,9 @@ enum PendingBlockActionKind {
     Place,
 }
 
+#[derive(Component)]
+struct MiningStopRequested;
+
 #[derive(Clone, Copy)]
 struct PendingBlockAction {
     kind: PendingBlockActionKind,
@@ -332,15 +335,27 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                     if let Some(mut pending) = pending {
                         let hit = bot.get_component::<HitResultComponent>();
                         if let Some(hit) = hit.filter(|hit| !hit.miss && hit.block_pos == pending.position) {
-                            match pending.kind {
-                                PendingBlockActionKind::Mine => {
-                                    let mut mining_bot = bot.clone();
-                                    let position = pending.position;
-                                    tokio::spawn(async move {
-                                        mining_bot.mine(position).await;
-                                    });
+                            if bot.get_component::<Mining>().is_some() {
+                                stop_mining(&bot);
+                                pending.attempts = pending.attempts.saturating_add(1);
+                                if pending.attempts >= 20 {
+                                    bot.chat("The previous mining action did not stop; the new block action was cancelled.");
+                                } else {
+                                    *pending_lock.lock().await = Some(pending);
                                 }
-                                PendingBlockActionKind::Place => bot.block_interact(pending.position),
+                            } else {
+                                clear_mining_stop_marker(&bot);
+                                match pending.kind {
+                                    PendingBlockActionKind::Mine => {
+                                        bot.start_mining(pending.position);
+                                        let mut mining_bot = bot.clone();
+                                        let position = pending.position;
+                                        tokio::spawn(async move {
+                                            mining_bot.mine(position).await;
+                                        });
+                                    }
+                                    PendingBlockActionKind::Place => bot.block_interact(pending.position),
+                                }
                             }
                         } else {
                             pending.attempts = pending.attempts.saturating_add(1);
@@ -1076,10 +1091,19 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
     Ok(())
 }
 
+fn clear_mining_stop_marker(bot: &Client) {
+    bot.ecs.lock().entity_mut(bot.entity).remove::<MiningStopRequested>();
+}
+
 fn stop_mining(bot: &Client) {
     let mut ecs = bot.ecs.lock();
     if ecs.get::<Mining>(bot.entity).is_some() {
-        ecs.send_event(StopMiningBlockEvent { entity: bot.entity });
+        if ecs.get::<MiningStopRequested>(bot.entity).is_none() {
+            ecs.entity_mut(bot.entity).insert(MiningStopRequested);
+            ecs.send_event(StopMiningBlockEvent { entity: bot.entity });
+        }
+    } else {
+        ecs.entity_mut(bot.entity).remove::<MiningStopRequested>();
     }
 }
 
