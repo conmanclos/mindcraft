@@ -102,7 +102,7 @@ impl Brain {
         let action_name = action.action.to_lowercase();
         let supported = ["look", "follow", "stop", "say", "goto", "explore", "mine", "place", "deposit", "withdraw", "equip", "jump", "sneak", "use_item", "craft", "attack", "drop"];
         if !supported.contains(&action_name.as_str()) {
-            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, jump, sneak, block-targeted item use, basic crafting, inventory deposit/withdrawal, exploration, and player-targeted attack", action.action);
+            bail!("unsupported action '{}'; this runtime currently supports chat, stop, follow, look, goto, mine, place, equip, jump, sneak, bounded held-item use, basic crafting, inventory deposit/withdrawal, exploration, and player-targeted attack", action.action);
         }
         if !["low", "medium", "high"].contains(&action.risk.to_lowercase().as_str()) {
             bail!("risk must be low, medium, or high");
@@ -121,8 +121,8 @@ impl Brain {
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
-        if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) && !explicit_approval {
-            bail!("assisted mode requires explicit approval for '{}'", action.action);
+        if self.config.mode != "autonomous" && destructive.contains(&action_name.as_str()) && !explicit_approval {
+            bail!("{} mode requires explicit approval for '{}'", self.config.mode, action.action);
         }
         if action_name == "attack" {
             let target = action.target.as_deref().unwrap_or_default();
@@ -206,6 +206,8 @@ mod tests {
         let action = PlannedAction { action:"mine".into(), target:None, reason:String::new(), risk:"low".into() };
         assert!(brain("assisted").authorize_action(&action, false).is_err());
         assert!(brain("assisted").authorize_action(&action, true).is_ok());
+        assert!(brain("balanced").authorize_action(&action, false).is_err());
+        assert!(brain("balanced").authorize_action(&action, true).is_ok());
         assert!(brain("autonomous").authorize_action(&action, false).is_ok());
     }
 
