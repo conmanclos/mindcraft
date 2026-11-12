@@ -466,8 +466,11 @@ fn best_safe_food_slot(menu: &azalea::inventory::Menu) -> Option<(usize, u8)> {
     // Do not attempt to eat while a chest, furnace, crafting table, or other
     // server container is open; right-click would interact with that screen.
     menu.try_as_player()?;
+    // Menu::slots returns an owned Vec; keep it alive while slot references
+    // are inspected instead of borrowing from a temporary inside the iterator.
+    let slots = menu.slots();
     menu.hotbar_slots_range().filter_map(|slot| {
-        let item = menu.slots().get(slot)?;
+        let item = slots.get(slot)?;
         if item.is_empty() { return None; }
         let name = format!("{item:?}").to_ascii_lowercase();
         Some((slot, safe_food_priority(&name)?))
