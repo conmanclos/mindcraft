@@ -4,6 +4,7 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    fs::OpenOptions,
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -131,8 +132,10 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<S
     if !runtime.is_file() {
         return Err(format!("The bundled Rust runtime was not found at {}. The release packager must place the compiled mindcraft binary in the app resources.", runtime.display()));
     }
+    let log = OpenOptions::new().create(true).append(true).open(data.join("runtime.log")).map_err(|e| e.to_string())?;
+    let log_stderr = log.try_clone().map_err(|e| e.to_string())?;
     let mut command = Command::new(runtime);
-    command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
     if let Ok(entry) = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key") {
         if let Ok(key) = entry.get_password() {
             command.env("MINDCRAFT_API_KEY", key);
@@ -156,6 +159,17 @@ fn stop_runtime(process: State<'_, RuntimeProcess>) -> Result<(), String> {
     Ok(())
 }
 
+
+#[tauri::command]
+fn runtime_log(app: AppHandle) -> Result<String, String> {
+    let data = app_data(&app)?;
+    let path = data.join("runtime.log");
+    if !path.exists() { return Ok(String::new()); }
+    let contents = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let tail = contents.lines().rev().take(80).collect::<Vec<_>>();
+    Ok(tail.into_iter().rev().collect::<Vec<_>>().join("\n"))
+}
+
 #[tauri::command]
 fn runtime_running(process: State<'_, RuntimeProcess>) -> Result<bool, String> {
     let mut child = process.0.lock().map_err(|_| "Runtime process lock is unavailable".to_string())?;
@@ -171,7 +185,7 @@ fn runtime_running(process: State<'_, RuntimeProcess>) -> Result<bool, String> {
 fn main() {
     tauri::Builder::default()
         .manage(RuntimeProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![load_setup, save_setup, start_runtime, stop_runtime, runtime_running])
+        .invoke_handler(tauri::generate_handler![load_setup, save_setup, start_runtime, stop_runtime, runtime_running, runtime_log])
         .build(tauri::generate_context!())
         .expect("error while building Mindcraft desktop")
         .run(|app, event| {
