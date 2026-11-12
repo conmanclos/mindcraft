@@ -350,6 +350,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if !safe.trim().is_empty() { bot.chat(safe); }
                     }
                     BotCommand::AttackCrosshair => {
+                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if !bot.has_attack_cooldown() {
                             if let Ok(HitResult::Entity(hit)) = bot.hit_result() {
                                 let target = bot.entity_ref_for(hit.entity);
@@ -455,7 +456,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         bot.start_use_item();
                     }
-                    BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
+                    BotCommand::Equip(slot) => {
+                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        bot.set_selected_hotbar_slot(slot);
+                    }
                     BotCommand::Explore(radius) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
