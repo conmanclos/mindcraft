@@ -435,7 +435,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             for command in queued {
                 match command {
                     BotCommand::Say(text) => {
-                        let safe: String = text.chars().take(240).collect();
+                        let safe = truncate_utf16(&text, 240);
                         if !safe.trim().is_empty() { bot.chat(safe); }
                     }
                     BotCommand::AttackCrosshair => {
@@ -1057,6 +1057,32 @@ async fn approach_mined_drop(
     }
     client.wait_ticks(10).await;
     !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+}
+
+fn truncate_utf16(value: &str, max_units: usize) -> String {
+    let mut units = 0;
+    let mut end = 0;
+    for (index, character) in value.char_indices() {
+        let next_units = units + character.len_utf16();
+        if next_units > max_units { break; }
+        units = next_units;
+        end = index + character.len_utf8();
+    }
+    value[..end].to_owned()
+}
+
+#[cfg(test)]
+mod chat_text_tests {
+    use super::truncate_utf16;
+
+    #[test]
+    fn chat_truncation_never_splits_a_supplementary_unicode_character() {
+        let input = format!("{}🙂", "a".repeat(239));
+        let truncated = truncate_utf16(&input, 240);
+        assert_eq!(truncated, "a".repeat(239));
+        assert_eq!(truncate_utf16("🙂🙂", 4), "🙂🙂");
+        assert_eq!(truncate_utf16("🙂🙂", 3), "🙂");
+    }
 }
 
 fn is_trusted_chat_sender(trusted: &HashSet<String>, sender: Option<&str>) -> bool {
