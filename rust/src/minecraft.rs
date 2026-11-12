@@ -76,6 +76,7 @@ struct BotState {
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     pending_block_action: Option<Arc<Mutex<Option<PendingBlockAction>>>>,
+    mode: String,
     is_primary: bool,
 }
 
@@ -88,6 +89,7 @@ struct SwarmRuntimeState {
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     pending_block_action: Option<Arc<Mutex<Option<PendingBlockAction>>>>,
     primary_username: Option<String>,
+    mode: String,
 }
 
 impl SwarmRuntimeState {
@@ -104,6 +106,7 @@ impl SwarmRuntimeState {
             last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
             last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
             pending_block_action: self.pending_block_action.clone(),
+            mode: self.mode.clone(),
             is_primary,
         }
     }
@@ -116,6 +119,7 @@ pub async fn connect(
     microsoft_email: Option<String>,
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
+    mode: String,
 ) -> Result<()> {
     tracing::info!(%server, account_count = accounts.len(), auth_mode = %auth_mode, "starting Minecraft agent swarm");
 
@@ -150,6 +154,7 @@ pub async fn connect(
             follow_target: Some(Arc::new(Mutex::new(None))),
             pending_block_action: Some(Arc::new(Mutex::new(None))),
             primary_username,
+            mode: mode.clone(),
         };
 
         let mut builder = SwarmBuilder::new()
