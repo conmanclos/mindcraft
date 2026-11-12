@@ -46,6 +46,18 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="muted">Autonomous specialist actions appear here after they are queued. Inspect the result in Minecraft before marking a task complete; release it to retry.</div>
 <div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
 </section>
+<section class="panel"><h2>Persistent memory</h2>
+<div class="muted">Store durable preferences, verified world facts, and useful events. Memories are included in Mindcraft's AI context and can be updated or deleted here.</div>
+<div class="grid" style="margin-top:12px">
+<div><label for="memoryKind">Memory type</label><select id="memoryKind"><option value="preference">Preference</option><option value="semantic">Knowledge</option><option value="world">World fact</option><option value="episodic">Event</option></select></div>
+<div><label for="memoryImportance">Importance (0-100)</label><input id="memoryImportance" type="number" min="0" max="100" value="60"></div>
+<div><label for="memorySubject">Subject</label><input id="memorySubject" maxlength="120" placeholder="e.g. base location"></div>
+<div><label for="memoryConfidence">Confidence (0-1)</label><input id="memoryConfidence" type="number" min="0" max="1" step="0.05" value="1"></div>
+</div>
+<label for="memoryContent" style="margin-top:10px">What should Mindcraft remember?</label><textarea id="memoryContent" maxlength="2000" placeholder="A concise fact or preference, not a command."></textarea>
+<div class="row"><button id="saveMemory">Save memory</button><button id="refreshMemories" class="secondary">Refresh</button><span class="muted" id="memoryStatus"></span></div>
+<div id="memoryList" class="muted" style="white-space:pre-wrap;margin-top:12px">No memories loaded.</div>
+</section>
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -198,6 +210,36 @@ $("planTask").onclick=async()=>{
     $("plan").click();
   }catch(e){$("taskResult").textContent="Task lease renewal failed; check the connection and retry. The current lease may expire if it cannot be renewed. "+e.message}
 };
+async function refreshMemories(){
+  const memories=await api("/api/memory");
+  const list=$("memoryList");list.textContent="";
+  if(!memories.length){list.textContent="No persistent memories saved.";return}
+  for(const memory of memories){
+    const row=document.createElement("div");
+    row.style.cssText="border-top:1px solid var(--line);padding:10px 0;display:flex;gap:12px;justify-content:space-between;align-items:flex-start";
+    const body=document.createElement("div");
+    const title=document.createElement("strong");title.textContent="["+memory.kind+"] "+memory.subject;
+    const content=document.createElement("div");content.textContent=memory.content;
+    const meta=document.createElement("div");meta.className="muted";meta.textContent="Importance "+memory.importance+" · confidence "+Number(memory.confidence).toFixed(2)+" · "+memory.source;
+    body.append(title,content,meta);
+    const remove=document.createElement("button");remove.className="secondary";remove.textContent="Delete";
+    remove.onclick=async()=>{try{await api("/api/memory/"+memory.id,{});await refreshMemories()}catch(e){$("memoryStatus").textContent=e.message}};
+    row.append(body,remove);list.appendChild(row);
+  }
+}
+$("saveMemory").onclick=async()=>{
+  try{
+    if(!token)await connect();
+    $("saveMemory").disabled=true;
+    const payload={kind:$("memoryKind").value,subject:$("memorySubject").value.trim(),content:$("memoryContent").value.trim(),importance:Number($("memoryImportance").value),confidence:Number($("memoryConfidence").value),source:"dashboard"};
+    await api("/api/memory",payload);
+    $("memorySubject").value="";$("memoryContent").value="";
+    $("memoryStatus").textContent="Memory saved.";
+    await refreshMemories();
+  }catch(e){$("memoryStatus").textContent="Save failed: "+e.message}
+  finally{$("saveMemory").disabled=false}
+};
+$("refreshMemories").onclick=async()=>{try{if(!token)await connect();await refreshMemories();$("memoryStatus").textContent="Memory refreshed."}catch(e){$("memoryStatus").textContent=e.message}};
 setInterval(()=>{if(token)connect().catch(()=>{})},5000);
 $("releaseTask").onclick=async()=>{
   try{
