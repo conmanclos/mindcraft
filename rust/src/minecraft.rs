@@ -200,24 +200,32 @@ pub async fn connect(
 }
 
 fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
-    let name = debug_name.to_ascii_lowercase();
-    if name.contains("ancient_debris") { Some("ancient debris") }
-    else if name.contains("diamond_ore") { Some("diamond ore") }
-    else if name.contains("emerald_ore") { Some("emerald ore") }
-    else if name.contains("gold_ore") { Some("gold ore") }
-    else if name.contains("iron_ore") { Some("iron ore") }
-    else if name.contains("copper_ore") { Some("copper ore") }
-    else if name.contains("lapis_ore") { Some("lapis ore") }
-    else if name.contains("redstone_ore") { Some("redstone ore") }
-    else if name.contains("nether_quartz_ore") { Some("nether quartz ore") }
-    else if name.contains("nether_gold_ore") { Some("nether gold ore") }
-    else if name.contains("coal_ore") { Some("coal ore") }
-    else if name.contains("amethyst_cluster") { Some("amethyst cluster") }
-    else if name.contains("chest") || name.contains("barrel") || name.contains("shulker_box") { Some("storage") }
-    else if name.contains("crafting_table") || name.contains("furnace") || name.contains("smoker") || name.contains("blast_furnace") { Some("workstation") }
-    else if name.contains("anvil") || name.contains("enchanting_table") || name.contains("brewing_stand") || name.contains("grindstone") || name.contains("stonecutter") { Some("utility workstation") }
-    else if name.contains("end_portal_frame") || name.contains("end_gateway") || name.contains("nether_portal") || name.contains("beacon") || name.contains("lodestone") || name.contains("respawn_anchor") { Some("structure landmark") }
-    else if name.contains("bell") || name.contains("loom") || name.contains("cartography_table") || name.contains("smithing_table") || name.contains("fletching_table") { Some("village workstation") }
+    // Azalea debug output may be snake_case or CamelCase depending on the
+    // registry wrapper; normalize before classifying either representation.
+    let name: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if name.contains("ancientdebris") { Some("ancient debris") }
+    else if name.contains("diamondore") { Some("diamond ore") }
+    else if name.contains("emeraldore") { Some("emerald ore") }
+    else if name.contains("nethergoldore") { Some("nether gold ore") }
+    else if name.contains("goldore") { Some("gold ore") }
+    else if name.contains("ironore") { Some("iron ore") }
+    else if name.contains("copperore") { Some("copper ore") }
+    else if name.contains("lapisore") { Some("lapis ore") }
+    else if name.contains("redstoneore") { Some("redstone ore") }
+    else if name.contains("netherquartzore") { Some("nether quartz ore") }
+    else if name.contains("coalore") { Some("coal ore") }
+    else if name.contains("amethystcluster") { Some("amethyst cluster") }
+    else if name.contains("chest") || name.contains("barrel") || name.contains("shulkerbox") { Some("storage") }
+    else if name.contains("craftingtable") || name.contains("furnace") || name.contains("smoker") { Some("workstation") }
+    else if name.contains("anvil") || name.contains("enchantingtable") || name.contains("brewingstand")
+        || name.contains("grindstone") || name.contains("stonecutter") { Some("utility workstation") }
+    else if name.contains("endportalframe") || name.contains("endgateway") || name.contains("netherportal")
+        || name.contains("beacon") || name.contains("lodestone") || name.contains("respawnanchor") { Some("structure landmark") }
+    else if name.contains("bell") || name.contains("loom") || name.contains("cartographytable")
+        || name.contains("smithingtable") || name.contains("fletchingtable") { Some("village workstation") }
     else { None }
 }
 
