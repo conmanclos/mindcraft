@@ -631,8 +631,15 @@ async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize
         anyhow::bail!("the requested container is not under the crosshair");
     }
 
-    let handle = bot.open_container_at(position).await
-        .ok_or_else(|| anyhow::anyhow!("no openable container exists at the requested position"))?;
+    let handle = match tokio::time::timeout(Duration::from_secs(8), bot.open_container_at(position)).await {
+        Ok(Some(handle)) => handle,
+        Ok(None) => anyhow::bail!("no openable container exists at the requested position"),
+        Err(_) => {
+            bot.ecs.lock().entity_mut(bot.entity)
+                .remove::<azalea::container::WaitingForInventoryOpen>();
+            anyhow::bail!("container did not open before the timeout");
+        }
+    };
     let mut moved_stacks = 0usize;
 
     for _ in 0..36 {
@@ -688,7 +695,7 @@ async fn click_pickup(
         PickupClick::Left { slot: Some(slot) }
     };
     handle.click(click);
-    wait_ticks(&mut ticks, 2).await
+    wait_ticks(&mut ticks, 3).await
 }
 
 async fn click_quick_move(
@@ -698,7 +705,7 @@ async fn click_quick_move(
 ) -> Result<()> {
     let mut ticks = bot.get_tick_broadcaster();
     handle.click(QuickMoveClick::Left { slot });
-    wait_ticks(&mut ticks, 3).await
+    wait_ticks(&mut ticks, 4).await
 }
 
 fn find_inventory_slot(menu: &Menu, predicate: impl Fn(&str) -> bool) -> Option<u16> {
