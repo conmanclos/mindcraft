@@ -312,12 +312,12 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             }
                         }
                         crate::reflex::ReflexAction::WarnLowFood => {
+                            if state.mode == "autonomous" {
+                                schedule_auto_eat(&bot, &state);
+                            } else if should_warn && state.is_primary {
+                                bot.chat("Reflex safety: food is low. Approve a use_item action or switch to Autonomous mode to allow safe automatic eating.");
+                            }
                             if should_warn {
-                                if state.mode == "autonomous" {
-                                    schedule_auto_eat(&bot, &state);
-                                } else if state.is_primary {
-                                    bot.chat("Reflex safety: food is low. Approve a use_item action or switch to Autonomous mode to allow safe automatic eating.");
-                                }
                                 tracing::warn!(username = %bot.username(), food = hunger.food, "low-food reflex activated");
                             }
                         }
