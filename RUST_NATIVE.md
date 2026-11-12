@@ -1,7 +1,7 @@
-# Native Rust runtime
+# Native Rust implementation
 
-The Rust implementation lives in `rust/` and is developed alongside the original JavaScript/Mineflayer application. It is pinned to Minecraft Java 1.21.1 via Azalea 0.10.3+mc1.21.1.
+The native implementation lives in `rust/` alongside the original JavaScript/Mineflayer application. It is pinned to Minecraft Java 1.21.1 via Azalea 0.10.3+mc1.21.1.
 
-Start here: [rust/README.md](rust/README.md).
+See [rust/README.md](rust/README.md) for setup, configuration, run instructions, current executable actions, and the remaining parity work.
 
-The native runtime currently provides a shared CLI/API/dashboard process, provider adapters, SQLite chat persistence, autonomy-policy enforcement, and an Azalea offline-mode connection with chat event logging. It does **not** yet claim parity with the legacy Mineflayer skill set; missing in-game execution adapters are listed explicitly in the Rust README.
+The current runtime includes a CLI, local dashboard/API, SQLite chat persistence, OpenAI-compatible/Ollama, Anthropic and Gemini adapters, autonomy policy checks, an Azalea Minecraft client, AI chat replies, and explicitly approved chat/stop/goto/mine commands. It is not yet feature-complete or verified in a live server. No CI or GitHub Actions were added.
