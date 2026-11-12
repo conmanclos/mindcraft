@@ -316,7 +316,7 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         "\nCurrent Minecraft state for {}: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
         world.agent, world.position, world.health, world.food, world.saturation, world.inventory
     )).unwrap_or_default();
-    let memory_context = state.store.relevant_memory_context(&request.description, 3_000)
+    let memory_context = state.store.relevant_memory_context(&request.message, 3_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let planning_request = format!("Player request: {}{world_context}\n{memory_context}", request.message);
     let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&planning_request))
@@ -876,7 +876,7 @@ async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(req
     if request.description.trim().is_empty() || request.description.len() > 4_000 {
         return Err((StatusCode::BAD_REQUEST, "goal must contain 1-4000 bytes".into()));
     }
-    let memory_context = state.store.memory_context(3_000)
+    let memory_context = state.store.relevant_memory_context(&request.description, 3_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let planning_context = format!("{}\n{memory_context}", request.description);
     let drafts = tokio::time::timeout(Duration::from_secs(50), state.brain.decompose_goal(&planning_context))
