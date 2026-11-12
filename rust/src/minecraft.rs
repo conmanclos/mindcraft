@@ -771,7 +771,7 @@ fn food_priority(name: &str) -> u8 {
     match name {
         "cooked_beef" | "cooked_porkchop" => 10,
         "golden_carrot" => 9,
-        "cooked_mutton" | "cooked_rabbit" | "cooked_cod" | "cooked_salmon" => 8,
+        "cooked_mutton" | "cooked_rabbit" | "cooked_chicken" | "cooked_cod" | "cooked_salmon" => 8,
         "bread" | "pumpkin_pie" | "baked_potato" | "mushroom_stew" | "rabbit_stew" | "beetroot_soup" => 7,
         "honey_bottle" => 6,
         "beef" | "porkchop" | "mutton" | "rabbit" | "cod" | "salmon" => 5,
