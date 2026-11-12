@@ -15,7 +15,7 @@ The app stores its non-secret configuration, SQLite database, and Azalea Microso
 
 ## Packaging
 
-Build on the Mac that will run the app (the script targets the current Mac architecture). Install Rust nightly and the Tauri v2 CLI once, then run the checked-in build script:
+Build on the Mac that will run the app (the script targets the current Mac architecture). Install Rust via rustup and the Xcode Command Line Tools once. The script installs the required nightly toolchain and Tauri v2 CLI if missing:
 
 ```sh
 cd rust
