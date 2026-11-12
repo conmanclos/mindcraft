@@ -347,6 +347,29 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Resume a failed goal by reopening only its failed/cancelled work.
+    /// Verified completed tasks stay complete and are not repeated.
+    pub fn retry_goal(&self, goal_id: i64) -> Result<bool> {
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE goals SET status='active' WHERE id=?1 AND status='failed'",
+            [goal_id],
+        )?;
+        if changed == 1 {
+            tx.execute(
+                "UPDATE agent_tasks SET status='pending', assigned_agent=NULL, lease_until=NULL,
+                 attempts=0, available_at=CURRENT_TIMESTAMP,
+                 last_error=CASE WHEN last_error IS NULL THEN NULL ELSE 'previous failure: ' || last_error END,
+                 updated_at=CURRENT_TIMESTAMP
+                 WHERE goal_id=?1 AND status IN ('failed','cancelled')",
+                [goal_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(changed == 1)
+    }
+
     /// Cancel a goal and atomically revoke every queued or leased task.
     pub fn cancel_goal(&self, goal_id: i64) -> Result<bool> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
