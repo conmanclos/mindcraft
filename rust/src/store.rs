@@ -372,11 +372,11 @@ mod tests {
         let first = store.claim_task("SoloBot", "planner").unwrap().unwrap();
         assert_eq!(first.id, scout_id);
         assert_eq!(first.role, "scout");
-        assert!(store.release_task(first.id, "SoloBot").unwrap());
+        assert!(store.mark_task_for_review(first.id, "SoloBot").unwrap());
 
         let second = store.claim_task("SoloBot", "planner").unwrap().unwrap();
-        assert_eq!(second.id, scout_id);
-        assert_ne!(second.id, gatherer_id);
+        assert_eq!(second.id, gatherer_id);
+        assert_eq!(second.role, "gatherer");
     }
 
     #[test]
