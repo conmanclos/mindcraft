@@ -331,8 +331,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 if allowed {
                     if let Some(brain) = &state.brain {
                         let brain = brain.clone();
+                        let autonomous = brain.is_autonomous();
                         let bot = bot.clone();
-                        let world_context = if let Some(status) = &state.status {
+                        let status = state.status.clone();
+                        let world_context = if let Some(status) = &status {
                             status.world.lock().await.clone().map(|world| format!(
                                 " Current game state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
                                 world.position, world.health, world.food, world.saturation, world.inventory
@@ -343,9 +345,39 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let prompt = format!(
                             "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action.{world_context} Message: {content}"
                         );
-                        // Never await a provider request inside the Minecraft event handler:
-                        // LLM latency must not stall ticks, movement, or keep-alive processing.
+                        // Provider work runs outside the tick handler so it cannot stall
+                        // movement, keep-alives, or the Minecraft event loop.
                         tokio::task::spawn_local(async move {
+                            if autonomous {
+                                match brain.plan(&content).await {
+                                    Ok(action) if brain.authorize_action(&action, false).is_ok() => {
+                                        match crate::api::command_from_action(action.clone()) {
+                                            Ok(command) => {
+                                                let sender = if let Some(status) = &status {
+                                                    status.command_tx.lock().await.clone()
+                                                } else {
+                                                    None
+                                                };
+                                                if let Some(sender) = sender {
+                                                    match sender.try_send(command) {
+                                                        Ok(()) => {
+                                                            if bot.exists() && !action.action.eq_ignore_ascii_case("say") {
+                                                                bot.chat("On it.");
+                                                            }
+                                                            return;
+                                                        }
+                                                        Err(error) => tracing::warn!(%error, "autonomous chat action could not enter the Minecraft command queue"),
+                                                    }
+                                                }
+                                            }
+                                            Err((_, error)) => tracing::debug!(%error, "autonomous chat action has no safe executor"),
+                                        }
+                                    }
+                                    Ok(action) => tracing::info!(action = %action.action, "autonomous chat action requires approval or failed policy checks"),
+                                    Err(error) => tracing::debug!(%error, "autonomous chat action planning failed; falling back to a conversational reply"),
+                                }
+                            }
+
                             match brain.reply(&prompt).await {
                                 Ok(reply) => {
                                     let safe_reply: String = reply.chars().take(240).collect();
