@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::hit_result::HitResult, pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
