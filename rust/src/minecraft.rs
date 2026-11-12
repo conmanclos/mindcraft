@@ -801,6 +801,11 @@ async fn goto_cancellable<G>(
 where
     G: azalea::pathfinder::goals::Goal + 'static,
 {
+    if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+        || !client.exists()
+    {
+        return false;
+    }
     let mut ticks = client.get_tick_broadcaster();
     client.start_goto_with_opts(goal, PathfinderOpts::new().allow_mining(false));
     client.wait_updates(1).await;
