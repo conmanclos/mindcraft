@@ -603,7 +603,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         return;
     };
     let player_menu = menu.try_as_player().is_some();
-    let table_menu = matches!(&menu, azalea::inventory::Menu::Crafting(_));
+    let table_menu = matches!(&menu, azalea_inventory::Menu::Crafting(_));
     if (requires_table && !table_menu) || (!player_menu && !table_menu) {
         bot.chat("That block did not open a crafting-table menu. I won't click an unrelated container.");
         return;
@@ -669,7 +669,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
 
 /// Return the best recognized, ordinary food item in the player's hotbar.
 /// Debug formatting is used only to identify the registry item name; unknown items fail closed.
-fn best_safe_food_slot(menu: &azalea::inventory::Menu) -> Option<(usize, u8)> {
+fn best_safe_food_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> {
     // Do not attempt to eat while a chest, furnace, crafting table, or other
     // server container is open; right-click would interact with that screen.
     menu.try_as_player()?;
