@@ -517,7 +517,21 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
             }}
             for x in 0..3 { for z in 0..3 { positions.push((ox + x, oy + 4, oz + z)); } }
         }
-        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, bridge_7x3, or watchtower_3x3".into())),
+        "perimeter_wall_7x7x2" => {
+            // Two-block-high square enclosure with a two-block front opening.
+            for y in 0..2 {
+                for x in 0..7 {
+                    for z in 0..7 {
+                        let perimeter = x == 0 || x == 6 || z == 0 || z == 6;
+                        let doorway = z == 0 && x == 3;
+                        if perimeter && !(doorway && y < 2) {
+                            positions.push((ox + x, oy + y, oz + z));
+                        }
+                    }
+                }
+            }
+        }
+        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, bridge_7x3, watchtower_3x3, or perimeter_wall_7x7x2".into())),
     }
     positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
     if positions.len() > 64 {
