@@ -1812,6 +1812,13 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "flower_pot" => Some((true, "flower_pot", &[(2, "brick"), (4, "brick"), (6, "brick")])),
         "glass_bottle" => Some((true, "glass_bottle", &[(1, "glass"), (3, "glass"), (5, "glass")])),
         "item_frame" => Some((true, "item_frame", &[(1, "stick"), (2, "stick"), (3, "stick"), (4, "stick"), (5, "leather"), (6, "stick"), (7, "stick"), (8, "stick"), (9, "stick")])),
+        "stone_bricks" => Some((false, "stone_bricks", &[(1, "stone"), (2, "stone"), (3, "stone"), (4, "stone")])),
+        "polished_andesite" => Some((false, "polished_andesite", &[(1, "andesite"), (2, "andesite"), (3, "andesite"), (4, "andesite")])),
+        "polished_diorite" => Some((false, "polished_diorite", &[(1, "diorite"), (2, "diorite"), (3, "diorite"), (4, "diorite")])),
+        "polished_granite" => Some((false, "polished_granite", &[(1, "granite"), (2, "granite"), (3, "granite"), (4, "granite")])),
+        "polished_deepslate" => Some((false, "polished_deepslate", &[(1, "cobbled_deepslate"), (2, "cobbled_deepslate"), (3, "cobbled_deepslate"), (4, "cobbled_deepslate")])),
+        "loom" => Some((false, "loom", &[(1, "string"), (2, "string"), (3, "planks"), (4, "planks")])),
+        "campfire" => Some((true, "campfire", &[(2, "stick"), (4, "stick"), (5, "coal"), (6, "stick"), (7, "log"), (8, "log"), (9, "log")])),
         _ => None,
     }
 }
