@@ -134,7 +134,7 @@ impl Store {
         for (role, task_description, priority) in tasks {
             tx.execute(
                 "INSERT INTO agent_tasks(goal_id, role, description, priority) VALUES (?1, ?2, ?3, ?4)",
-                params![goal_id, role, task_description, priority.clamp(0, 100)],
+                params![goal_id, role.as_str(), task_description.as_str(), (*priority).clamp(0, 100)],
             )?;
             task_ids.push(tx.last_insert_rowid());
         }
