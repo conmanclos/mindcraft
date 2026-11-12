@@ -2055,18 +2055,18 @@ async fn execute_craft(
     table: Option<(i32, i32, i32)>,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
-) {
+) -> bool {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
-    if cancelled() { return; }
+    if cancelled() { return false; }
     let Some((requires_table, result_name, ingredients)) = recipe_spec(&recipe) else {
         bot.chat("I don't have a safe recipe executor for that item yet.");
-        return;
+        return false;
     };
     let expected_output_count = recipe_output_count(&recipe);
     if requires_table && table.is_none() {
         bot.chat("That recipe needs a crafting table. Include its x,y,z coordinates.");
-        return;
+        return false;
     }
 
     let container = match table {
@@ -2074,40 +2074,40 @@ async fn execute_craft(
             let position = BlockPos::new(x, y, z);
             let Ok(world) = bot.world() else {
                 bot.chat("I can't read the loaded world to reach the crafting table.");
-                return;
+                return false;
             };
             if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
                 bot.chat("That crafting-table coordinate is not a loaded non-air block.");
-                return;
+                return false;
             }
             let chunk_storage = world.read().chunks.clone();
             if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
                 if !cancelled() {
                     bot.chat("Pathfinding to the crafting table timed out or failed.");
                 }
-                return;
+                return false;
             }
-            if cancelled() { return; }
+            if cancelled() { return false; }
             if !bot.exists() || !bot.is_goto_target_reached() {
                 bot.chat("I couldn't reach the crafting table without breaking blocks.");
-                return;
+                return false;
             }
-            let Ok(own_position) = bot.position() else { return; };
+            let Ok(own_position) = bot.position() else { return false; };
             let dx = own_position.x - (x as f64 + 0.5);
             let dy = own_position.y - (y as f64 + 0.5);
             let dz = own_position.z - (z as f64 + 0.5);
             if dx * dx + dy * dy + dz * dz > 20.25 {
                 bot.chat("The crafting table is still outside the 4.5-block interaction reach.");
-                return;
+                return false;
             }
             bot.look_at(position.center());
             bot.wait_updates(1).await;
-            if cancelled() { return; }
+            if cancelled() { return false; }
             match bot.hit_result() {
                 Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
                 _ => {
                     bot.chat("I don't have a clear line of sight to that crafting table.");
-                    return;
+                    return false;
                 }
             }
             bot.open_container_at(position).await.ok().flatten()
@@ -2116,23 +2116,23 @@ async fn execute_craft(
     };
     let Some(container) = container else {
         bot.chat("I couldn't open the required crafting interface. Close other menus and move within reach of the table.");
-        return;
+        return false;
     };
-    if cancelled() { drop(container); return; }
+    if cancelled() { drop(container); return false; }
     let Some(menu) = container.menu().ok().flatten() else {
         bot.chat("The crafting interface closed before I could use it.");
-        return;
+        return false;
     };
     let player_menu = menu.try_as_player().is_some();
     let table_menu = matches!(&menu, azalea_inventory::Menu::Crafting { .. });
     if (requires_table && !table_menu) || (!player_menu && !table_menu) {
         bot.chat("That block did not open a crafting-table menu. I won't click an unrelated container.");
-        return;
+        return false;
     }
     let grid_size = if player_menu { 4 } else { 9 };
     if ingredients.iter().any(|(slot, _)| *slot > grid_size) {
         bot.chat("This recipe doesn't fit the opened crafting grid.");
-        return;
+        return false;
     }
 
     let player_slots = menu.player_slots_range();
@@ -2142,14 +2142,14 @@ async fn execute_craft(
             Some(slots) => slots,
             None => {
                 bot.chat("The crafting menu closed while I was gathering ingredients.");
-                return;
+                return false;
             }
         };
         if slots.get(*grid_slot).is_some_and(|item| !item.is_empty()) {
             for slot in &placed_slots { container.shift_click(*slot); }
             bot.wait_ticks(2).await;
             bot.chat("The crafting grid is not empty. I returned only the ingredients I placed and left existing items untouched.");
-            return;
+            return false;
         }
         let source_slot = player_slots.clone().find(|slot| {
             slots.get(*slot).is_some_and(|item| {
@@ -2161,7 +2161,7 @@ async fn execute_craft(
             for slot in &placed_slots { container.shift_click(*slot); }
             bot.wait_ticks(2).await;
             bot.chat("I'm missing one or more ingredients for that recipe; any ingredients I placed were returned.");
-            return;
+            return false;
         };
         // Pick up the stack, place exactly one ingredient, then return the remainder.
         container.left_click(source_slot);
@@ -2174,7 +2174,7 @@ async fn execute_craft(
             if cancelled() {
                 for slot in &placed_slots { container.shift_click(*slot); }
                 bot.wait_ticks(2).await;
-                return;
+                return false;
             }
             ingredient_placed = container.slots()
                 .and_then(|slots| slots.get(*grid_slot).map(|item| {
@@ -2187,7 +2187,7 @@ async fn execute_craft(
             for slot in &placed_slots { container.shift_click(*slot); }
             bot.wait_ticks(2).await;
             bot.chat("The server did not confirm an ingredient in the crafting grid; I returned the ingredients I placed.");
-            return;
+            return false;
         }
     }
 
@@ -2197,7 +2197,7 @@ async fn execute_craft(
         if cancelled() {
             for slot in &placed_slots { container.shift_click(*slot); }
             bot.wait_ticks(2).await;
-            return;
+            return false;
         }
         output_matches = container.slots()
             .and_then(|slots| slots.first().map(|item| {
@@ -2211,7 +2211,7 @@ async fn execute_craft(
         for slot in &placed_slots { container.shift_click(*slot); }
         bot.wait_ticks(2).await;
         bot.chat("The server did not produce the expected item for that recipe. I returned the ingredients I placed.");
-        return;
+        return false;
     }
 
     container.shift_click(0);
@@ -2229,6 +2229,7 @@ async fn execute_craft(
     } else {
         bot.chat(format!("The {result_name} output is still in the crafting result slot; inventory may be full or the server rejected the transfer."));
     }
+    output_cleared
 }
 
 fn placement_face_point(support: BlockPos, face: Direction) -> azalea::Vec3 {
