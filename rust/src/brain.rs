@@ -64,7 +64,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, explore, mine, place, container_transfer, equip, attack, jump, use_item. Use only these actions. For explore, target is an optional radius from 8 to 128 blocks. For container_transfer, target must be x,y,z,slot for a nearby container and slot index. Attack target must be exactly crosshair. Container transfers always require explicit approval. risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, explore, mine, place, craft, container_transfer, equip, attack, jump, use_item. Use only these actions. For explore, target is an optional radius from 8 to 128 blocks. For craft, target is a supported recipe name; recipes needing a 3x3 grid use recipe@x,y,z for the crafting-table block. For container_transfer, target must be x,y,z,slot for a nearby container and slot index. Attack target must be exactly crosshair. Container transfers always require explicit approval. risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
@@ -104,7 +104,7 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "goto", "explore", "mine", "place", "container_transfer", "equip", "attack", "jump", "use_item"];
+        let supported = ["look", "follow", "stop", "say", "goto", "explore", "mine", "place", "craft", "container_transfer", "equip", "attack", "jump", "use_item"];
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
@@ -115,7 +115,7 @@ impl Brain {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
         let safe = ["look", "follow", "stop", "say", "goto", "explore", "jump"];
-        let destructive = ["attack", "mine", "place", "container_transfer", "equip", "use_item"];
+        let destructive = ["attack", "mine", "place", "craft", "container_transfer", "equip", "use_item"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
@@ -129,7 +129,7 @@ impl Brain {
         // The runtime assigns a minimum risk from the action itself, then takes the
         // more conservative of that floor and the planner's label.
         let action_floor = match action_name.as_str() {
-            "attack" | "use_item" | "mine" | "place" | "container_transfer" => "high",
+            "attack" | "use_item" | "mine" | "place" | "craft" | "container_transfer" => "high",
             "equip" | "explore" => "medium",
             _ => "low",
         };
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn assisted_mode_requires_approval_for_every_action() {
-        for name in ["say", "look", "follow", "stop", "goto", "explore", "jump", "equip", "mine", "place", "container_transfer", "attack", "use_item"] {
+        for name in ["say", "look", "follow", "stop", "goto", "explore", "jump", "equip", "mine", "place", "craft", "container_transfer", "attack", "use_item"] {
             let action = PlannedAction { action: name.into(), target: None, reason: "test".into(), risk: "low".into() };
             assert!(brain("assisted").authorize_action(&action, false).is_err(), "{name} must require approval in assisted mode");
             assert!(brain("assisted").authorize_action(&action, true).is_ok(), "{name} should be allowed after explicit approval");
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn planner_rejects_actions_without_runtime_executors() {
-        for name in ["status", "inspect", "craft", "drop"] {
+        for name in ["status", "inspect", "drop"] {
             let action = PlannedAction {
                 action: name.into(),
                 target: None,
