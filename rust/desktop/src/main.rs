@@ -219,6 +219,17 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
 
     let mut command = Command::new(runtime);
     command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
+    // The saved app setup is authoritative. Prevent unrelated shell or launch-agent
+    // MINDCRAFT_* variables from silently overriding it or leaking stale API keys.
+    for key in [
+        "MINDCRAFT_MC_SERVER", "MINDCRAFT_MC_USERNAME", "MINDCRAFT_MC_ACCOUNTS",
+        "MINDCRAFT_MC_AUTH", "MINDCRAFT_MICROSOFT_EMAIL", "MINDCRAFT_PROVIDER",
+        "MINDCRAFT_MODEL", "MINDCRAFT_API_KEY", "MINDCRAFT_BASE_URL", "MINDCRAFT_MODE",
+        "MINDCRAFT_BIND", "MINDCRAFT_API_TOKEN", "MINDCRAFT_DATABASE",
+        "MINDCRAFT_AZALEA_AUTH_CACHE",
+    ] {
+        command.env_remove(key);
+    }
     command.env("MINDCRAFT_BIND", format!("127.0.0.1:{api_port}"));
     command.env("MINDCRAFT_AZALEA_AUTH_CACHE", data.join("azalea-auth.json"));
     let key_account = format!("ai-provider-api-key-{provider}");
