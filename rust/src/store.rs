@@ -215,10 +215,46 @@ impl Store {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let changed = connection.execute(
             "UPDATE agent_tasks SET lease_until=datetime('now','+2 minutes'), updated_at=CURRENT_TIMESTAMP
-             WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+             WHERE id=?1 AND assigned_agent=?2
+               AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
         )?;
         Ok(changed == 1)
+    }
+
+    pub fn mark_task_for_review(&self, task_id: i64, agent_id: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let changed = connection.execute(
+            "UPDATE agent_tasks
+             SET status='review', lease_until=NULL, updated_at=CURRENT_TIMESTAMP
+             WHERE id=?1 AND assigned_agent=?2
+               AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
+            params![task_id, agent_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn has_review_task(&self, agent_id: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM agent_tasks WHERE assigned_agent=?1 AND status='review')",
+            [agent_id],
+            |row| row.get(0),
+        )?;
+        Ok(exists)
+    }
+
+    pub fn list_review_tasks(&self) -> Result<Vec<AgentTask>> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let mut statement = connection.prepare(
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
+             FROM agent_tasks WHERE status='review' ORDER BY priority DESC, id ASC"
+        )?;
+        let rows = statement.query_map([], |row| Ok(AgentTask {
+            id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?,
+        }))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     pub fn release_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
@@ -236,7 +272,8 @@ impl Store {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let goal_id: Option<i64> = tx.query_row(
-            "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+            "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2
+             AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
             |row| row.get(0),
         ).optional()?;
@@ -335,6 +372,23 @@ mod tests {
         assert_eq!(recovered.assigned_agent.as_deref(), Some("worker-b"));
         assert!(!store.complete_task(task_id, "worker-a").unwrap());
         assert!(store.complete_task(task_id, "worker-b").unwrap());
+    }
+
+    #[test]
+    fn task_review_queue_holds_work_until_human_confirmation_or_release() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let (_, task_ids) = store.create_goal_with_tasks(
+            "build shelter",
+            &[("builder".into(), "place the shelter walls".into(), 50)],
+        ).unwrap();
+        let task_id = task_ids[0];
+        assert!(store.claim_task("Builder", "builder").unwrap().is_some());
+        assert!(store.mark_task_for_review(task_id, "Builder").unwrap());
+        assert!(store.has_review_task("Builder").unwrap());
+        assert_eq!(store.list_review_tasks().unwrap()[0].status, "review");
+        assert!(store.claim_task("Builder2", "builder").unwrap().is_none());
+        assert!(store.complete_task(task_id, "Builder").unwrap());
+        assert!(!store.has_review_task("Builder").unwrap());
     }
 
     #[test]
