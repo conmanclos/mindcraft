@@ -136,10 +136,26 @@ fn validate_minecraft_server(value: &str) -> Result<()> {
         }
         None => value,
     };
-    if host.is_empty() || !host.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')) {
-        bail!("MINDCRAFT_MC_SERVER contains an invalid host name");
+    if !valid_server_host(host) {
+        bail!("MINDCRAFT_MC_SERVER contains an invalid DNS host name or IPv4 address");
     }
     Ok(())
+}
+
+fn valid_server_host(host: &str) -> bool {
+    if host.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
+    }
+    if host.is_empty() || host.len() > 253 {
+        return false;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+            && label.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
+            && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
 }
 
 fn parse_trusted_chat_players(raw: &str) -> Result<Vec<String>> {
@@ -205,7 +221,7 @@ mod tests {
         assert!(validate_minecraft_server("localhost").is_ok());
         assert!(validate_minecraft_server("play.example.net:25565").is_ok());
         assert!(validate_minecraft_server("192.168.1.20:25566").is_ok());
-        for invalid in ["", "https://example.com", "example.com/path", "host:0", "host:65536", "host:nope", "host name:25565", "::1:25565"] {
+        for invalid in ["", "https://example.com", "example.com/path", "host:0", "host:65536", "host:nope", "host name:25565", "::1:25565", "a..b", "-host", "host-", "bad_.host"] {
             assert!(validate_minecraft_server(invalid).is_err(), "accepted {invalid}");
         }
     }
