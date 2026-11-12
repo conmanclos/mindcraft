@@ -114,7 +114,7 @@ impl Store {
             connection.execute("ALTER TABLE agent_tasks ADD COLUMN last_error TEXT", [])?;
         }
         if !task_columns.iter().any(|name| name == "available_at") {
-            connection.execute("ALTER TABLE agent_tasks ADD COLUMN available_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", [])?;
+            connection.execute("ALTER TABLE agent_tasks ADD COLUMN available_at TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'", [])?;
         }
         Ok(Self { connection: Mutex::new(connection) })
     }
