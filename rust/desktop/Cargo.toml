@@ -10,8 +10,16 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 dotenvy = "0.15"
-keyring = { version = "3", features = ["apple-native"] }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
