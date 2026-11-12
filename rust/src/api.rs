@@ -776,8 +776,8 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "craft" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be recipe[*count], optionally followed by @x,y,z for a crafting table".into()))?;
             let mut parts = raw.split('@');
-            let recipe_spec = parts.next().unwrap_or_default().trim();
-            let (recipe, count) = match recipe_spec.split_once('*') {
+            let raw_recipe = parts.next().unwrap_or_default().trim();
+            let (recipe, count) = match raw_recipe.split_once('*') {
                 Some((recipe, count)) => {
                     if count.contains('*') {
                         return Err((StatusCode::BAD_REQUEST, "craft batch count must be a single integer from 1 to 16".into()));
@@ -789,7 +789,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                     }
                     (recipe.trim().to_ascii_lowercase(), count)
                 }
-                None => (recipe_spec.to_ascii_lowercase(), 1),
+                None => (raw_recipe.to_ascii_lowercase(), 1),
             };
             let table = match parts.next() {
                 Some(coordinates) => {
