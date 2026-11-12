@@ -551,6 +551,34 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             let position = BlockPos::new(x, y, z);
+                            let Ok(world) = client.world() else {
+                                client.chat("I can't read the loaded world to reach that container.");
+                                return;
+                            };
+                            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                                client.chat("That container coordinate is not a loaded non-air block.");
+                                return;
+                            }
+                            let chunk_storage = world.read().chunks.clone();
+                            client.goto_with_opts(
+                                ReachBlockPosGoal::new(position, chunk_storage),
+                                PathfinderOpts::new().allow_mining(false),
+                            ).await;
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                return;
+                            }
+                            if !client.exists() || !client.is_goto_target_reached() {
+                                client.chat("I couldn't reach that container without breaking blocks.");
+                                return;
+                            }
+                            let Ok(own_position) = client.position() else { return; };
+                            let dx = own_position.x - (position.x as f64 + 0.5);
+                            let dy = own_position.y - (position.y as f64 + 0.5);
+                            let dz = own_position.z - (position.z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz > 20.25 {
+                                client.chat("That container is still outside the 4.5-block interaction reach.");
+                                return;
+                            }
                             match client.open_container_at(position).await {
                                 Ok(Some(container)) => {
                                     if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
@@ -568,7 +596,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     }
                                     drop(container);
                                 }
-                                Ok(None) => client.chat("I could not open that container. Move within reach and check the block coordinates."),
+                                Ok(None) => client.chat("I could not open that block as a container."),
                                 Err(error) => tracing::warn!(username = %client.username(), %error, "container transfer failed to open container"),
                             }
                         });
