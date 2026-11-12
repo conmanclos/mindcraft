@@ -59,10 +59,20 @@ async fn main() -> Result<()> {
                 tokio::select! {
                     result = api::serve(config.clone(), brain, store, status) => result?,
                     result = minecraft::connect(server, bot_accounts, bot_auth, microsoft_email, trusted_chat_players, bot_brain, bot_status, bot_store) => result?,
+                    signal = tokio::signal::ctrl_c() => {
+                        signal?;
+                        tracing::info!("shutdown requested; stopping the Minecraft swarm and dashboard");
+                    }
                 }
             } else {
                 tracing::warn!("MINDCRAFT_MC_SERVER is unset; dashboard/API will start without a Minecraft connection");
-                api::serve(config, brain, store, status).await?;
+                tokio::select! {
+                    result = api::serve(config, brain, store, status) => result?,
+                    signal = tokio::signal::ctrl_c() => {
+                        signal?;
+                        tracing::info!("shutdown requested; stopping the dashboard");
+                    }
+                }
             }
         }
         Command::Chat { prompt } => {
