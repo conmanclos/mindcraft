@@ -147,7 +147,7 @@ impl Store {
     }
 
     pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
-        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let goal_id: Option<i64> = tx.query_row(
             "SELECT goal_id FROM agent_tasks WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
