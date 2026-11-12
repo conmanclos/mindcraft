@@ -976,8 +976,9 @@ where
     let mut ticks = client.get_tick_broadcaster();
     client.start_goto_with_opts(goal, PathfinderOpts::new().allow_mining(false));
     client.wait_updates(1).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
 
-    for _ in 0..600 {
+    loop {
         if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
             || !client.exists()
         {
@@ -986,16 +987,21 @@ where
         if client.is_goto_target_reached() {
             return true;
         }
-        if ticks.recv().await.is_err() {
-            return false;
+        match tokio::time::timeout_at(deadline, ticks.recv()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
+                tracing::debug!(username = %client.username(), skipped, "pathfinding task missed tick notifications; resuming from current state");
+            }
+            Ok(Err(broadcast::error::RecvError::Closed)) => return false,
+            Err(_) => {
+                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                    client.stop_pathfinding();
+                    client.walk(WalkDirection::None);
+                }
+                return false;
+            }
         }
     }
-
-    if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-        client.stop_pathfinding();
-        client.walk(WalkDirection::None);
-    }
-    false
 }
 
 /// Abort the current server-side block-destroy action when a newer command supersedes mining.
