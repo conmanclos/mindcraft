@@ -25,6 +25,9 @@ pub enum BotCommand {
     Mine(i32, i32, i32),
     Place(i32, i32, i32),
     Equip(u8),
+    Jump,
+    Sneak(bool),
+    UseItem,
 }
 
 #[derive(Clone, Component, Default)]
@@ -362,6 +365,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.look_at(position.center());
                     }
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
+                    BotCommand::Jump => bot.jump(),
+                    BotCommand::Sneak(enabled) => bot.set_crouching(enabled),
+                    BotCommand::UseItem => bot.start_use_item(),
                 }
             }
         }
