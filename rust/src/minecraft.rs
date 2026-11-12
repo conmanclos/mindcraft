@@ -106,7 +106,7 @@ pub async fn connect(
                 match goal_store.has_goal_description(DEFAULT_GOAL) {
                     Ok(true) => {},
                     Ok(false) => {
-                        let memory = goal_store.memory_context(3_000).unwrap_or_default();
+                        let memory = goal_store.relevant_memory_context(DEFAULT_GOAL, 3_000).unwrap_or_default();
                         let context = format!("{DEFAULT_GOAL}\n{memory}");
                         match tokio::time::timeout(Duration::from_secs(50), goal_brain.decompose_goal(&context)).await {
                             Ok(Ok(drafts)) => {
