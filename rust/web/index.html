@@ -48,14 +48,15 @@ const $=id=>document.getElementById(id);
 let token="";
 let lastPlan=null;
 let currentTask=null;
+let currentTaskAgentId=null;
 let taskHeartbeat=null;
 function stopTaskHeartbeat(){if(taskHeartbeat){clearInterval(taskHeartbeat);taskHeartbeat=null;}}
 function startTaskHeartbeat(){
   stopTaskHeartbeat();
   taskHeartbeat=setInterval(async()=>{
     if(!currentTask)return;
-    try{await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:$("agentId").value.trim()});}
-    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;$("completeTask").disabled=true;$("planTask").disabled=true;}
+    try{await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgentId});}
+    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;currentTaskAgentId=null;$("completeTask").disabled=true;$("planTask").disabled=true;}
   },45000);
 }
 function log(s){$("log").textContent+="\n"+s;$("log").scrollTop=$("log").scrollHeight}
@@ -139,6 +140,7 @@ $("claimTask").onclick=async()=>{
     const role=$("agentRole").value;
     const r=await api("/api/tasks/claim",{agent_id,role});
     currentTask=r.task;
+    currentTaskAgentId=currentTask?agent_id:null;
     if(currentTask)startTaskHeartbeat();else stopTaskHeartbeat();
     $("completeTask").disabled=!currentTask;
     $("planTask").disabled=!currentTask;
@@ -155,10 +157,10 @@ setInterval(()=>{if(token)connect().catch(()=>{})},5000);
 $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
-    const agent_id=$("agentId").value.trim();
-    await api("/api/tasks/"+currentTask.id+"/complete",{agent_id});
+    await api("/api/tasks/"+currentTask.id+"/complete",{agent_id:currentTaskAgentId});
     $("taskResult").textContent="Task #"+currentTask.id+" marked complete.";
     currentTask=null;
+    currentTaskAgentId=null;
     stopTaskHeartbeat();
     $("completeTask").disabled=true;
     $("planTask").disabled=true;
