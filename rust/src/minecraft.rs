@@ -2541,6 +2541,7 @@ async fn plant_crop_at(
     let Ok(world) = bot.world() else { return false; };
     let Some(soil) = world.read().get_block_state(farmland) else { return false; };
     let soil_name = format!("{soil:?}").to_ascii_lowercase();
+    let soil_compact: String = soil_name.chars().filter(|character| character.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect();
     let crop_position = farmland.up(1);
     if !world.read().get_block_state(crop_position).is_some_and(|block| block.is_air()) {
         bot.chat("The block above that farmland is occupied; I won't overwrite it.");
@@ -2569,24 +2570,24 @@ async fn plant_crop_at(
     let horizontal = [farmland.north(), farmland.south(), farmland.east(), farmland.west()];
     let water_adjacent = horizontal.iter().any(|position| {
         world.read().get_block_state(*position).is_some_and(|block| {
-            let name = format!("{block:?}").to_ascii_lowercase();
-            name.contains("water")
+            let name: String = format!("{block:?}").chars().filter(|character| character.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect();
+            name == "water" || name == "flowingwater"
         })
     });
     let cactus_clear = [crop_position.north(), crop_position.south(), crop_position.east(), crop_position.west()]
         .iter().all(|position| world.read().get_block_state(*position).is_some_and(|block| block.is_air()));
     let valid_soil = if nether_wart {
-        soil_name.contains("soul_sand")
+        soil_compact == "soulsand"
     } else if sugar_cane {
-        (soil_name.contains("dirt") || soil_name.contains("grass_block") || soil_name.contains("sand") || soil_name.contains("mud"))
+        (soil_compact.contains("dirt") || soil_compact.contains("grass") || soil_compact == "sand" || soil_compact == "redsand" || soil_compact == "mud")
             && water_adjacent
     } else if cactus {
-        (soil_name.contains("sand") && !soil_name.contains("sandstone")) && cactus_clear
+        (soil_compact == "sand" || soil_compact == "redsand") && cactus_clear
     } else if bamboo {
-        soil_name.contains("dirt") || soil_name.contains("grass_block") || soil_name.contains("sand")
-            || soil_name.contains("gravel") || soil_name.contains("podzol") || soil_name.contains("mud")
+        soil_compact.contains("dirt") || soil_compact.contains("grass") || soil_compact == "sand" || soil_compact == "redsand"
+            || soil_compact.contains("gravel") || soil_compact.contains("podzol") || soil_compact == "mud"
     } else {
-        soil_name.contains("farmland")
+        soil_compact.contains("farmland")
     };
     if !valid_soil {
         bot.chat(if nether_wart {
