@@ -1979,7 +1979,6 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "anvil" => Some((true, "anvil", &[(1, "iron_block"), (2, "iron_block"), (3, "iron_block"), (5, "iron_ingot"), (7, "iron_ingot"), (8, "iron_ingot"), (9, "iron_ingot")])),
         "enchanting_table" => Some((true, "enchanting_table", &[(2, "book"), (4, "diamond"), (5, "obsidian"), (6, "diamond"), (8, "obsidian"), (9, "obsidian")])),
         "ender_chest" => Some((true, "ender_chest", &[(1, "obsidian"), (2, "obsidian"), (3, "obsidian"), (4, "obsidian"), (5, "ender_eye"), (6, "obsidian"), (7, "obsidian"), (8, "obsidian"), (9, "obsidian")])),
-        "chest_boat" => Some((true, "chest_boat", &[(4, "boat"), (7, "chest")])),
         "stone_bricks" => Some((false, "stone_bricks", &[(1, "stone"), (2, "stone"), (3, "stone"), (4, "stone")])),
         "polished_andesite" => Some((false, "polished_andesite", &[(1, "andesite"), (2, "andesite"), (3, "andesite"), (4, "andesite")])),
         "polished_diorite" => Some((false, "polished_diorite", &[(1, "diorite"), (2, "diorite"), (3, "diorite"), (4, "diorite")])),
