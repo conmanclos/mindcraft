@@ -194,7 +194,7 @@ async fn handle_swarm(
     if let SwarmEvent::Disconnect(account, join_opts) = event {
         let is_primary = state.primary_username.as_deref()
             .is_some_and(|primary| primary.eq_ignore_ascii_case(&account.username));
-        tracing::warn!(username = %account.username, "Minecraft agent disconnected; reconnecting in 5 seconds");
+        tracing::warn!(username = %account.username, "Minecraft agent disconnected; reconnecting with Azalea's exponential backoff");
         let _reconnected = swarm
             .add_and_retry_forever_with_opts(&account, state.bot_state(is_primary), &join_opts)
             .await;
