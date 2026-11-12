@@ -3048,7 +3048,9 @@ async fn execute_smelt(
         }
         output_ready = container.slots()
             .and_then(|slots| slots.get(2).map(|item| {
-                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
+                !item.is_empty()
+                    && item.count() >= u32::from(count)
+                    && item_name_matches(&format!("{:?}", item.kind()), result_name)
             }))
             .unwrap_or(false);
         if output_ready { break; }
