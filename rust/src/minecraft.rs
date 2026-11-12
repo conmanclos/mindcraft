@@ -1756,8 +1756,8 @@ async fn execute_build(
 ) {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
-    if positions.is_empty() || positions.len() > 32 {
-        bot.chat("A build plan must contain between 1 and 32 block positions.");
+    if positions.is_empty() || positions.len() > 64 {
+        bot.chat("A build plan must contain between 1 and 64 block positions.");
         return;
     }
     let Ok(initial_menu) = bot.menu() else {
