@@ -2523,7 +2523,7 @@ fn is_plantable_seed(debug_name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart", "sugarcane", "cactus", "bamboo"]
+    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart", "sugarcane", "cactus", "bamboo", "redmushroom", "brownmushroom"]
         .contains(&compact.as_str())
 }
 
@@ -2558,7 +2558,7 @@ async fn plant_crop_at(
             !item.is_empty() && is_plantable_seed(&format!("{:?}", item.kind()))
         })
     }) else {
-        bot.chat("I need wheat, beetroot, pumpkin, or melon seeds, carrots, potatoes, or nether wart in the hotbar to plant.");
+        bot.chat("I need a supported crop item, sugar cane, cactus, bamboo, or a mushroom in the hotbar to plant.");
         return false;
     };
     let seed_name = slots.get(seed_slot).map(|item| format!("{:?}", item.kind())).unwrap_or_default().to_ascii_lowercase();
@@ -2567,6 +2567,7 @@ async fn plant_crop_at(
     let sugar_cane = compact_seed == "sugarcane";
     let cactus = compact_seed == "cactus";
     let bamboo = compact_seed == "bamboo";
+    let mushroom = compact_seed == "redmushroom" || compact_seed == "brownmushroom";
     let horizontal = [farmland.north(), farmland.south(), farmland.east(), farmland.west()];
     let water_adjacent = horizontal.iter().any(|position| {
         world.read().get_block_state(*position).is_some_and(|block| {
@@ -2586,6 +2587,10 @@ async fn plant_crop_at(
     } else if bamboo {
         soil_compact.contains("dirt") || soil_compact.contains("grass") || soil_compact == "sand" || soil_compact == "redsand"
             || soil_compact.contains("gravel") || soil_compact.contains("podzol") || soil_compact == "mud"
+    } else if mushroom {
+        // Restrict mushrooms to light-independent substrates until local light can be verified.
+        soil_compact == "mycelium" || soil_compact == "podzol"
+            || soil_compact == "crimsonnylium" || soil_compact == "warpednylium"
     } else {
         soil_compact.contains("farmland")
     };
@@ -2598,6 +2603,8 @@ async fn plant_crop_at(
             "Cactus needs sand and clear horizontal space; I won't replace terrain."
         } else if bamboo {
             "Bamboo needs a supported dirt, grass, sand, gravel, podzol, or mud substrate."
+        } else if mushroom {
+            "Mushrooms can be planted safely on mycelium, podzol, crimson nylium, or warped nylium; ordinary blocks require a verified low light level."
         } else {
             "This crop requires farmland; I won't till or replace terrain automatically."
         });
