@@ -42,6 +42,7 @@ struct BotState {
     last_reflex: Option<Arc<Mutex<Instant>>>,
     last_auto_eat: Option<Arc<Mutex<Instant>>>,
     last_auto_armor: Option<Arc<Mutex<Instant>>>,
+    last_auto_combat: Option<Arc<Mutex<Instant>>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
@@ -198,6 +199,7 @@ fn make_state(
         last_reflex: Some(last_reflex),
         last_auto_eat: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
         last_auto_armor: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
+        last_auto_combat: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(2))))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
@@ -280,6 +282,40 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             };
                             status.agents.lock().await.insert(snapshot.agent.clone(), snapshot.clone());
                             if state.is_primary { *status.world.lock().await = Some(snapshot); }
+                        }
+                    }
+                }
+                // Autonomous close-range defense attacks only a whitelisted hostile monster,
+                // only when it is close and the server raycast confirms that exact target.
+                if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
+                    && !critical_health
+                    && !bot.has_attack_cooldown()
+                {
+                    let should_check_combat = if let Some(last) = &state.last_auto_combat {
+                        let mut last = last.lock().await;
+                        if last.elapsed() >= Duration::from_millis(900) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_check_combat {
+                        let target = bot.nearest_entities::<azalea::ecs::query::With<azalea::entity::metadata::AbstractMonster>>()
+                            .ok()
+                            .and_then(|entities| entities.into_iter().find(|entity| {
+                                entity.kind().ok().is_some_and(|kind| is_hostile_mob_kind(&format!("{kind:?}")))
+                                    && entity.distance_to_client().ok().is_some_and(|distance| distance <= 4.0)
+                            }));
+                        if let Some(target) = target {
+                            if target.look_at().is_ok() {
+                                bot.wait_updates(1).await;
+                                if !critical_health && !bot.has_attack_cooldown()
+                                    && matches!(bot.hit_result(), Ok(HitResult::Entity(hit)) if hit.entity == target.id())
+                                    && target.exists()
+                                {
+                                    target.attack();
+                                    tracing::info!(username = %bot.username(), target = ?target.kind(), "autonomous close-range defense attacked a visible hostile mob");
+                                }
+                            }
                         }
                     }
                 }
@@ -1898,6 +1934,42 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
         name.ends_with("door") && !name.ends_with("trapdoor")
     } else {
         name.ends_with(&selector)
+    }
+}
+
+fn is_hostile_mob_kind(debug_name: &str) -> bool {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    [
+        "zombie", "skeleton", "creeper", "spider", "cavespider", "witch",
+        "slime", "magmacube", "phantom", "drowned", "husk", "stray",
+        "pillager", "vindicator", "evoker", "ravager", "vex", "blaze",
+        "ghast", "witherskeleton", "zoglin", "hoglin", "piglinbrute",
+        "warden", "guardian", "elderguardian", "silverfish", "endermite",
+        "breeze", "bogged", "creaking",
+    ].contains(&compact.as_str())
+}
+
+#[cfg(test)]
+mod hostile_mob_tests {
+    use super::is_hostile_mob_kind;
+
+    #[test]
+    fn defensive_combat_whitelists_hostile_mob_kinds_only() {
+        for hostile in ["Zombie", "Creeper", "Skeleton", "EnderMan", "Blaze", "Warden", "Bogged"] {
+            // Endermen are deliberately handled by the whitelist only when
+            // explicitly listed; this test catches accidental broad matching.
+            if hostile == "EnderMan" {
+                assert!(!is_hostile_mob_kind(hostile));
+            } else {
+                assert!(is_hostile_mob_kind(hostile), "{hostile}");
+            }
+        }
+        for passive in ["Cow", "Pig", "Sheep", "Villager", "Wolf", "IronGolem", "EnderMan"] {
+            assert!(!is_hostile_mob_kind(passive), "{passive}");
+        }
     }
 }
 
