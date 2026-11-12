@@ -19,6 +19,7 @@ pub enum BotCommand {
     Equip(u8),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, u16),
+    Craft(String, Option<(i32, i32, i32)>),
 }
 
 #[derive(Debug, Clone)]
@@ -423,6 +424,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
                         if let Some(last) = &state.last_explore_repath { *last.lock().await = Instant::now() - Duration::from_secs(20); }
                     }
+                    BotCommand::Craft(recipe, table) => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move { execute_craft(client, recipe, table).await; });
+                    }
                     BotCommand::ContainerTransfer(x, y, z, slot) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
@@ -548,6 +553,114 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         _ => {}
     }
     Ok(())
+}
+
+/// Recipes intentionally use a small, explicit allowlist. Ingredient placement is
+/// performed through Azalea's real inventory click events; no local inventory
+/// mutation is treated as a successful craft.
+fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
+    match recipe {
+        "sticks" => Some((false, "stick", &[(1, "planks"), (3, "planks")])),
+        "crafting_table" => Some((false, "crafting_table", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks")])),
+        "wooden_pickaxe" => Some((true, "wooden_pickaxe", &[(1, "planks"), (2, "planks"), (3, "planks"), (5, "stick"), (8, "stick")])),
+        "wooden_axe" => Some((true, "wooden_axe", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "stick"), (8, "stick")])),
+        "wooden_sword" => Some((true, "wooden_sword", &[(2, "planks"), (5, "planks"), (8, "stick")])),
+        "wooden_shovel" => Some((true, "wooden_shovel", &[(2, "planks"), (5, "stick"), (8, "stick")])),
+        "stone_pickaxe" => Some((true, "stone_pickaxe", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (5, "stick"), (8, "stick")])),
+        "stone_axe" => Some((true, "stone_axe", &[(1, "cobblestone"), (2, "cobblestone"), (4, "cobblestone"), (5, "stick"), (8, "stick")])),
+        "stone_sword" => Some((true, "stone_sword", &[(2, "cobblestone"), (5, "cobblestone"), (8, "stick")])),
+        "stone_shovel" => Some((true, "stone_shovel", &[(2, "cobblestone"), (5, "stick"), (8, "stick")])),
+        "furnace" => Some((true, "furnace", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (6, "cobblestone"), (7, "cobblestone"), (8, "cobblestone"), (9, "cobblestone")])),
+        "chest" => Some((true, "chest", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
+        _ => None,
+    }
+}
+
+async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32)>) {
+    let Some((requires_table, result_name, ingredients)) = recipe_spec(&recipe) else {
+        bot.chat("I don't have a safe recipe executor for that item yet.");
+        return;
+    };
+    if requires_table && table.is_none() {
+        bot.chat("That recipe needs a crafting table. Include its x,y,z coordinates.");
+        return;
+    }
+
+    let container = match table {
+        Some((x, y, z)) => bot.open_container_at(BlockPos::new(x, y, z)).await.ok().flatten(),
+        None => bot.open_inventory().ok().flatten(),
+    };
+    let Some(container) = container else {
+        bot.chat("I couldn't open the required crafting interface. Close other menus and move within reach of the table.");
+        return;
+    };
+    let Some(menu) = container.menu().ok().flatten() else {
+        bot.chat("The crafting interface closed before I could use it.");
+        return;
+    };
+    let player_menu = menu.try_as_player().is_some();
+    let table_menu = matches!(&menu, azalea::inventory::Menu::Crafting(_));
+    if (requires_table && !table_menu) || (!player_menu && !table_menu) {
+        bot.chat("That block did not open a crafting-table menu. I won't click an unrelated container.");
+        return;
+    }
+    let grid_size = if player_menu { 4 } else { 9 };
+    if ingredients.iter().any(|(slot, _)| *slot > grid_size) {
+        bot.chat("This recipe doesn't fit the opened crafting grid.");
+        return;
+    }
+
+    let player_slots = menu.player_slots_range();
+    for (grid_slot, selector) in ingredients {
+        let slots = match container.slots() {
+            Some(slots) => slots,
+            None => {
+                bot.chat("The crafting menu closed while I was gathering ingredients.");
+                return;
+            }
+        };
+        let source_slot = player_slots.clone().find(|slot| {
+            slots.get(*slot).is_some_and(|item| {
+                !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(selector)
+            })
+        });
+        let Some(source_slot) = source_slot else {
+            // Return any ingredients already placed into the grid before failing.
+            for slot in 1..=grid_size {
+                if container.slots().and_then(|items| items.get(slot).map(|item| !item.is_empty())).unwrap_or(false) {
+                    container.shift_click(slot);
+                }
+            }
+            bot.wait_ticks(2).await;
+            bot.chat("I'm missing one or more ingredients for that recipe; any placed ingredients were returned.");
+            return;
+        };
+        // Pick up the stack, place exactly one ingredient, then return the remainder.
+        container.left_click(source_slot);
+        container.right_click(grid_slot);
+        container.left_click(source_slot);
+        bot.wait_ticks(1).await;
+    }
+
+    bot.wait_ticks(1).await;
+    let output_ready = container.slots()
+        .and_then(|slots| slots.first().map(|item| !item.is_empty()))
+        .unwrap_or(false);
+    if !output_ready {
+        for slot in 1..=grid_size {
+            if container.slots().and_then(|items| items.get(slot).map(|item| !item.is_empty())).unwrap_or(false) {
+                container.shift_click(slot);
+            }
+        }
+        bot.wait_ticks(2).await;
+        bot.chat("The server did not produce that recipe. I returned the remaining crafting-grid items.");
+        return;
+    }
+
+    container.shift_click(0);
+    bot.wait_ticks(2).await;
+    tracing::info!(username = %bot.username(), %recipe, "craft result shift-click requested");
+    bot.chat(format!("Crafting result for {result_name} was collected if the server accepted the recipe. Check inventory before marking the task complete."));
 }
 
 /// Return the best recognized, ordinary food item in the player's hotbar.
