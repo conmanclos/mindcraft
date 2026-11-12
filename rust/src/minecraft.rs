@@ -570,7 +570,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         } else {
                             PlayerCommandAction::ReleaseShiftKey
                         };
-                        let entity_id = *bot.component::<MinecraftEntityId>();
+                        let entity_id = *bot.component::<MinecraftEntityId>() as u32;
                         bot.write_packet(ServerboundPlayerCommandPacket {
                             id: entity_id,
                             action,
