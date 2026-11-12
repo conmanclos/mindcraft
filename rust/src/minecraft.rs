@@ -1257,6 +1257,16 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         bot.set_selected_hotbar_slot(slot);
                     }
+                    BotCommand::OptimizeArmor => {
+                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_armor_upgrade(client).await;
+                        });
+                    }
                     BotCommand::Explore(radius) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
