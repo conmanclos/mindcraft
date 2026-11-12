@@ -221,6 +221,17 @@ impl Store {
         Ok(changed == 1)
     }
 
+    pub fn release_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let changed = connection.execute(
+            "UPDATE agent_tasks
+             SET status='pending', assigned_agent=NULL, lease_until=NULL, updated_at=CURRENT_TIMESTAMP
+             WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+            params![task_id, agent_id],
+        )?;
+        Ok(changed == 1)
+    }
+
     pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -324,6 +335,21 @@ mod tests {
         assert_eq!(recovered.assigned_agent.as_deref(), Some("worker-b"));
         assert!(!store.complete_task(task_id, "worker-a").unwrap());
         assert!(store.complete_task(task_id, "worker-b").unwrap());
+    }
+
+    #[test]
+    fn claimed_task_can_be_released_for_another_specialist() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let (_, task_ids) = store.create_goal_with_tasks(
+            "collect wood",
+            &[("gatherer".into(), "collect logs".into(), 10)],
+        ).unwrap();
+        let task_id = task_ids[0];
+        assert!(store.claim_task("Scout", "gatherer").unwrap().is_some());
+        assert!(!store.release_task(task_id, "Builder").unwrap());
+        assert!(store.release_task(task_id, "Scout").unwrap());
+        assert_eq!(store.list_tasks(1).unwrap()[0].status, "pending");
+        assert!(store.claim_task("Builder", "gatherer").unwrap().is_some());
     }
 
     #[test]
