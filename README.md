@@ -258,3 +258,10 @@ This work is published in the paper [Collaborating Action by Action: A Multi-age
 Thanks to everyone who has submitted issues on and off Github, made suggestions, and generally helped make this a better project.
 
 ![Contributors](https://contrib.rocks/image?repo=mindcraft-bots/mindcraft)
+
+
+## Native Rust desktop app (Minecraft Java 26.1)
+
+A separate Rust-native implementation is being developed in `rust/`, targeting Minecraft Java Edition 26.1 through Azalea 0.16.0. The new `rust/desktop/` package adds a native macOS app with a setup wizard, Keychain-backed AI API key storage, runtime start/stop controls, connection telemetry, and teammate chat. The original JavaScript/Mineflayer project remains intact as a legacy implementation while the Rust rewrite is completed.
+
+The Mac app is not yet a ready-to-download release: Azalea 0.16 gameplay API migration, a successful local Mac build, Microsoft sign-in validation, and a live 26.1 server test are still required. See [the native Rust setup](rust/README.md) and [desktop packaging notes](rust/desktop/README.md). No CI or GitHub Actions are used.
