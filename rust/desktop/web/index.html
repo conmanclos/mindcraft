@@ -68,7 +68,7 @@ function toggleAuth(){$("emailField").classList.toggle("hidden",$("auth").value!
 $("provider").onchange=toggleProvider;$("auth").onchange=toggleAuth;toggleProvider();toggleAuth();
 $("save").onclick=async()=>{try{
 const setup={server:$("server").value.trim(),username:$("username").value.trim(),auth:$("auth").value,microsoftEmail:$("email").value.trim(),provider:$("provider").value,model:$("model").value.trim(),apiKey:$("key").value,baseUrl:$("baseUrl").value.trim(),autonomy:$("autonomy").value};
-await invoke("save_setup",{setup});$("run").disabled=false;message("Setup saved on this Mac. Your provider key is stored in Keychain.",true);
+await invoke("save_setup",{setup});$("key").value="";$("run").disabled=false;message("Setup saved on this Mac. Your provider key is stored in Keychain.",true);
 }catch(e){message(String(e))}};
 $("run").onclick=async()=>{try{$("run").disabled=true;message("Starting the Rust runtime…");const launch=await invoke("start_runtime");token=launch.token;apiBase="http://127.0.0.1:"+launch.apiPort;$("stop").disabled=false;$("live").classList.remove("hidden");$("controls").classList.remove("hidden");$("goals").classList.remove("hidden");$("liveTitle").textContent="Mindcraft is starting";$("liveDescription").textContent="Waiting for the Minecraft connection…";message("Runtime launched. Checking your Minecraft connection.",true);pollStatus();poll=setInterval(pollStatus,2500)}catch(e){$("run").disabled=false;message(String(e))}};
 $("stop").onclick=async()=>{try{await invoke("stop_runtime");clearInterval(poll);$("stop").disabled=true;$("run").disabled=false;$("liveTitle").textContent="Stopped";$("liveDescription").textContent="Mindcraft is not running.";message("Mindcraft stopped.",true)}catch(e){message(String(e))}};
