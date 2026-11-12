@@ -1927,6 +1927,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "compass" => Some((true, "compass", &[(2, "iron_ingot"), (4, "iron_ingot"), (5, "redstone"), (6, "iron_ingot"), (8, "iron_ingot")])),
         "clock" => Some((true, "clock", &[(2, "gold_ingot"), (4, "gold_ingot"), (5, "redstone"), (6, "gold_ingot"), (8, "gold_ingot")])),
         "flint_and_steel" => Some((false, "flint_and_steel", &[(1, "iron_ingot"), (4, "flint")])),
+        "crossbow" => Some((true, "crossbow", &[(1, "stick"), (2, "iron_ingot"), (3, "stick"), (4, "string"), (5, "tripwire_hook"), (6, "string"), (8, "stick")])),
         "hopper" => Some((true, "hopper", &[(1, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "chest"), (6, "iron_ingot"), (8, "iron_ingot")])),
         "dropper" => Some((true, "dropper", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (5, "redstone"), (6, "cobblestone"), (7, "cobblestone"), (8, "cobblestone"), (9, "cobblestone")])),
         "dispenser" => Some((true, "dispenser", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (5, "bow"), (6, "cobblestone"), (7, "cobblestone"), (8, "redstone"), (9, "cobblestone")])),
