@@ -2608,7 +2608,18 @@ async fn execute_build_mixed(
             }
             return;
         }
-        plan.slots[plan.current].1 = plan.slots[plan.current].1.saturating_sub(1);
+        bot.wait_updates(1).await;
+        let remaining = bot.menu().ok()
+            .and_then(|current| current.slot(slot).map(|item| {
+                if !item.is_empty()
+                    && item_name_matches_exact(&format!("{:?}", item.kind()), &block.material) {
+                    item.count() as usize
+                } else {
+                    0
+                }
+            }))
+            .unwrap_or(0);
+        plan.slots[plan.current].1 = remaining;
     }
     if !cancelled() {
         bot.chat(format!("Custom mixed-material schematic confirmed for all {} blocks.", blocks.len()));
