@@ -77,6 +77,7 @@ async fn main() -> Result<()> {
             println!("Model: {}", config.model);
             println!("Minecraft server configured: {}", config.minecraft_server.is_some());
             println!("Minecraft auth: {}", config.minecraft_auth);
+            println!("Trusted in-game command senders configured: {}", config.trusted_chat_players.len());
             println!("API bind: {}", config.bind);
             println!("API token configured: {}", !config.api_token.is_empty());
             println!("Database: {}", config.database.display());
