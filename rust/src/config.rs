@@ -63,11 +63,13 @@ impl Config {
             if emails.len() != minecraft_accounts.len() {
                 bail!("MINDCRAFT_MICROSOFT_EMAIL must contain one comma-separated account email for each MINDCRAFT_MC_ACCOUNTS username");
             }
+            let mut unique_emails = std::collections::HashSet::new();
             if emails.iter().any(|email| {
                 email.len() > 254 || email.chars().any(char::is_whitespace)
                     || !email.split_once('@').is_some_and(|(local, domain)| !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.'))
+                    || !unique_emails.insert(email.to_ascii_lowercase())
             }) {
-                bail!("MINDCRAFT_MICROSOFT_EMAIL must contain valid comma-separated email addresses");
+                bail!("MINDCRAFT_MICROSOFT_EMAIL must contain valid, unique comma-separated email addresses");
             }
         }
         let minecraft_server = env::var("MINDCRAFT_MC_SERVER").ok()
