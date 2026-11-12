@@ -94,7 +94,8 @@ The dashboard is served from `/`. `GET /api/health` is public; all other API rou
 | `POST /api/execute` | Explicitly approve and queue a supported game action |
 | `GET/POST /api/goals` | List goals or decompose a new strategic goal into specialist tasks |
 | `GET /api/goals/{id}/tasks` | List a goal's tasks |
-| `POST /api/agents/{agent_id}/credential` | Issue a one-hour, in-memory agent token (master dashboard token required) |
+| `POST /api/agents/{agent_id}/credential` | Issue/rotate a one-hour, in-memory agent token (master token required) |
+| `DELETE /api/agents/{agent_id}/credential` | Revoke an agent token (master token required) |
 | `POST /api/tasks/claim` | Atomically claim the highest-priority pending task for a role; accepts the master token or that agent's token |
 | `POST /api/tasks/{id}/heartbeat` | Renew a two-minute task lease |
 | `POST /api/tasks/{id}/complete` | Complete a task owned by the requesting agent |
