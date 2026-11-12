@@ -181,7 +181,9 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
-    if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
+    if state.config.mode == "autonomous"
+        && state.status.minecraft_connected.load(std::sync::atomic::Ordering::Relaxed)
+        && state.brain.authorize_action(&proposed_action, false).is_ok() {
         if let Ok(command) = command_from_action(proposed_action.clone()) {
             if let Some(sender) = state.status.command_tx.lock().await.clone() {
                 sender.try_send(command).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is full or disconnected".into()))?;
@@ -207,8 +209,11 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
     state.brain.authorize_action(&request.action, true)
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
     let command = command_from_action(request.action)?;
+    if !state.status.minecraft_connected.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()));
+    }
     let sender = state.status.command_tx.lock().await.clone()
-        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is unavailable".into()))?;
     sender.try_send(command).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is full or disconnected".into()))?;
     Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
 }
