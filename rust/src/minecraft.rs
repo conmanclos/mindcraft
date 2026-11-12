@@ -504,7 +504,8 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         bot.look_at(BlockPos::new(x, y, z).center());
                     }
                     BotCommand::Goto(x, y, z) => {
-                        stop_mining(&bot);
+                        bot.stop_pathfinding();
+                        stop_walking(&bot);
                         if let Some(pending) = &state.pending_block_action {
                             *pending.lock().await = None;
                         }
@@ -536,6 +537,8 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         bot.look_at(position.center());
                     }
                     BotCommand::Place(x, y, z) => {
+                        bot.stop_pathfinding();
+                        stop_walking(&bot);
                         if let Some(target) = &state.follow_target {
                             *target.lock().await = None;
                         }
@@ -554,6 +557,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         bot.look_at(position.center());
                     }
                     BotCommand::Equip(slot) => {
+                        stop_mining(&bot);
                         bot.ecs.lock().send_event(SetSelectedHotbarSlotEvent {
                             entity: bot.entity,
                             slot,
@@ -607,34 +611,82 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     }
                     BotCommand::Craft(recipe) => {
-                        stop_mining(&bot);
                         bot.stop_pathfinding();
                         stop_walking(&bot);
-                        let mut crafting_bot = bot.clone();
-                        tokio::spawn(async move {
-                            match craft_basic(&mut crafting_bot, &recipe).await {
-                                Ok(()) => crafting_bot.chat("Crafting completed."),
-                                Err(error) => {
-                                    tracing::warn!(%error, %recipe, "basic crafting failed");
-                                    crafting_bot.chat("I couldn't complete that recipe. Check that the required materials and inventory space are available.");
-                                }
+                        if let Some(busy_flag) = state.is_using_item.clone() {
+                            if !busy_flag.swap(true, Ordering::Relaxed) {
+                                let mut crafting_bot = bot.clone();
+                                tokio::spawn(async move {
+                                    let result = craft_basic(&mut crafting_bot, &recipe).await;
+                                    busy_flag.store(false, Ordering::Relaxed);
+                                    match result {
+                                        Ok(()) => crafting_bot.chat("Crafting completed."),
+                                        Err(error) => {
+                                            tracing::warn!(%error, %recipe, "basic crafting failed");
+                                            crafting_bot.chat("I couldn't complete that recipe. Check that the required materials and inventory space are available.");
+                                        }
+                                    }
+                                });
                             }
-                        });
+                        }
                     }
                     BotCommand::Deposit(x, y, z) => {
                         bot.stop_pathfinding();
                         stop_walking(&bot);
-                        let mut storage_bot = bot.clone();
-                        tokio::spawn(async move {
-                            let position = BlockPos::new(x, y, z);
-                            match deposit_inventory(&mut storage_bot, position).await {
-                                Ok(count) => storage_bot.chat(&format!("Stored {count} inventory stacks in the chest.")),
-                                Err(error) => {
-                                    tracing::warn!(%error, ?position, "inventory deposit failed");
-                                    storage_bot.chat("I couldn't safely deposit items into that container.");
-                                }
+                        if let Some(busy_flag) = state.is_using_item.clone() {
+                            if !busy_flag.swap(true, Ordering::Relaxed) {
+                                let mut storage_bot = bot.clone();
+                                tokio::spawn(async move {
+                                    let position = BlockPos::new(x, y, z);
+                                    let result = deposit_inventory(&mut storage_bot, position).await;
+                                    busy_flag.store(false, Ordering::Relaxed);
+                                    match result {
+                                        Ok(count) => storage_bot.chat(&format!("Stored {count} items in the container.")),
+                                        Err(error) => {
+                                            tracing::warn!(%error, ?position, "inventory deposit failed");
+                                            storage_bot.chat("I couldn't safely deposit items into that container.");
+                                        }
+                                    }
+                                });
                             }
-                        });
+                        }
+                    }
+                    BotCommand::Withdraw(x, y, z, item_name) => {
+                        bot.stop_pathfinding();
+                        stop_walking(&bot);
+                        if let Some(busy_flag) = state.is_using_item.clone() {
+                            if !busy_flag.swap(true, Ordering::Relaxed) {
+                                let mut storage_bot = bot.clone();
+                                tokio::spawn(async move {
+                                    let position = BlockPos::new(x, y, z);
+                                    let result = withdraw_from_container(&mut storage_bot, position, &item_name).await;
+                                    busy_flag.store(false, Ordering::Relaxed);
+                                    match result {
+                                        Ok(count) => storage_bot.chat(&format!("Withdrew {count} items from the container.")),
+                                        Err(error) => {
+                                            tracing::warn!(%error, ?position, %item_name, "container withdrawal failed");
+                                            storage_bot.chat("I couldn't safely withdraw that item from the container.");
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    BotCommand::Explore(radius) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        stop_walking(&bot);
+                        let current = bot.position();
+                        let directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
+                        let choice = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() % directions.len() as u128) as usize;
+                        let (dx, dz) = directions[choice];
+                        let x = (current.x.floor() as i32 + dx * radius as i32).clamp(-29_999_984, 29_999_984);
+                        let y = (current.y.floor() as i32).clamp(-64, 319);
+                        let z = (current.z.floor() as i32 + dz * radius as i32).clamp(-29_999_984, 29_999_984);
+                        let target = BlockPos::new(x, y, z);
+                        bot.goto_without_mining(RadiusGoal { pos: target.center(), radius: 4.0 });
                     }
                 }
             }
