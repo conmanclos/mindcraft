@@ -2448,7 +2448,7 @@ async fn execute_smelt(
             input_groups.push((canonical, u16::from(item.count()), vec![(slot, item.count())]));
         }
     }
-    let Some((_, total_input, input_sources)) = input_groups.into_iter()
+    let Some((_, _total_input, input_sources)) = input_groups.into_iter()
         .filter(|(_, total, _)| *total >= u16::from(count))
         .min_by_key(|(_, total, _)| *total - u16::from(count)) else {
         bot.chat(format!("I need {count} matching {input} across one or more inventory stacks of the same item."));
