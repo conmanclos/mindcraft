@@ -363,8 +363,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let (dx,dz) = offsets[step % offsets.len()];
                     if let Ok(position) = bot.position() {
                         let destination = BlockPos::new(position.x.floor() as i32 + dx * radius, position.y.floor() as i32, position.z.floor() as i32 + dz * radius);
-                        bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
-                        tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
+                        let waypoint_loaded = bot.world().ok()
+                            .is_some_and(|world| world.read().get_block_state(destination).is_some());
+                        if waypoint_loaded {
+                            bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
+                            tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
+                        } else {
+                            tracing::debug!(username = %bot.username(), ?destination, "skipping exploration waypoint outside loaded chunks");
+                        }
                     }
                 }
             }
