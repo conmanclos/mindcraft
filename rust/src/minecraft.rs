@@ -1632,7 +1632,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     "Player request: {content}\nCurrent Minecraft state:{world_context}\nThis in-game chat action is routed only to the primary bot; never choose smelt_parallel, which is available only through the multi-agent API planner. Use smelt_queue for sequential furnace work on this bot."
                                 );
                                 match brain.plan(&action_request).await {
-                                    Ok(action) if brain.authorize_action(&action, false).is_ok() => {
+                                    Ok(action) if !action.action.eq_ignore_ascii_case("smelt_parallel")
+                                        && brain.authorize_action(&action, false).is_ok() => {
                                         match crate::api::command_from_action(action.clone()) {
                                             Ok(command) => {
                                                 let sender = if let Some(status) = &status {
