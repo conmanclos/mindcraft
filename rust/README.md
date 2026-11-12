@@ -7,7 +7,8 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - Shared Tokio process for the CLI, HTTP API, dashboard, persistence, AI provider client, and optional Minecraft connection.
 - Axum dashboard/API bound to loopback by default. API routes require a bearer token; a one-time token is generated and printed when no token is configured.
 - Provider adapters for OpenAI-compatible endpoints (including Ollama), Anthropic Messages, and Google Gemini.
-- SQLite conversation persistence using WAL mode.
+- SQLite conversation and strategic-goal persistence using WAL mode.
+- Specialist-role task decomposition (planner, scout, gatherer, builder, crafter, guardian), durable priority queue, atomic task claims, and completion tracking shared by workers using the same database.
 - Explicit Assisted / Balanced / Autonomous policy gate. Assisted and Balanced require explicit approval for destructive/high-risk actions; Autonomous may authorize low/medium-risk actions without a separate approval. Attack/drop remain blocked until target-aware execution is implemented.
 - Azalea offline-account connection for local/offline-mode servers, spawn/disconnect state, and AI chat replies when players mention `Mindcraft` or whisper to it.
 - A bounded in-process command queue. Explicitly approved `say`, `stop`, `goto x,y,z`, and `mine x,y,z` commands are dispatched on Minecraft ticks. Coordinates are range-checked; unimplemented actions fail closed.
@@ -62,4 +63,4 @@ cargo run --release -- doctor
 
 ## Important scope boundary
 
-This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, pathfinding to explicit block coordinates, and starting a mining operation at explicit coordinates. The AI also answers Minecraft chat when addressed by name or via whisper. Crafting, inventory management, combat, building/placement, exploration goals, Microsoft account authentication, durable multi-agent coordination, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
+This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, pathfinding to explicit block coordinates, and starting a mining operation at explicit coordinates. The AI also answers Minecraft chat when addressed by name or via whisper. The task coordinator is durable and supports multiple named workers claiming tasks by role, but those worker agents are not yet separate Azalea clients and task completion is not automatically tied to in-game execution. Crafting, inventory management, combat, building/placement, exploration goals, Microsoft account authentication, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
