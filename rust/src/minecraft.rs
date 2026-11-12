@@ -27,6 +27,7 @@ struct BotState {
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
+    last_snapshot: Option<Arc<Mutex<Instant>>>,
 }
 
 pub async fn connect(
@@ -91,6 +92,7 @@ fn make_state(
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
+        last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
     }
 }
 
@@ -120,34 +122,46 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             bot.exit();
         }
         Event::Tick => {
-            if let Some(status) = &state.status {
-                if bot.exists() {
-                    let position = bot.position();
-                    let health = bot.health();
-                    let inventory = bot.menu().slots().iter().enumerate()
-                        .filter(|(_, item)| !item.is_empty())
-                        .map(|(slot, item)| format!("{slot}: {item:?}"))
-                        .collect::<Vec<_>>();
-                    *status.world.lock().await = Some(crate::api::WorldSnapshot {
-                        agent: bot.username(),
-                        position: [position.x as f64, position.y as f64, position.z as f64],
-                        health,
-                        inventory,
-                    });
-                    if crate::reflex::evaluate(health).is_some() {
-                        let should_warn = if let Some(cooldown) = &state.last_reflex {
-                            let mut last = cooldown.lock().await;
-                            if last.elapsed() >= Duration::from_secs(15) {
-                                *last = Instant::now();
-                                true
-                            } else { false }
-                        } else { false };
-                        if should_warn {
-                            bot.stop_pathfinding();
-                            bot.walk(WalkDirection::None);
-                            bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
-                            tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
-                        }
+            if bot.exists() {
+                let health = bot.health();
+                if let Some(status) = &state.status {
+                    let should_snapshot = if let Some(last) = &state.last_snapshot {
+                        let mut last = last.lock().await;
+                        if last.elapsed() >= Duration::from_secs(1) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_snapshot {
+                        let position = bot.position();
+                        let inventory = bot.menu().slots().iter().enumerate()
+                            .filter(|(_, item)| !item.is_empty())
+                            .map(|(slot, item)| {
+                                let description: String = format!("{item:?}").chars().take(80).collect();
+                                format!("{slot}: {description}")
+                            })
+                            .collect::<Vec<_>>();
+                        *status.world.lock().await = Some(crate::api::WorldSnapshot {
+                            agent: bot.username(),
+                            position: [position.x as f64, position.y as f64, position.z as f64],
+                            health,
+                            inventory,
+                        });
+                    }
+                }
+                if crate::reflex::evaluate(health).is_some() {
+                    let should_warn = if let Some(cooldown) = &state.last_reflex {
+                        let mut last = cooldown.lock().await;
+                        if last.elapsed() >= Duration::from_secs(15) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_warn {
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
+                        tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
                     }
                 }
             }
