@@ -83,6 +83,28 @@ Safe config diagnostic:
 cargo run --release -- doctor
 ```
 
+
+### Custom mixed-material schematic API
+
+```http
+POST /api/build
+Authorization: Bearer <MINDCRAFT_API_TOKEN>
+Content-Type: application/json
+
+{
+  "origin": [100, 64, 100],
+  "rotation": 90,
+  "mirror_x": false,
+  "mirror_z": false,
+  "agent": "Builder",
+  "blocks": [
+    { "x": 0, "y": 0, "z": 0, "material": "oak_planks" },
+    { "x": 1, "y": 0, "z": 0, "material": "cobblestone" }
+  ]
+}
+```
+Coordinates in `blocks` are relative to `origin`. The runtime accepts 1-64 unique blocks, limits each relative axis to 32 blocks, supports 0/90/180/270-degree x/z rotation and independent x/z mirroring, and preflights one sufficient inventory stack per material before placing anything. The optional `agent` selects one configured connected bot; omit it to use the primary bot.
+
 ## HTTP API
 
 The dashboard is served from `/`. `GET /api/health` is public; all other API routes require `Authorization: Bearer <MINDCRAFT_API_TOKEN>`.
@@ -95,6 +117,7 @@ The dashboard is served from `/`. `GET /api/health` is public; all other API rou
 | `DELETE /api/memory/{id}` | Delete a persistent memory record |
 | `POST /api/plan` | Generate and policy-check a structured action proposal |
 | `POST /api/execute` | Explicitly approve and queue a supported game action |
+| `POST /api/build` | Explicitly queue a bounded mixed-material JSON schematic at an absolute origin |
 | `GET/POST /api/goals` | List goals or decompose a new strategic goal into specialist tasks |
 | `GET /api/goals/{id}/tasks` | List a goal's tasks |
 | `POST /api/agents/{agent_id}/credential` | Issue/rotate a one-hour, in-memory agent token (master token required) |
