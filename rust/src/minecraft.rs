@@ -638,7 +638,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         final_state = world.read().get_block_state(position);
                                     }
                                     match final_state {
-                                        Some(block) if block.is_air() => client.chat(format!("Block broken at {}, {}, {}. Check nearby drops and inventory.", position.x, position.y, position.z)),
+                                        Some(block) if block.is_air() => {
+                                            if approach_mined_drop(&client, position, &generation_state, generation).await {
+                                                client.chat(format!("Block broken at {}, {}, {}. I moved through the drop location; verify the items in inventory.", position.x, position.y, position.z));
+                                            } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                                client.chat("Block broken, but I couldn't safely reach the drop location.");
+                                            }
+                                        },
                                         Some(_) => client.chat("Mining stopped, but the target block remains. It may be protected or the tool/action was rejected."),
                                         None => client.chat("Mining stopped, but the target chunk is no longer loaded; I can't confirm the block result."),
                                     }
@@ -656,7 +662,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             cancel_active_mining(&client);
                             client.wait_ticks(2).await;
                             if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
-                                client.chat(format!("Block broken at {}, {}, {}. Check nearby drops and inventory.", position.x, position.y, position.z));
+                                if approach_mined_drop(&client, position, &generation_state, generation).await {
+                                    client.chat(format!("Block broken at {}, {}, {}. I moved through the drop location; verify the items in inventory.", position.x, position.y, position.z));
+                                } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Block broken, but I couldn't safely reach the drop location.");
+                                }
                             } else {
                                 client.chat("Mining did not finish within 30 seconds; the block may be too hard, protected, or unreachable.");
                             }
@@ -993,6 +1003,19 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         _ => {}
     }
     Ok(())
+}
+
+async fn approach_mined_drop(
+    client: &Client,
+    position: BlockPos,
+    generation_state: &Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    if !goto_cancellable(client, BlockPosGoal(position), generation_state, generation).await {
+        return false;
+    }
+    client.wait_ticks(10).await;
+    !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
 }
 
 fn is_trusted_chat_sender(trusted: &HashSet<String>, sender: Option<&str>) -> bool {
