@@ -28,7 +28,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{mpsc, Mutex};
 
@@ -65,6 +65,7 @@ pub pub(crate) enum BotCommand {
     Craft(String),
     Deposit(i32, i32, i32),
     Withdraw(i32, i32, i32, String),
+    Explore(u16),
 }
 
 #[derive(Clone, Component, Default)]
