@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{pathfinder::{PathfinderClientExt, goals::{BlockPosGoal, RadiusGoal}}, prelude::*, swarm::SwarmBuilder};
+use azalea::{pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, RadiusGoal}}, prelude::*, swarm::SwarmBuilder};
 use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{mpsc, Mutex};
 
@@ -278,7 +278,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
                         .map(|entity| RadiusGoal::new(entity.position(), 3.0));
                     if let Some(goal) = goal {
-                        bot.start_goto(goal);
+                        bot.start_goto_with_opts(goal, PathfinderOpts::new().allow_mining(false));
                         if let Some(following) = &state.is_following { following.store(true, Ordering::Relaxed); }
                     } else {
                         bot.stop_pathfinding();
@@ -338,7 +338,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
-                        bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
+                        bot.start_goto_with_opts(
+                            BlockPosGoal(BlockPos::new(x, y, z)),
+                            PathfinderOpts::new().allow_mining(false),
+                        );
                     }
                     BotCommand::Mine(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
