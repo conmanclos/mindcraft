@@ -160,13 +160,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else { false }
                     } else { false };
                     if should_repath {
-                        if let Ok(Some(uuid)) = bot.player_uuid_by_username(&username) {
-                            if let Some(entity) = bot.entity_by_uuid(uuid) {
-                                if let Ok(position) = entity.position() {
-                                    let goal = BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32);
-                                    bot.start_goto(BlockPosGoal(goal));
-                                }
-                            }
+                        let goal = bot.player_uuid_by_username(&username).ok().flatten()
+                            .and_then(|uuid| bot.entity_by_uuid(uuid))
+                            .and_then(|entity| entity.position().ok())
+                            .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
+                        if let Some(goal) = goal {
+                            bot.start_goto(BlockPosGoal(goal));
+                        } else {
+                            bot.stop_pathfinding();
                         }
                     }
                 }
