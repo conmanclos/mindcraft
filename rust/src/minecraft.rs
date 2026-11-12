@@ -2,7 +2,7 @@ use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
 use azalea::{
     BlockPos,
-    pathfinder::{goals::{BlockPosGoal, RadiusGoal}, PathfinderClientExt},
+    pathfinder::goals::{BlockPosGoal, RadiusGoal},
     prelude::*,
     swarm::{Swarm, SwarmBuilder, SwarmEvent},
 };
