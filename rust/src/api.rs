@@ -384,3 +384,52 @@ fn authorize(state: &ApiState, headers: &HeaderMap) -> Result<(), StatusCode> {
     }
     Ok(())
 }
+
+
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+
+    fn action(name: &str, target: Option<&str>) -> PlannedAction {
+        PlannedAction {
+            action: name.into(),
+            target: target.map(str::to_owned),
+            reason: String::new(),
+            risk: "medium".into(),
+        }
+    }
+
+    #[test]
+    fn crafting_is_limited_to_supported_2x2_recipes() {
+        assert!(matches!(
+            command_from_action(action("craft", Some("crafting_table"))),
+            Ok(BotCommand::Craft(_))
+        ));
+        assert!(command_from_action(action("craft", Some("diamond_sword"))).is_err());
+    }
+
+    #[test]
+    fn withdrawal_requires_coordinates_and_a_valid_item_id() {
+        assert!(matches!(
+            command_from_action(action("withdraw", Some("10,64,-3,minecraft:oak_log"))),
+            Ok(BotCommand::Withdraw(10, 64, -3, _))
+        ));
+        assert!(command_from_action(action("withdraw", Some("10,64,-3,../secrets"))).is_err());
+        assert!(command_from_action(action("withdraw", Some("10,64,-3"))).is_err());
+    }
+
+    #[test]
+    fn attack_requires_a_minecraft_username() {
+        assert!(matches!(
+            command_from_action(action("attack", Some("Notch"))),
+            Ok(BotCommand::AttackPlayer(_))
+        ));
+        assert!(command_from_action(action("attack", Some("crosshair"))).is_err());
+    }
+
+    #[test]
+    fn chat_never_accepts_slash_commands() {
+        assert!(command_from_action(action("say", Some("/op player"))).is_err());
+        assert!(command_from_action(action("say", Some("hello teammate"))).is_ok());
+    }
+}
