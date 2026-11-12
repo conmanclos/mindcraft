@@ -1193,6 +1193,22 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if is_mature_crop(&name) || is_pumpkin_or_melon_fruit(&name) {
                                 return Some(position);
                             }
+                            if is_column_crop(&name) {
+                                let same_crop = |candidate: BlockPos| world.get_block_state(candidate)
+                                    .is_some_and(|block| is_column_crop(&format!("{block:?}")));
+                                let mut base = position;
+                                for _ in 0..32 {
+                                    let below = base.down(1);
+                                    if same_crop(below) { base = below; } else { break; }
+                                }
+                                let mut top = base;
+                                let mut height = 1;
+                                for _ in 0..31 {
+                                    let above = top.up(1);
+                                    if same_crop(above) { top = above; height += 1; } else { break; }
+                                }
+                                return (height >= 2).then_some(top);
+                            }
                             if !is_mature_pumpkin_or_melon_stem(&name) {
                                 return None;
                             }
@@ -2385,6 +2401,11 @@ fn is_mature_pumpkin_or_melon_stem(debug_name: &str) -> bool {
     let digits = age_tail.trim_start_matches(|character: char| !character.is_ascii_digit())
         .chars().take_while(char::is_ascii_digit).collect::<String>();
     digits.parse::<u8>().is_ok_and(|age| age >= 7)
+}
+
+fn is_column_crop(name: &str) -> bool {
+    let compact: String = name.chars().filter(|character| character.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect();
+    compact == "sugarcane" || compact == "cactus" || compact == "bamboo"
 }
 
 fn is_mature_crop(debug_name: &str) -> bool {
