@@ -777,7 +777,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             let job = parse_smelt_job(&raw)?;
             Ok(BotCommand::Smelt(job.input, (job.x, job.y, job.z), job.count))
         }
-        "smelt_queue" => {
+        "smelt_queue" | "smelt_parallel" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must contain 2-4 semicolon-separated input[*count]@x,y,z furnace jobs".into()))?;
             let entries = raw.split(';').map(str::trim).filter(|entry| !entry.is_empty()).collect::<Vec<_>>();
             if !(2..=4).contains(&entries.len()) {
