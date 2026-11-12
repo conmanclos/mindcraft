@@ -552,6 +552,10 @@ fn constant_time_equal(left: &str, right: &str) -> bool {
         && bool::from(left.as_bytes().ct_eq(right.as_bytes()))
 }
 
+fn agent_credential_matches(credential: &AgentCredential, provided: &str, now: Instant) -> bool {
+    now < credential.expires_at && constant_time_equal(provided, &credential.token)
+}
+
 async fn authorize_agent(state: &ApiState, headers: &HeaderMap, agent_id: &str) -> Result<(), StatusCode> {
     if authorize(state, headers).is_ok() {
         return Ok(());
@@ -559,10 +563,11 @@ async fn authorize_agent(state: &ApiState, headers: &HeaderMap, agent_id: &str) 
     let provided = bearer_token(headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let tokens = state.status.agent_tokens.lock().await;
     let expected = tokens.get(agent_id).ok_or(StatusCode::UNAUTHORIZED)?;
-    if Instant::now() >= expected.expires_at {
-        return Err(StatusCode::UNAUTHORIZED);
+    if agent_credential_matches(expected, provided, Instant::now()) {
+        Ok(())
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
     }
-    if constant_time_equal(provided, &expected.token) { Ok(()) } else { Err(StatusCode::UNAUTHORIZED) }
 }
 
 async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<AgentClaimRequest>) -> Result<Json<ClaimResponse>, (StatusCode, String)> {
@@ -631,6 +636,18 @@ mod tests {
             reason: "test".into(),
             risk: "low".into(),
         }
+    }
+
+    #[test]
+    fn agent_credentials_expire_and_cannot_be_used_for_another_token() {
+        let now = Instant::now();
+        let credential = AgentCredential {
+            token: "agent-secret".into(),
+            expires_at: now + Duration::from_secs(60),
+        };
+        assert!(agent_credential_matches(&credential, "agent-secret", now));
+        assert!(!agent_credential_matches(&credential, "wrong", now));
+        assert!(!agent_credential_matches(&credential, "agent-secret", now + Duration::from_secs(61)));
     }
 
     #[test]
