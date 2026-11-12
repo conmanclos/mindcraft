@@ -227,6 +227,16 @@ mod tests {
     }
 
     #[test]
+    fn held_item_use_always_requires_explicit_approval() {
+        let action = PlannedAction {
+            action: "use_item".into(), target: None,
+            reason: String::new(), risk: "medium".into(),
+        };
+        assert!(brain("autonomous").authorize_action(&action, false).is_err());
+        assert!(brain("autonomous").authorize_action(&action, true).is_ok());
+    }
+
+    #[test]
     fn drop_is_blocked_until_executor_exists() {
         let action = PlannedAction { action:"drop".into(), target:Some("diamond".into()), reason:String::new(), risk:"high".into() };
         assert!(brain("autonomous").authorize_action(&action, true).is_err());
