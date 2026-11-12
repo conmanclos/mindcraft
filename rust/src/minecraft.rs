@@ -407,7 +407,9 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             }
 
             for command in queued {
-                if (critical_health || eating) && matches!(
+                let eating_now = state.is_eating.as_ref()
+                    .is_some_and(|flag| flag.load(Ordering::Relaxed));
+                if (critical_health || eating_now) && matches!(
                     &command,
                     BotCommand::Follow(_) | BotCommand::Goto(_, _, _) | BotCommand::Mine(_, _, _)
                         | BotCommand::Place(_, _, _) | BotCommand::AttackPlayer(_) | BotCommand::Jump
