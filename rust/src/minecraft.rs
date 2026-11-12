@@ -1795,7 +1795,7 @@ async fn execute_smelt(
             let item = slots.get(slot)?;
             if item.is_empty() { return None; }
             let capacity = smelt_fuel_capacity(&format!("{:?}", item.kind()))?;
-            let required = ((u16::from(count) + u16::from(capacity) - 1) / u16::from(capacity)) as u8;
+            let required = required_smelt_fuel(count, capacity)?;
             if item.count() < required { return None; }
             let excess_capacity = u16::from(required) * u16::from(capacity) - u16::from(count);
             Some((slot, required, excess_capacity, capacity))
@@ -1884,6 +1884,12 @@ async fn execute_smelt(
     }
 }
 
+fn required_smelt_fuel(input_count: u8, capacity_per_item: u8) -> Option<u8> {
+    if input_count == 0 || capacity_per_item == 0 { return None; }
+    Some(((u16::from(input_count) + u16::from(capacity_per_item) - 1)
+        / u16::from(capacity_per_item)) as u8)
+}
+
 fn smelt_fuel_capacity(debug_name: &str) -> Option<u8> {
     if item_name_matches(debug_name, "lava_bucket") {
         Some(100)
@@ -1936,7 +1942,7 @@ mod smelt_recipe_tests {
 
 #[cfg(test)]
 mod smelt_input_tests {
-    use super::{smelt_fuel_capacity, smelt_fuel_matches, smelt_input_matches};
+    use super::{required_smelt_fuel, smelt_fuel_capacity, smelt_fuel_matches, smelt_input_matches};
 
     #[test]
     fn smelting_fuel_allowlist_includes_only_sufficient_safe_fuels() {
@@ -1949,6 +1955,17 @@ mod smelt_input_tests {
         assert_eq!(smelt_fuel_capacity("LavaBucket"), Some(100));
         assert!(!smelt_fuel_matches("Stick"));
         assert!(!smelt_fuel_matches("UnknownItem"));
+    }
+
+    #[test]
+    fn batch_fuel_requirements_round_up_by_known_fuel_capacity() {
+        assert_eq!(required_smelt_fuel(1, 8), Some(1));
+        assert_eq!(required_smelt_fuel(9, 8), Some(2));
+        assert_eq!(required_smelt_fuel(64, 8), Some(8));
+        assert_eq!(required_smelt_fuel(64, 12), Some(6));
+        assert_eq!(required_smelt_fuel(64, 100), Some(1));
+        assert_eq!(required_smelt_fuel(0, 8), None);
+        assert_eq!(required_smelt_fuel(8, 0), None);
     }
 
     #[test]
