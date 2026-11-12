@@ -25,6 +25,14 @@ impl Config {
         if !["assisted", "balanced", "autonomous"].contains(&mode.as_str()) {
             bail!("MINDCRAFT_MODE must be assisted, balanced, or autonomous");
         }
+        let provider = env::var("MINDCRAFT_PROVIDER").unwrap_or_else(|_| "ollama".into()).to_lowercase();
+        if !["openai", "openai-compatible", "anthropic", "google", "ollama"].contains(&provider.as_str()) {
+            bail!("MINDCRAFT_PROVIDER must be openai, openai-compatible, anthropic, google, or ollama");
+        }
+        let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
+        if provider == "openai" && api_key.is_empty() {
+            bail!("MINDCRAFT_API_KEY is required when MINDCRAFT_PROVIDER=openai");
+        }
 
         let mut api_token = env::var("MINDCRAFT_API_TOKEN").unwrap_or_default();
         let api_token_was_generated = api_token.is_empty();
@@ -40,9 +48,9 @@ impl Config {
             api_token,
             api_token_was_generated,
             mode,
-            provider: env::var("MINDCRAFT_PROVIDER").unwrap_or_else(|_| "ollama".into()).to_lowercase(),
+            provider,
             model: env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into()),
-            api_key: env::var("MINDCRAFT_API_KEY").unwrap_or_default(),
+            api_key,
             base_url: env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".into()),
             minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
             minecraft_username: env::var("MINDCRAFT_MC_USERNAME").unwrap_or_else(|_| "Mindcraft".into()),
