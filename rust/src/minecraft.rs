@@ -386,7 +386,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                     BotCommand::Say(text) => {
                         let safe: String = text.chars().take(240).collect();
                         if !safe.trim().is_empty() {
-                            bot.chat(safe);
+                            bot.chat(&safe);
                         }
                     }
                     BotCommand::AttackPlayer(username) => {
@@ -550,7 +550,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                                         && !safe_reply.trim_start().starts_with('/')
                                         && !safe_reply.chars().any(|c| c.is_control())
                                     {
-                                        reply_bot.chat(safe_reply);
+                                        reply_bot.chat(&safe_reply);
                                     }
                                 }
                                 Err(error) => {
