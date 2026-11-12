@@ -238,6 +238,13 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             }
         }
         "use_item" => Ok(BotCommand::UseItem),
+        "craft" => {
+            let recipe = action.target.unwrap_or_default().to_lowercase().replace(' ', "_");
+            if !["planks", "sticks", "crafting_table"].contains(&recipe.as_str()) {
+                return Err((StatusCode::BAD_REQUEST, "craft target must be planks, sticks, or crafting_table".into()));
+            }
+            Ok(BotCommand::Craft(recipe))
+        }
         "attack" => {
             let target = action.target.unwrap_or_default();
             if !(3..=16).contains(&target.len()) || !target.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
