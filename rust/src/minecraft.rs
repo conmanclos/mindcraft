@@ -29,6 +29,7 @@ struct BotState {
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
+    is_primary: bool,
 }
 
 pub async fn connect(
@@ -66,9 +67,12 @@ pub async fn connect(
         let shared_follow_target = Arc::new(Mutex::new(None));
 
         let mut builder = SwarmBuilder::new().set_handler(handle);
-        for account in accounts_to_join {
+        for (index, account) in accounts_to_join.into_iter().enumerate() {
+            let is_primary = index == 0;
+            let command_receiver = if is_primary { Some(shared_receiver.clone()) } else { None };
             let state = make_state(
-                brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(), shared_follow_target.clone(),
+                brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
+                shared_follow_target.clone(), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -86,21 +90,23 @@ pub async fn connect(
 fn make_state(
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
-    commands: Arc<Mutex<mpsc::Receiver<BotCommand>>>,
+    commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     last_reply: Arc<Mutex<Instant>>,
     follow_target: Arc<Mutex<Option<String>>>,
+    is_primary: bool,
 ) -> BotState {
     BotState {
         brain: Some(brain),
         status: Some(status),
         last_reply: Some(last_reply),
-        commands: Some(commands),
+        commands,
         connected: Some(Arc::new(AtomicBool::new(false))),
         last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
         last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
+        is_primary,
     }
 }
 
@@ -133,7 +139,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if bot.exists() {
                 let health = bot.health();
                 let hunger = bot.hunger();
-                if let Some(status) = &state.status {
+                if state.is_primary {
+                    if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
                         let mut last = last.lock().await;
                         if last.elapsed() >= Duration::from_secs(1) {
@@ -158,6 +165,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             saturation: hunger.saturation,
                             inventory,
                         });
+                    }
                     }
                 }
                 if let Some(reflex_action) = crate::reflex::evaluate(health, hunger.food) {
@@ -292,7 +300,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let own_username = bot.username();
             let from_self = sender.as_deref() == Some(own_username.as_str());
             let addressed_to_bot = sender.is_some() && content.to_lowercase().contains("mindcraft");
-            if !from_self && addressed_to_bot && !content.trim().is_empty() {
+            if state.is_primary && !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
                     let mut last = cooldown.lock().await;
                     if last.elapsed() >= Duration::from_secs(4) {
