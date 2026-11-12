@@ -1529,7 +1529,9 @@ async fn execute_smelt(
         if input_placed { break; }
     }
     if !input_placed {
-        bot.chat("The server did not confirm the furnace input; I stopped without starting a smelt.");
+        container.shift_click(0);
+        bot.wait_ticks(2).await;
+        bot.chat("The server did not confirm the furnace input; I returned anything it accepted and stopped.");
         return;
     }
 
@@ -1565,9 +1567,10 @@ async fn execute_smelt(
             if fuel_placed { break; }
         }
         if !fuel_placed {
+            container.shift_click(1);
             container.shift_click(0);
             bot.wait_ticks(2).await;
-            bot.chat("The server did not accept coal or charcoal as fuel; I returned the input.");
+            bot.chat("The server did not accept coal or charcoal as fuel; I returned any accepted fuel and the input.");
             return;
         }
     }
