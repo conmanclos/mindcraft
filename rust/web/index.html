@@ -11,9 +11,10 @@ h1{font-size:25px;margin:0}.muted{color:var(--muted)}.panel{background:var(--pan
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.stat{padding:12px;background:#12151a;border:1px solid var(--line);border-radius:9px}
 .stat b{display:block;font-size:18px;margin-top:4px}label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
 input,textarea,button{font:inherit;color:var(--text);background:#11141a;border:1px solid var(--line);border-radius:8px;padding:10px}
-input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{cursor:pointer;background:#24415c;border-color:#365d80}button:hover{filter:brightness(1.15)}
+input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{cursor:pointer;background:#24415c;border-color:#365d80}button.secondary{background:#252a32;border-color:var(--line)}button:hover{filter:brightness(1.15)}
 #log{white-space:pre-wrap;min-height:100px;max-height:340px;overflow:auto;background:#101318;padding:12px;border-radius:8px;margin:12px 0}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row button{white-space:nowrap}
+#proposal{white-space:pre-wrap;background:#101318;padding:12px;border-radius:8px;margin-top:12px;display:none}
 </style>
 </head>
 <body><main>
@@ -26,8 +27,9 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="stat"><span class="muted">Model</span><b id="model">Unknown</b></div>
 </div></section>
 <section class="panel"><h2>Teammate chat</h2><div id="log" aria-live="polite">Connect to the local runtime to begin.</div>
-<label for="message">Message</label><textarea id="message" placeholder="Ask Mindcraft to plan a safe next step..."></textarea>
-<div class="row"><button id="send">Send message</button><span class="muted" id="hint">AI suggestions are not executed as in-game actions.</span></div></section>
+<label for="message">Message</label><textarea id="message" placeholder="Ask Mindcraft a question or mention Mindcraft in Minecraft chat..."></textarea>
+<div class="row"><button id="send">Send message</button><button id="plan" class="secondary">Propose game action</button><span class="muted" id="hint">Plans are policy-checked but not executed by this build.</span></div>
+<div id="proposal"></div></section>
 </main>
 <script>
 const $=id=>document.getElementById(id);let token="";
@@ -36,4 +38,5 @@ async function api(path,body){const r=await fetch(path,{method:body?"POST":"GET"
 async function connect(){token=$("token").value.trim();if(!token)throw Error("Enter the API token printed in the terminal.");const s=await api("/api/status");$("mc").textContent=s.minecraft_connected?"Connected":"Not connected";$("mode").textContent=s.autonomy;$("provider").textContent=s.provider;$("model").textContent=s.model;$("connection").textContent="Connected to local runtime"}
 $("connect").onclick=()=>connect().catch(e=>{$("connection").textContent=e.message});
 $("send").onclick=async()=>{try{if(!token)await connect();const message=$("message").value.trim();if(!message)return;log("You: "+message);$("message").value="";$("send").disabled=true;const r=await api("/api/chat",{message});log("Mindcraft: "+r.reply)}catch(e){log("Error: "+e.message)}finally{$("send").disabled=false}};
+$("plan").onclick=async()=>{try{if(!token)await connect();const message=$("message").value.trim();if(!message)throw Error("Describe the action you want planned in the message box.");$("plan").disabled=true;const r=await api("/api/plan",{message});$("proposal").style.display="block";$("proposal").textContent=JSON.stringify(r.proposed_action,null,2)+"\nExecution: "+r.execution}catch(e){$("proposal").style.display="block";$("proposal").textContent="Plan rejected: "+e.message}finally{$("plan").disabled=false}};
 </script></body></html>
