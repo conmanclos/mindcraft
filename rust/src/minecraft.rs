@@ -301,7 +301,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         true
                     } else { false }
                 } else { false };
-                if should_repath {
+                // Don't restart an in-flight path every repath interval; that can
+                // prevent the bot from ever completing a long route to its teammate.
+                if should_repath && bot.is_goto_target_reached() {
                     let goal = bot.tab_list().ok()
                         .and_then(|players| players.values()
                             .find(|player| player.profile.name.eq_ignore_ascii_case(&username))
