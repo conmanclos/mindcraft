@@ -13,7 +13,7 @@ This is a Rust-native runtime being developed alongside the original JavaScript/
 - Tactical single-action planner and strategic goal decomposition are separate provider-backed paths.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Drop remains blocked; attack is restricted to a visible crosshair target within 3.5 blocks and always requires explicit approval.
 - Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/hunger/inventory telemetry, and AI chat replies when players mention `Mindcraft`.
-- A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z` and `place x,y,z` (the bot aims at the requested block, then waits for exact crosshair confirmation before mining with Azalea's automatic best-tool selection or right-clicking with the selected item; the action cancels if line of sight cannot be established), `attack crosshair` (visible entity within 3.5 blocks; always requires explicit approval), and `equip 0-8`, `jump`, `sneak true|false`, and `use_item` (right-click the currently held item; always requires explicit approval) are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; normal navigation disables pathfinder block-mining, and unimplemented actions fail closed.
+- A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z` and `place x,y,z` (the bot aims at the requested block, then waits for exact crosshair confirmation before mining with Azalea's automatic best-tool selection or right-clicking with the selected item; the action cancels if line of sight cannot be established), `attack <player>` (online player within 3.5 blocks; always requires explicit approval), and `equip 0-8`, `jump`, and `use_item` (right-click the block currently under the crosshair; always requires explicit approval) are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; normal navigation disables pathfinder block-mining, and unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
 ## Minecraft 1.21.1 migration
@@ -30,7 +30,7 @@ cp .env.example .env
 cargo build --release
 ```
 
-A successful build has not yet been verified after the 1.21.1 dependency pin. Treat the runtime as in development until the 1.21.1 API compatibility compiles and it joins a live 1.21.1 server.
+A successful build has not yet been verified after the 1.21.1 API migration. Treat the runtime as in development until `cargo check` succeeds and it joins a live 1.21.1 server.
 
 ## Configure
 
@@ -90,6 +90,6 @@ Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guar
 
 ## Important scope boundary
 
-The core action layer now calls Azalea 0.10.3 APIs for chat, stop, follow, look, pathfinding, mining, block interaction, attacking, hotbar selection, jumping, sneaking, and held-item use. Mining and placement are deferred until the bot's crosshair confirms the requested block. These paths are implemented but not yet compile-verified or live-server tested on 26.1; do not treat them as verified gameplay until those checks pass.
+The core action layer now calls Azalea 0.10.3 APIs for chat, stop, follow, look, pathfinding, mining, block interaction, attacking, hotbar selection, jumping, sneaking (not yet exposed by Azalea 0.10.3's public client input API), and held-item use. Mining and placement are deferred until the bot's crosshair confirms the requested block. These paths are implemented but not yet compile-verified or live-server tested on 1.21.1; do not treat them as verified gameplay until those checks pass.
 
 The durable specialist task queue supports role-based claims, two-minute leases, heartbeats, and completion, but task claims are not yet automatically tied to in-game execution. Remaining work includes recipe-based crafting, inventory transfers/container management, automatic eating/healing, advanced multi-step construction, autonomous exploration strategy, automated execution/completion of strategic tasks, per-agent role assignment, and full remote API hardening (TLS termination, rate limits, and per-agent authorization). Do not treat this branch as gameplay-ready until a local build and live 1.21.1 server verification succeed.
