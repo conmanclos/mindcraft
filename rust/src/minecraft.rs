@@ -1429,6 +1429,192 @@ async fn execute_craft(
     }
 }
 
+async fn execute_smelt(
+    bot: Client,
+    input: String,
+    position: BlockPos,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return; }
+    let Some(result_name) = smelt_spec(&input) else {
+        bot.chat("That input is not in the safe smelting allowlist.");
+        return;
+    };
+    let Ok(world) = bot.world() else {
+        bot.chat("I can't read the loaded world to reach that furnace.");
+        return;
+    };
+    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+        bot.chat("That furnace coordinate is not a loaded non-air block.");
+        return;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+        if !cancelled() { bot.chat("Pathfinding to the furnace timed out or failed."); }
+        return;
+    }
+    if cancelled() { return; }
+    if !bot.exists() || !bot.is_goto_target_reached() {
+        bot.chat("I couldn't reach the furnace without breaking blocks.");
+        return;
+    }
+    let Ok(own_position) = bot.position() else { return; };
+    let dx = own_position.x - (position.x as f64 + 0.5);
+    let dy = own_position.y - (position.y as f64 + 0.5);
+    let dz = own_position.z - (position.z as f64 + 0.5);
+    if dx * dx + dy * dy + dz * dz > 20.25 {
+        bot.chat("The furnace is still outside the 4.5-block interaction reach.");
+        return;
+    }
+    bot.look_at(position.center());
+    bot.wait_updates(1).await;
+    if cancelled() { return; }
+    match bot.hit_result() {
+        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+        _ => {
+            bot.chat("I don't have a clear line of sight to that furnace.");
+            return;
+        }
+    }
+    let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
+        bot.chat("I couldn't open a furnace interface. Close other menus and check that the target is a furnace, blast furnace, or smoker.");
+        return;
+    };
+    if cancelled() { drop(container); return; }
+    let Some(menu) = container.menu().ok().flatten() else {
+        bot.chat("The furnace interface closed before I could use it.");
+        return;
+    };
+    if !matches!(
+        &menu,
+        azalea_inventory::Menu::Furnace { .. }
+            | azalea_inventory::Menu::BlastFurnace { .. }
+            | azalea_inventory::Menu::Smoker { .. }
+    ) {
+        bot.chat("That block opened an inventory, but it is not a furnace, blast furnace, or smoker.");
+        return;
+    }
+    let Some(slots) = container.slots() else {
+        bot.chat("I couldn't read the furnace slots.");
+        return;
+    };
+    if slots.len() < 3 || !slots[0].is_empty() || !slots[2].is_empty() {
+        bot.chat("The furnace input or output slot is occupied. I won't mix with an existing smelting job.");
+        return;
+    }
+    let Some(input_source) = menu.player_slots_range().find(|slot| {
+        slots.get(*slot).is_some_and(|item| {
+            !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &input)
+        })
+    }) else {
+        bot.chat(format!("I don't have {input} in my inventory."));
+        return;
+    };
+
+    container.left_click(input_source);
+    container.right_click(0);
+    container.left_click(input_source);
+    let mut input_placed = false;
+    for _ in 0..5 {
+        bot.wait_ticks(1).await;
+        if cancelled() { drop(container); return; }
+        input_placed = container.slots()
+            .and_then(|slots| slots.first().map(|item| {
+                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &input)
+            }))
+            .unwrap_or(false);
+        if input_placed { break; }
+    }
+    if !input_placed {
+        bot.chat("The server did not confirm the furnace input; I stopped without starting a smelt.");
+        return;
+    }
+
+    let fuel_slot_empty = container.slots()
+        .and_then(|slots| slots.get(1).map(|item| item.is_empty()))
+        .unwrap_or(true);
+    if fuel_slot_empty {
+        let fuel_source = container.slots().and_then(|slots| {
+            menu.player_slots_range().find(|slot| {
+                slots.get(*slot).is_some_and(|item| {
+                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), "coal")
+                })
+            })
+        });
+        let Some(fuel_source) = fuel_source else {
+            container.shift_click(0);
+            bot.wait_ticks(2).await;
+            bot.chat("I placed the input but found no coal or charcoal. I returned the input to your inventory.");
+            return;
+        };
+        container.left_click(fuel_source);
+        container.right_click(1);
+        container.left_click(fuel_source);
+        let mut fuel_placed = false;
+        for _ in 0..5 {
+            bot.wait_ticks(1).await;
+            if cancelled() { drop(container); return; }
+            fuel_placed = container.slots()
+                .and_then(|slots| slots.get(1).map(|item| {
+                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), "coal")
+                }))
+                .unwrap_or(false);
+            if fuel_placed { break; }
+        }
+        if !fuel_placed {
+            container.shift_click(0);
+            bot.wait_ticks(2).await;
+            bot.chat("The server did not accept coal or charcoal as fuel; I returned the input.");
+            return;
+        }
+    }
+
+    bot.chat(format!("Started smelting one {input}; waiting for {result_name}."));
+    let mut ticks = bot.get_tick_broadcaster();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut output_ready = false;
+    loop {
+        if cancelled() { return; }
+        if !bot.exists() { return; }
+        output_ready = container.slots()
+            .and_then(|slots| slots.get(2).map(|item| {
+                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
+            }))
+            .unwrap_or(false);
+        if output_ready { break; }
+        match tokio::time::timeout_at(deadline, ticks.recv()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
+                tracing::debug!(username = %bot.username(), skipped, "smelting task missed tick notifications");
+            }
+            Ok(Err(broadcast::error::RecvError::Closed)) => return,
+            Err(_) => break,
+        }
+    }
+    if !output_ready {
+        bot.chat(format!("The {input} is still in the furnace or smelting exceeded 30 seconds. I left the furnace contents untouched; check it and collect {result_name} when ready."));
+        return;
+    }
+
+    container.shift_click(2);
+    let mut output_cleared = false;
+    for _ in 0..10 {
+        bot.wait_ticks(1).await;
+        output_cleared = container.slots()
+            .and_then(|slots| slots.get(2).map(|item| item.is_empty()))
+            .unwrap_or(false);
+        if output_cleared { break; }
+    }
+    if output_cleared {
+        bot.chat(format!("Smelted one {input} into {result_name} and confirmed the furnace output slot cleared."));
+    } else {
+        bot.chat(format!("The {result_name} is ready, but the furnace output slot did not clear. Check inventory capacity and the furnace."));
+    }
+}
+
 /// Match registry/debug item names without depending on Rust enum casing or separators.
 fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     let compact = |value: &str| -> String {
