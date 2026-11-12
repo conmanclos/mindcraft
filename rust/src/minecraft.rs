@@ -1957,7 +1957,7 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     if selector.is_empty() { return false; }
     let name = compact(debug_name);
     if selector == "log" {
-        name.ends_with("log") || name.ends_with("stem")
+        name.ends_with("log") || name.ends_with("stem") || name.ends_with("wood") || name.ends_with("hyphae")
     } else if selector == "door" {
         name.ends_with("door") && !name.ends_with("trapdoor")
     } else {
@@ -2167,6 +2167,8 @@ mod food_tests {
     fn item_name_matching_ignores_enum_case_and_separators() {
         assert!(super::item_name_matches("WoodenPickaxe", "wooden_pickaxe"));
         assert!(super::item_name_matches("OakPlanks", "planks"));
+        assert!(super::item_name_matches("StrippedOakWood", "log"));
+        assert!(super::item_name_matches("CrimsonHyphae", "log"));
         assert!(super::item_name_matches("CraftingTable", "crafting_table"));
         assert!(super::item_name_matches("IronPickaxe", "iron_pickaxe"));
         assert!(super::item_name_matches("OakTrapdoor", "trapdoor"));
