@@ -1,7 +1,7 @@
 [package]
 name = "mindcraft-desktop"
 version = "0.1.0"
-description = "Mindcraft native macOS desktop application"
+description = "Mindcraft native cross-platform desktop application"
 edition = "2021"
 rust-version = "1.82"
 
