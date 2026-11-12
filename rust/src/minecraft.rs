@@ -3254,7 +3254,7 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     } else if selector == "woodenfence" {
         wood_type && name.ends_with("fence")
     } else if selector == "woodensign" {
-        wood_type && name.ends_with("sign")
+        wood_type && name.ends_with("sign") && !name.contains("hanging")
     } else if selector == "woodenboat" {
         (wood_type && name.ends_with("boat")) || name == "bambooraft"
     } else if selector == "woodentrapdoor" {
