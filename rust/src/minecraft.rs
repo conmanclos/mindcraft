@@ -40,6 +40,7 @@ struct BotState {
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     pending_block_action: Option<Arc<Mutex<Option<PendingBlockAction>>>>,
+    swarm_restart: Option<Arc<AtomicBool>>,
     is_primary: bool,
 }
 
@@ -78,6 +79,7 @@ pub async fn connect(
         let shared_reflex_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)));
         let shared_follow_target = Arc::new(Mutex::new(None));
         let shared_pending_block_action = Arc::new(Mutex::new(None));
+        let shared_swarm_restart = Arc::new(AtomicBool::new(false));
 
         let mut builder = SwarmBuilder::new().set_handler(handle);
         for (index, account) in accounts_to_join.into_iter().enumerate() {
@@ -86,7 +88,7 @@ pub async fn connect(
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
                 shared_follow_target.clone(), shared_reflex_cooldown.clone(),
-                shared_pending_block_action.clone(), is_primary,
+                shared_pending_block_action.clone(), shared_swarm_restart.clone(), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -109,6 +111,7 @@ fn make_state(
     follow_target: Arc<Mutex<Option<String>>>,
     last_reflex: Arc<Mutex<Instant>>,
     pending_block_action: Arc<Mutex<Option<PendingBlockAction>>>,
+    swarm_restart: Arc<AtomicBool>,
     is_primary: bool,
 ) -> BotState {
     BotState {
@@ -123,6 +126,7 @@ fn make_state(
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
         last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
         pending_block_action: Some(pending_block_action),
+        swarm_restart: Some(swarm_restart),
         is_primary,
     }
 }
@@ -149,10 +153,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                 }
             }
-            tracing::warn!(username = %bot.username(), "Minecraft agent disconnected; restarting the swarm");
+            if let Some(restart) = &state.swarm_restart {
+                restart.store(true, Ordering::Relaxed);
+            }
+            tracing::warn!(username = %bot.username(), "Minecraft agent disconnected; requesting a full swarm restart");
             bot.exit();
         }
         Event::Tick => {
+            if state.swarm_restart.as_ref().is_some_and(|restart| restart.load(Ordering::Relaxed)) {
+                bot.exit();
+                return Ok(());
+            }
             if bot.exists() {
                 if let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) {
                     if state.is_primary {
