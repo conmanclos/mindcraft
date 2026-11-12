@@ -295,8 +295,8 @@ mod tests {
 
     #[test]
     fn dotenv_values_cannot_inject_additional_environment_lines() {
-        assert_eq!(super::dotenv_value("safe\\r\\nMINDCRAFT_MODE=autonomous"), "\"safeMINDCRAFT_MODE=autonomous\"");
-        assert_eq!(super::dotenv_value("quoted\\\"value"), "\"quoted\\\\\"value\"");
+        assert_eq!(super::dotenv_value("safe\r\nMINDCRAFT_MODE=autonomous"), "\"safeMINDCRAFT_MODE=autonomous\"");
+        assert_eq!(super::dotenv_value("quoted\"value"), "\"quoted\\\"value\"");
     }
 
     #[test]
