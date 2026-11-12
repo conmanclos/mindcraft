@@ -223,7 +223,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::AttackCrosshair => {
                         if !bot.has_attack_cooldown() {
-                            if let azalea::HitResult::Entity(hit) = bot.hit_result() {
+                            if let HitResult::Entity(hit) = bot.hit_result() {
                                 let target = bot.entity_ref_for(hit.entity);
                                 let target_position = target.position();
                                 let own_position = bot.position();
