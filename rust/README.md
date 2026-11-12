@@ -8,9 +8,9 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - Axum dashboard/API bound to loopback by default. API routes require a bearer token; a one-time token is generated and printed when no token is configured.
 - Provider adapters for OpenAI-compatible endpoints (including Ollama), Anthropic Messages, and Google Gemini.
 - SQLite conversation and strategic-goal persistence using WAL mode.
-- Specialist-role task decomposition (planner, scout, gatherer, builder, crafter, guardian), durable priority queue, atomic task claims, and completion tracking shared by workers using the same database.
+- Specialist-role task decomposition (planner, scout, gatherer, builder, crafter, guardian), durable priority queue, atomic task claims, and completion tracking shared by workers using the same database. Azalea can run a multi-client offline-mode swarm with a staggered join delay; Microsoft auth currently supports one account.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Attack/drop remain blocked until target-aware execution is implemented.
-- Azalea connection with offline or Microsoft device-code authentication, spawn/disconnect state, live position/health telemetry, and AI chat replies when players mention `Mindcraft`.
+- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health telemetry, and AI chat replies when players mention `Mindcraft`.
 - A bounded in-process command queue. `say`, `stop`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
@@ -31,7 +31,8 @@ Do not update Azalea to a different Minecraft protocol version as a workaround.
 Edit `.env`:
 
 - `MINDCRAFT_MC_SERVER=127.0.0.1:25565`
-- `MINDCRAFT_MC_USERNAME=Mindcraft` (offline account mode)
+- `MINDCRAFT_MC_USERNAME=Mindcraft` (fallback offline username)
+- `MINDCRAFT_MC_ACCOUNTS=Mindcraft,Scout,Builder` for multiple offline-mode clients
 - `MINDCRAFT_MC_AUTH=offline|microsoft`
 - `MINDCRAFT_MICROSOFT_EMAIL=you@example.com` when using Microsoft device-code authentication
 - `MINDCRAFT_PROVIDER=ollama` (or `openai`, `openai-compatible`, `anthropic`, `google`)
@@ -65,4 +66,4 @@ cargo run --release -- doctor
 
 ## Important scope boundary
 
-This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, look-at explicit block coordinates, pathfinding to explicit block coordinates, starting a mining operation at explicit coordinates, and selecting a hotbar slot (0-8). The AI also answers Minecraft chat when players mention its name. The task coordinator is durable and supports multiple named workers claiming tasks by role, but those worker agents are not yet separate Azalea clients and task completion is not automatically tied to in-game execution. Crafting, inventory management, combat, building/placement, exploration goals, additional account/session lifecycle hardening, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
+This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, look-at explicit block coordinates, pathfinding to explicit block coordinates, starting a mining operation at explicit coordinates, and selecting a hotbar slot (0-8). The AI also answers Minecraft chat when players mention its name. The task coordinator is durable and supports multiple named workers claiming tasks by role. The live swarm shares a bounded command queue; task claims are not yet automatically tied to in-game task execution. Crafting, inventory management, combat, building/placement, exploration goals, additional account/session lifecycle hardening, and comprehensive remote API hardening remain unimplemented. The dashboard and provider integration have not been built or run in this environment, so a successful compile and live-server session are still required before calling this ready for gameplay.
