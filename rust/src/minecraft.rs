@@ -1031,7 +1031,7 @@ async fn execute_craft(
         }
         let source_slot = player_slots.clone().find(|slot| {
             slots.get(*slot).is_some_and(|item| {
-                !item.is_empty() && item_name_matches(&format!("{item:?}"), selector)
+                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), selector)
             })
         });
         let Some(source_slot) = source_slot else {
@@ -1062,7 +1062,7 @@ async fn execute_craft(
     }
     let output_matches = container.slots()
         .and_then(|slots| slots.first().map(|item| {
-            !item.is_empty() && item_name_matches(&format!("{item:?}"), result_name)
+            !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
         }))
         .unwrap_or(false);
     if !output_matches {
@@ -1172,18 +1172,18 @@ mod food_tests {
 
     #[test]
     fn item_name_matching_ignores_enum_case_and_separators() {
-        assert!(super::item_name_matches("ItemStack { kind: WoodenPickaxe }", "wooden_pickaxe"));
-        assert!(super::item_name_matches("ItemStack { kind: OakPlanks }", "planks"));
-        assert!(super::item_name_matches("ItemStack { kind: CraftingTable }", "crafting_table"));
-        assert!(super::item_name_matches("ItemStack { kind: IronPickaxe }", "iron_pickaxe"));
-        assert!(super::item_name_matches("ItemStack { kind: OakTrapdoor }", "trapdoor"));
-        assert!(!super::item_name_matches("ItemStack { kind: OakTrapdoor }", "door"));
-        assert!(super::item_name_matches("ItemStack { kind: OakSlab }", "slab"));
-        assert!(super::item_name_matches("ItemStack { kind: Charcoal }", "coal"));
-        assert!(super::item_name_matches("ItemStack { kind: CrimsonStem }", "log"));
-        assert!(!super::item_name_matches("ItemStack { kind: StickyPiston }", "stick"));
-        assert!(!super::item_name_matches("ItemStack { kind: DiamondSword }", "diamond"));
-        assert!(!super::item_name_matches("ItemStack { kind: StonePickaxe }", "wooden_pickaxe"));
+        assert!(super::item_name_matches("WoodenPickaxe", "wooden_pickaxe"));
+        assert!(super::item_name_matches("OakPlanks", "planks"));
+        assert!(super::item_name_matches("CraftingTable", "crafting_table"));
+        assert!(super::item_name_matches("IronPickaxe", "iron_pickaxe"));
+        assert!(super::item_name_matches("OakTrapdoor", "trapdoor"));
+        assert!(!super::item_name_matches("OakTrapdoor", "door"));
+        assert!(super::item_name_matches("OakSlab", "slab"));
+        assert!(super::item_name_matches("Charcoal", "coal"));
+        assert!(super::item_name_matches("CrimsonStem", "log"));
+        assert!(!super::item_name_matches("StickyPiston", "stick"));
+        assert!(!super::item_name_matches("DiamondSword", "diamond"));
+        assert!(!super::item_name_matches("StonePickaxe", "wooden_pickaxe"));
     }
 
     #[test]
