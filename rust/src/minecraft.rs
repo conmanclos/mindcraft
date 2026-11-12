@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::{pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
+use azalea::{pathfinder::{PathfinderClientExt, goals::{BlockPosGoal, RadiusGoal}}, prelude::*, swarm::SwarmBuilder};
 use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{mpsc, Mutex};
 
@@ -265,10 +265,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 if should_repath {
                     let goal = bot.player_uuid_by_username(&username)
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
-                        .map(|entity| entity.position())
-                        .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
+                        .map(|entity| RadiusGoal::new(entity.position(), 3.0));
                     if let Some(goal) = goal {
-                        bot.start_goto(BlockPosGoal(goal));
+                        bot.start_goto(goal);
                         if let Some(following) = &state.is_following { following.store(true, Ordering::Relaxed); }
                     } else {
                         bot.stop_pathfinding();
