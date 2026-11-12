@@ -172,8 +172,6 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 critical_health = health.is_finite() && health <= 6.0;
                 if critical_health {
                     if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
-                    if let Some(target) = &state.follow_target { *target.lock().await = None; }
-                    if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                 }
                 if state.is_primary {
                     if let Some(status) = &state.status {
@@ -272,7 +270,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let follow_target = if let Some(target_lock) = &state.follow_target {
                 target_lock.lock().await.clone()
             } else { None };
-            if let Some(username) = follow_target {
+            if critical_health {
+                bot.stop_pathfinding();
+                bot.walk(WalkDirection::None);
+            } else if let Some(username) = follow_target {
                 let should_repath = if let Some(cooldown) = &state.last_follow_repath {
                     let mut last = cooldown.lock().await;
                     if last.elapsed() >= Duration::from_millis(1200) {
