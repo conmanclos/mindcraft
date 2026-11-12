@@ -9,7 +9,7 @@ Mindcraft Desktop is a Tauri 2 macOS application shell around the native Rust Mi
 3. Select an AI provider, model, and API key (the key is stored in macOS Keychain).
 4. Choose Assisted, Balanced, or Autonomous mode.
 5. Save setup and click **Run Mindcraft**.
-6. The app starts the bundled Rust runtime and displays connection/agent/health/food status.
+6. The app starts the bundled Rust runtime on an automatically selected local port and displays connection/agent/health/food status.
 
 The app stores its non-secret configuration, SQLite database, and Azalea Microsoft authentication cache under the macOS application data directory. The provider API key is stored in Keychain. Microsoft tokens are therefore kept with the app's local data rather than the global `~/.minecraft` cache. It does not require Node.js or a separately installed Rust toolchain.
 
