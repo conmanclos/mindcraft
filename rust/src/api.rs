@@ -228,6 +228,16 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             Ok(BotCommand::Say(text))
         }
         "stop" => Ok(BotCommand::Stop),
+        "jump" => Ok(BotCommand::Jump),
+        "sneak" => {
+            let enabled = action.target.ok_or((StatusCode::BAD_REQUEST, "sneak target must be true or false".into()))?;
+            match enabled.to_lowercase().as_str() {
+                "true" | "on" => Ok(BotCommand::Sneak(true)),
+                "false" | "off" => Ok(BotCommand::Sneak(false)),
+                _ => Err((StatusCode::BAD_REQUEST, "sneak target must be true/on or false/off".into())),
+            }
+        }
+        "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
             if !target.eq_ignore_ascii_case("crosshair") {
