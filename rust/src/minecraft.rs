@@ -1967,7 +1967,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
     }
 }
 
-fn recipe_output_count(recipe: &str) -> u32 {
+fn recipe_output_count(recipe: &str) -> u8 {
     match recipe {
         "planks" | "sticks" | "torch" | "bowl" => 4,
         "paper" => 3,
@@ -3049,7 +3049,7 @@ async fn execute_smelt(
         output_ready = container.slots()
             .and_then(|slots| slots.get(2).map(|item| {
                 !item.is_empty()
-                    && item.count() >= u32::from(count)
+                    && item.count() >= count
                     && item_name_matches(&format!("{:?}", item.kind()), result_name)
             }))
             .unwrap_or(false);
