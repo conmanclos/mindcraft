@@ -734,7 +734,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         }
         let source_slot = player_slots.clone().find(|slot| {
             slots.get(*slot).is_some_and(|item| {
-                !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(*selector)
+                !item.is_empty() && item_name_matches(&format!("{item:?}"), selector)
             })
         });
         let Some(source_slot) = source_slot else {
@@ -755,7 +755,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
     bot.wait_ticks(1).await;
     let output_matches = container.slots()
         .and_then(|slots| slots.first().map(|item| {
-            !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(result_name)
+            !item.is_empty() && item_name_matches(&format!("{item:?}"), result_name)
         }))
         .unwrap_or(false);
     if !output_matches {
@@ -776,6 +776,18 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
     } else {
         bot.chat(format!("The {result_name} output is still in the crafting result slot; inventory may be full or the server rejected the transfer."));
     }
+}
+
+/// Match registry/debug item names without depending on Rust enum casing or separators.
+fn item_name_matches(debug_name: &str, selector: &str) -> bool {
+    let compact = |value: &str| -> String {
+        value.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let selector = compact(selector);
+    !selector.is_empty() && compact(debug_name).contains(&selector)
 }
 
 /// Return the best recognized, ordinary food item in the player's hotbar.
@@ -842,6 +854,14 @@ mod recipe_tests {
 #[cfg(test)]
 mod food_tests {
     use super::safe_food_priority;
+
+    #[test]
+    fn item_name_matching_ignores_enum_case_and_separators() {
+        assert!(super::item_name_matches("ItemStack { kind: WoodenPickaxe }", "wooden_pickaxe"));
+        assert!(super::item_name_matches("ItemStack { kind: OakPlanks }", "planks"));
+        assert!(super::item_name_matches("ItemStack { kind: CraftingTable }", "crafting_table"));
+        assert!(!super::item_name_matches("ItemStack { kind: StonePickaxe }", "wooden_pickaxe"));
+    }
 
     #[test]
     fn safe_food_classifier_prefers_nutritious_food_and_fails_closed() {
