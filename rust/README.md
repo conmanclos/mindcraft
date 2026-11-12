@@ -51,6 +51,7 @@ Edit `.env`:
 - `MINDCRAFT_MC_ACCOUNTS=Mindcraft,Scout,Builder` for multiple offline-mode clients
 - `MINDCRAFT_MC_AUTH=offline|microsoft`
 - `MINDCRAFT_MICROSOFT_EMAIL=you@example.com` when using Microsoft device-code authentication
+- `MINDCRAFT_TRUSTED_PLAYERS=YourName,FriendName` to allow only those server-chat users to trigger autonomous gameplay actions (empty by default)
 - `MINDCRAFT_PROVIDER=ollama` (or `openai`, `openai-compatible`, `anthropic`, `google`)
 - `MINDCRAFT_MODEL=llama3.1`
 - `MINDCRAFT_BASE_URL=http://127.0.0.1:11434/v1` for Ollama
