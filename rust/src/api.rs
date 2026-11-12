@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::{atomic::AtomicBool, Arc}};
+use std::{collections::{HashMap, HashSet}, sync::{atomic::AtomicBool, Arc}};
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -263,6 +263,30 @@ fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Optio
         .ok_or((StatusCode::BAD_REQUEST, "agent must match one of the configured offline bot usernames".into()))
 }
 
+fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, String)> {
+    let entries = raw.split(';').map(str::trim).filter(|entry| !entry.is_empty()).collect::<Vec<_>>();
+    if entries.is_empty() || entries.len() > 32 {
+        return Err((StatusCode::BAD_REQUEST, "build target must contain 1-32 semicolon-separated x,y,z block positions".into()));
+    }
+    let mut unique = HashSet::new();
+    let mut positions = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let values = entry.split(',').map(str::trim).map(str::parse::<i32>)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| (StatusCode::BAD_REQUEST, "each build position must use integer x,y,z coordinates".into()))?;
+        if values.len() != 3 || values[1] < -64 || values[1] > 320
+            || values.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+            return Err((StatusCode::BAD_REQUEST, "build positions must be inside supported Minecraft world bounds".into()));
+        }
+        let position = (values[0], values[1], values[2]);
+        if !unique.insert(position) {
+            return Err((StatusCode::BAD_REQUEST, "build plan cannot contain duplicate block positions".into()));
+        }
+        positions.push(position);
+    }
+    Ok(positions)
+}
+
 pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
     match action.action.to_lowercase().as_str() {
         "say" => {
@@ -282,6 +306,10 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 return Err((StatusCode::BAD_REQUEST, "explore radius must be from 8 to 128 blocks".into()));
             }
             Ok(BotCommand::Explore(radius))
+        }
+        "build" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be semicolon-separated x,y,z positions for a multi-block build".into()))?;
+            Ok(BotCommand::Build(parse_build_targets(&raw)?))
         }
         "craft" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a recipe name, optionally followed by @x,y,z for a crafting table".into()))?;
@@ -576,6 +604,20 @@ mod tests {
             trusted_chat_players: Vec::new(),
             database: std::path::PathBuf::from(":memory:"),
         }
+    }
+
+    #[test]
+    fn multi_block_build_targets_are_bounded_unique_and_world_validated() {
+        assert_eq!(
+            parse_build_targets("1,64,1;2,64,1").unwrap(),
+            vec![(1, 64, 1), (2, 64, 1)]
+        );
+        assert!(parse_build_targets("").is_err());
+        assert!(parse_build_targets("1,64,1;1,64,1").is_err());
+        assert!(parse_build_targets("1,321,1").is_err());
+        assert!(parse_build_targets("1,64").is_err());
+        let too_many = (0..33).map(|x| format!("{x},64,1")).collect::<Vec<_>>().join(";");
+        assert!(parse_build_targets(&too_many).is_err());
     }
 
     #[test]
