@@ -73,6 +73,7 @@ struct BotState {
     last_reflex: Option<Arc<Mutex<Instant>>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
+    is_eating: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     pending_block_action: Option<Arc<Mutex<Option<PendingBlockAction>>>>,
@@ -103,6 +104,7 @@ impl SwarmRuntimeState {
             last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
             follow_target: self.follow_target.clone(),
             is_following: Some(Arc::new(AtomicBool::new(false))),
+            is_eating: Some(Arc::new(AtomicBool::new(false))),
             last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
             last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
             pending_block_action: self.pending_block_action.clone(),
@@ -310,18 +312,24 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             if should_warn {
                                 if state.mode == "autonomous" {
                                     let is_primary = state.is_primary;
-                                    let mut eating_bot = bot.clone();
-                                    tokio::spawn(async move {
-                                        match eat_food(&mut eating_bot).await {
-                                            Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
-                                            Err(error) => {
-                                                tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
-                                                if is_primary {
-                                                    eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
+                                    if let Some(eating_flag) = state.is_eating.clone() {
+                                        if !eating_flag.swap(true, Ordering::Relaxed) {
+                                            let mut eating_bot = bot.clone();
+                                            tokio::spawn(async move {
+                                                let result = eat_food(&mut eating_bot).await;
+                                                eating_flag.store(false, Ordering::Relaxed);
+                                                match result {
+                                                    Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
+                                                    Err(error) => {
+                                                        tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
+                                                        if is_primary {
+                                                            eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
+                                                        }
+                                                    }
                                                 }
-                                            }
+                                            });
                                         }
-                                    });
+                                    }
                                 } else if state.is_primary {
                                     bot.chat("Reflex safety: food is low. Approve a use_item action or switch to Autonomous mode to allow safe automatic eating.");
                                 }
@@ -376,8 +384,10 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             } else {
                 None
             };
+            let eating = state.is_eating.as_ref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed));
 
-            if critical_health {
+            if critical_health || eating {
                 bot.stop_pathfinding();
                 stop_walking(&bot);
             } else if let Some(username) = follow_target {
@@ -412,10 +422,12 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             }
 
             for command in queued {
-                if critical_health && matches!(
+                if (critical_health || eating) && matches!(
                     &command,
                     BotCommand::Follow(_) | BotCommand::Goto(_, _, _) | BotCommand::Mine(_, _, _)
                         | BotCommand::Place(_, _, _) | BotCommand::AttackPlayer(_) | BotCommand::Jump
+                        | BotCommand::Equip(_) | BotCommand::UseItem | BotCommand::Craft(_)
+                        | BotCommand::Deposit(_, _, _) | BotCommand::Withdraw(_, _, _, _)
                 ) {
                     tracing::debug!(username = %bot.username(), "blocked gameplay action while health is critical");
                     continue;
@@ -764,6 +776,8 @@ fn food_name_in_slot(menu: &Menu, slot: usize) -> Option<String> {
 }
 
 async fn eat_food(bot: &mut Client) -> Result<String> {
+    bot.stop_pathfinding();
+    stop_walking(bot);
     let handle = bot.open_inventory()
         .ok_or_else(|| anyhow::anyhow!("another container is already open"))?;
     let menu = handle.menu()
