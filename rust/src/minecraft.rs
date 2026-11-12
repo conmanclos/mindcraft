@@ -303,6 +303,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                 if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                 if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                // A low-health reflex overrides active pathfinding and mining too,
+                // not merely commands waiting in the per-tick queue.
+                bot.stop_pathfinding();
+                bot.walk(WalkDirection::None);
+                cancel_active_mining(&bot);
                 // A low-health reflex has priority over stale movement/combat/build commands.
                 queued.retain(|command| matches!(command, BotCommand::Stop | BotCommand::Say(_)));
             }
