@@ -302,7 +302,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false }
                 } else { false };
                 if should_repath {
-                    let goal = bot.player_uuid_by_username(&username).ok().flatten()
+                    let goal = bot.tab_list().ok()
+                        .and_then(|players| players.values()
+                            .find(|player| player.profile.name.eq_ignore_ascii_case(&username))
+                            .map(|player| player.profile.uuid))
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
                         .and_then(|entity| entity.position().ok())
                         .and_then(|target| bot.position().ok().map(|own| {
