@@ -426,6 +426,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("I can't read the loaded world to pathfind to that block.");
                                 return;
                             };
+                            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                                client.chat("That target is not a loaded non-air block; I won't report an empty position as mined.");
+                                return;
+                            }
                             let chunk_storage = world.read().chunks.clone();
                             if !goto_cancellable(
                                 &client,
