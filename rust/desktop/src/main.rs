@@ -162,12 +162,15 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<S
             command.env("MINDCRAFT_API_KEY", key);
         }
     }
+    let env_file = fs::read_to_string(data.join(".env")).map_err(|e| e.to_string())?;
+    let token = env_file.lines()
+        .find_map(|line| line.strip_prefix("MINDCRAFT_API_TOKEN=\"").and_then(|v| v.strip_suffix('\"')))
+        .ok_or("App setup is incomplete; save setup again.")?
+        .to_owned();
+
     let spawned = command.spawn().map_err(|e| format!("Could not start the Rust runtime: {e}"))?;
     *child = Some(spawned);
-
-    let env_file = fs::read_to_string(data.join(".env")).map_err(|e| e.to_string())?;
-    let token = env_file.lines().find_map(|line| line.strip_prefix("MINDCRAFT_API_TOKEN=\"").and_then(|v| v.strip_suffix('\"'))).ok_or("App setup is incomplete; save setup again.")?;
-    Ok(token.to_owned())
+    Ok(token)
 }
 
 #[tauri::command]
