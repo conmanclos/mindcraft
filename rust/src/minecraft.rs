@@ -621,7 +621,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         };
         let source_slot = player_slots.clone().find(|slot| {
             slots.get(*slot).is_some_and(|item| {
-                !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(selector)
+                !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(*selector)
             })
         });
         let Some(source_slot) = source_slot else {
@@ -637,7 +637,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         };
         // Pick up the stack, place exactly one ingredient, then return the remainder.
         container.left_click(source_slot);
-        container.right_click(grid_slot);
+        container.right_click(*grid_slot);
         container.left_click(source_slot);
         bot.wait_ticks(1).await;
     }
