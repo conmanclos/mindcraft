@@ -32,6 +32,39 @@ pub struct PlannedAction {
     pub risk: String,
 }
 
+fn extract_json_segment(raw: &str, open: char, close: char) -> Option<&str> {
+    let (start, _) = raw.char_indices().find(|(_, character)| *character == open)?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (offset, character) in raw[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if character == '"' {
+            in_string = true;
+        } else if character == open {
+            depth += 1;
+        } else if character == close {
+            depth = depth.checked_sub(1)?;
+            if depth == 0 {
+                let end = start + offset + character.len_utf8();
+                return Some(&raw[start..end]);
+            }
+        }
+    }
+    None
+}
+
 impl Brain {
     pub fn new(config: Arc<Config>) -> Self {
         Self {
@@ -73,9 +106,9 @@ impl Brain {
             "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, explore, mine, place, build, craft, smelt, container_transfer, equip, attack, jump, use_item. For build, target is 1-32 semicolon-separated x,y,z positions, optionally prefixed with exact_hotbar_item@; the runtime orders positions bottom-up, selects that exact item from the hotbar when provided (otherwise it uses the current selection), and places it sequentially. Every target must be air with a reachable adjacent full-collision support face. Use only these actions. For explore, target is an optional radius from 8 to 128 blocks. For craft, supported recipes are planks, sticks, torch, crafting_table, wooden/stone/iron/golden/diamond pickaxes, axes, swords, shovels and hoes, leather/iron/golden/diamond helmets, chestplates, leggings and boots, doors, trapdoors, slabs, stairs, fences, signs, boats, bowls, furnace, chest, bread, ladder, shears, bucket, bow, fishing_rod, arrow, paper, and glass_pane; recipes needing a 3x3 grid use recipe@x,y,z for the crafting-table block. For place, target is the desired air-block x,y,z; any reachable adjacent full-collision support face is valid and a placeable block must be selected. For smelt, target must be an allowlisted input[*count]@x,y,z with a nearby furnace, blast furnace, or smoker; count is optional and defaults to 1, maximum 64. Supported inputs include raw ores, ore blocks, sand, red sand, cobblestone, stone, clay, clay balls, cactus, wet sponge, kelp, beef, porkchop, chicken, mutton, rabbit, cod, salmon, potato, logs, ancient debris, and netherrack. Fuel must be available in one inventory stack: coal or charcoal smelts 8 items each, blaze rods 12 each, and lava buckets 100 each. The executor calculates the required fuel count, refuses to mix with an occupied furnace fuel slot, and verifies the complete output batch. For container_transfer, target must be x,y,z,slot for a nearby container and slot index. Attack target must be exactly crosshair. Container transfers always require explicit approval. risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
-        let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
-        let end = raw.rfind('}').ok_or_else(|| anyhow!("planner returned incomplete JSON"))?;
-        let action: PlannedAction = serde_json::from_str(&raw[start..=end])?;
+        let json = extract_json_segment(&raw, '{', '}')
+            .ok_or_else(|| anyhow!("planner did not return a complete JSON object"))?;
+        let action: PlannedAction = serde_json::from_str(json)?;
         self.validate_action(&action)?;
         Ok(action)
     }
@@ -88,9 +121,9 @@ impl Brain {
             "Decompose this Minecraft objective into 1 to 12 independently actionable tasks for a cooperative team. Return ONLY a JSON array. Each object must have role, description, priority. Allowed roles: planner, scout, gatherer, builder, crafter, guardian. Priority is an integer 0-100. Do not include code fences or prose. Objective: {goal}"
         );
         let raw = self.reply(&prompt).await?;
-        let start = raw.find('[').ok_or_else(|| anyhow!("strategic planner did not return a JSON array"))?;
-        let end = raw.rfind(']').ok_or_else(|| anyhow!("strategic planner returned incomplete JSON"))?;
-        let mut tasks: Vec<TaskDraft> = serde_json::from_str(&raw[start..=end])?;
+        let json = extract_json_segment(&raw, '[', ']')
+            .ok_or_else(|| anyhow!("strategic planner did not return a complete JSON array"))?;
+        let mut tasks: Vec<TaskDraft> = serde_json::from_str(json)?;
         if tasks.is_empty() || tasks.len() > 12 {
             bail!("strategic planner must return between 1 and 12 tasks");
         }
@@ -194,6 +227,28 @@ impl Brain {
 
 #[cfg(test)]
 mod tests {
+    use super::extract_json_segment;
+
+    #[test]
+    fn json_extraction_ignores_brackets_inside_strings_and_trailing_prose() {
+        let object = "Result: {\"action\":\"say\",\"target\":\"text with } and \\\" quote\",\"reason\":\"ok\",\"risk\":\"low\"} Done.";
+        let extracted = extract_json_segment(object, '{', '}').unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(extracted).unwrap();
+        assert_eq!(parsed["action"], "say");
+        assert_eq!(parsed["target"], "text with } and \\\" quote");
+
+        let array = "Tasks: [{\"description\":\"array ] inside string\"},{\"description\":\"second\"}] complete";
+        let extracted = extract_json_segment(array, '[', ']').unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(extracted).unwrap();
+        assert_eq!(parsed.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn json_extraction_rejects_unterminated_or_missing_values() {
+        assert!(extract_json_segment("no JSON here", '{', '}').is_none());
+        assert!(extract_json_segment("prefix {\"value\": 1", '{', '}').is_none());
+    }
+
     use super::*;
     use crate::config::Config;
     use std::{net::SocketAddr, path::PathBuf};
