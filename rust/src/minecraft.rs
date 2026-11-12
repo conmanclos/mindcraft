@@ -42,7 +42,7 @@ pub enum BotCommand {
     OptimizeArmor,
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>),
-    ContainerDeposit(i32, i32, i32),
+    ContainerDeposit(i32, i32, i32, Option<String>),
     Craft(String, Option<(i32, i32, i32)>),
     Smelt(String, (i32, i32, i32), u8),
     SmeltQueue(Vec<SmeltJob>),
@@ -1343,7 +1343,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                         });
                     }
-                    BotCommand::ContainerDeposit(x, y, z) => {
+                    BotCommand::ContainerDeposit(x, y, z, filter) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
                         let generation_state = state.mine_generation.clone();
@@ -1396,12 +1396,19 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     let slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
                                     let mut moved_count = 0usize;
                                     let mut skipped_count = 0usize;
+                                    let mut filtered_count = 0usize;
                                     for slot in slots {
                                         if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                             drop(container); return;
                                         }
                                         let before = container.slots().and_then(|items| items.get(slot).cloned());
                                         let Some(item_before) = before.filter(|item| !item.is_empty()) else { continue; };
+                                        if filter.as_deref().is_some_and(|wanted| {
+                                            !item_name_matches_exact(&format!("{:?}", item_before.kind()), wanted)
+                                        }) {
+                                            filtered_count += 1;
+                                            continue;
+                                        }
                                         let before_count = item_before.count();
                                         let before_kind = item_before.kind();
                                         container.shift_click(slot);
@@ -1420,7 +1427,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         }
                                         if moved { moved_count += 1; } else { skipped_count += 1; }
                                     }
-                                    client.chat(format!("Deposit finished: {moved_count} main-inventory slot(s) moved; {skipped_count} non-empty slot(s) stayed because the container may be full."));
+                                    if let Some(wanted) = &filter {
+                                        client.chat(format!("Filtered deposit of {wanted} finished: {moved_count} matching slot(s) moved; {filtered_count} non-matching slot(s) preserved; {skipped_count} matching slot(s) stayed because the container may be full."));
+                                    } else {
+                                        client.chat(format!("Deposit finished: {moved_count} main-inventory slot(s) moved; {skipped_count} non-empty slot(s) stayed because the container may be full."));
+                                    }
                                     drop(container);
                                 }
                                 Ok(None) => client.chat("I could not open that block as a container."),
