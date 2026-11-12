@@ -364,6 +364,18 @@ mod tests {
     }
 
     #[test]
+    fn worker_prefers_its_specialist_queue_before_higher_priority_fallback_work() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Prepare a safe camp").unwrap();
+        let fallback_id = store.add_task(goal, "scout", "Find a safe location", 100).unwrap();
+        let preferred_id = store.add_task(goal, "planner", "Choose the camp plan", 10).unwrap();
+
+        let claimed = store.claim_task("PlannerBot", "planner").unwrap().unwrap();
+        assert_eq!(claimed.id, preferred_id);
+        assert_ne!(claimed.id, fallback_id);
+    }
+
+    #[test]
     fn worker_falls_back_to_other_specialist_roles_when_its_queue_is_empty() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let goal = store.create_goal("Prepare a safe camp").unwrap();
