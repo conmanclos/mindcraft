@@ -1896,7 +1896,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "chest" => Some((true, "chest", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
         "bread" => Some((true, "bread", &[(1, "wheat"), (2, "wheat"), (3, "wheat")])),
         "ladder" => Some((true, "ladder", &[(1, "stick"), (3, "stick"), (4, "stick"), (5, "stick"), (6, "stick"), (7, "stick"), (9, "stick")])),
-        "composter" => Some((true, "composter", &[(1, "slab"), (3, "slab"), (4, "slab"), (6, "slab"), (7, "slab"), (8, "slab"), (9, "slab")])),
+        "composter" => Some((true, "composter", &[(1, "wooden_slab"), (3, "wooden_slab"), (4, "wooden_slab"), (6, "wooden_slab"), (7, "wooden_slab"), (8, "wooden_slab"), (9, "wooden_slab")])),
         "shield" => Some((true, "shield", &[(2, "iron_ingot"), (4, "planks"), (5, "planks"), (6, "planks"), (8, "planks")])),
         "bed" => Some((true, "bed", &[(1, "wool"), (2, "wool"), (3, "wool"), (4, "planks"), (5, "planks"), (6, "planks")])),
         "bookshelf" => Some((true, "bookshelf", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "book"), (5, "book"), (6, "book"), (7, "planks"), (8, "planks"), (9, "planks")])),
