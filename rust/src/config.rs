@@ -16,6 +16,7 @@ pub struct Config {
     pub minecraft_accounts: Vec<String>,
     pub minecraft_auth: String,
     pub microsoft_email: Option<String>,
+    pub trusted_chat_players: Vec<String>,
     pub database: PathBuf,
 }
 
@@ -61,6 +62,20 @@ impl Config {
                 }
             }
         }
+        let trusted_chat_players = env::var("MINDCRAFT_TRUSTED_PLAYERS").unwrap_or_default()
+            .split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned)
+            .collect::<Vec<_>>();
+        if trusted_chat_players.len() > 32 {
+            bail!("MINDCRAFT_TRUSTED_PLAYERS is limited to 32 usernames");
+        }
+        let mut trusted_names = std::collections::HashSet::new();
+        for name in &trusted_chat_players {
+            if !(3..=16).contains(&name.len())
+                || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
+                || !trusted_names.insert(name.to_ascii_lowercase()) {
+                bail!("trusted chat players must be unique Minecraft usernames (3-16 letters, digits, or underscores)");
+            }
+        }
         let model = env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into()).trim().to_owned();
         if model.trim().is_empty() {
             bail!("MINDCRAFT_MODEL must not be empty");
@@ -98,6 +113,7 @@ impl Config {
             minecraft_accounts,
             minecraft_auth,
             microsoft_email,
+            trusted_chat_players,
             database: PathBuf::from(env::var("MINDCRAFT_DATABASE").unwrap_or_else(|_| "./mindcraft.sqlite3".into())),
         })
     }
