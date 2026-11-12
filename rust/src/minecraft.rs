@@ -72,7 +72,35 @@ pub async fn connect(
     tracing::info!(%server, account_count = accounts.len(), auth_mode = %auth_mode, trusted_chat_player_count = trusted_chat_players.len(), "starting Minecraft agent swarm");
     let trusted_chat_players = Arc::new(trusted_chat_players.into_iter()
         .map(|name| name.to_ascii_lowercase()).collect::<HashSet<_>>());
+    const DEFAULT_AUTONOMOUS_GOAL: &str =
+        "Maintain safe survival, gather sustainable food and basic materials, and establish a compact shelter near spawn.";
     loop {
+        // Autonomous mode starts with one durable baseline objective so it can
+        // make progress without requiring the player to manually seed a goal.
+        // The exact-description check makes this idempotent across reconnects.
+        if brain.is_autonomous() {
+            match store.has_goal_description(DEFAULT_AUTONOMOUS_GOAL) {
+                Ok(false) => {
+                    let memory = store.memory_context(3_000).unwrap_or_default();
+                    let planning_context = format!("{DEFAULT_AUTONOMOUS_GOAL}\\n{memory}");
+                    match tokio::time::timeout(Duration::from_secs(50), brain.decompose_goal(&planning_context)).await {
+                        Ok(Ok(drafts)) => {
+                            let tasks = drafts.iter().map(|draft| {
+                                (draft.role.clone(), draft.description.clone(), draft.priority)
+                            }).collect::<Vec<_>>();
+                            match store.create_goal_with_tasks(DEFAULT_AUTONOMOUS_GOAL, &tasks) {
+                                Ok((goal_id, task_ids)) => tracing::info!(goal_id, task_count = task_ids.len(), "created the default autonomous survival objective"),
+                                Err(error) => tracing::error!(%error, "could not persist the autonomous survival objective"),
+                            }
+                        }
+                        Ok(Err(error)) => tracing::warn!(%error, "autonomous objective planning failed; it will retry after reconnect"),
+                        Err(_) => tracing::warn!("autonomous objective planning timed out; it will retry after reconnect"),
+                    }
+                }
+                Ok(true) => {}
+                Err(error) => tracing::error!(%error, "could not inspect existing autonomous objectives"),
+            }
+        }
         let accounts_to_join = if auth_mode == "microsoft" {
             let email = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
             tracing::info!("starting Azalea Microsoft device-code authentication");
