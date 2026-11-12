@@ -1777,7 +1777,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "stone_button" => Some((false, "stone_button", &[(1, "cobblestone")])),
         "wooden_pressure_plate" => Some((false, "wooden_pressure_plate", &[(1, "planks"), (2, "planks")])),
         "stone_pressure_plate" => Some((false, "stone_pressure_plate", &[(1, "cobblestone"), (2, "cobblestone")])),
-        "lever" => Some((false, "lever", &[(2, "stick"), (5, "cobblestone")])),
+        "lever" => Some((true, "lever", &[(2, "stick"), (5, "cobblestone")])),
         "fence_gate" => Some((true, "fence_gate", &[(1, "planks"), (2, "stick"), (3, "planks"), (4, "planks"), (5, "stick"), (6, "planks")])),
         "flower_pot" => Some((true, "flower_pot", &[(1, "brick"), (3, "brick"), (8, "brick")])),
         "glass_bottle" => Some((true, "glass_bottle", &[(1, "glass"), (3, "glass"), (5, "glass")])),
