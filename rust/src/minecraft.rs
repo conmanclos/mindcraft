@@ -43,7 +43,7 @@ pub enum BotCommand {
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>),
     ContainerDeposit(i32, i32, i32, Option<String>),
-    Craft(String, Option<(i32, i32, i32)>),
+    Craft(String, Option<(i32, i32, i32)>, u8),
     Smelt(String, (i32, i32, i32), u8),
     SmeltQueue(Vec<SmeltJob>),
 }
