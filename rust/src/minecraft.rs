@@ -8,6 +8,8 @@ use tokio::sync::{mpsc, Mutex};
 pub enum BotCommand {
     Say(String),
     Stop,
+    Jump,
+    UseItem,
     AttackCrosshair,
     Follow(String),
     Look(i32, i32, i32),
@@ -307,6 +309,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             _ => bot.chat("I can only place against a block that is currently in my crosshair."),
                         }
                     }
+                    BotCommand::Jump => bot.jump(),
+                    BotCommand::UseItem => bot.start_use_item(),
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
                 }
             }
