@@ -147,8 +147,9 @@ impl Brain {
 
     async fn google(&self, system: &str, prompt: &str) -> Result<String> {
         if self.config.api_key.is_empty() { bail!("MINDCRAFT_API_KEY is required for Google Gemini"); }
-        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", self.config.model, self.config.api_key);
+        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent", self.config.model);
         let value: Value = self.http.post(url)
+            .header("x-goog-api-key", &self.config.api_key)
             .json(&json!({"systemInstruction":{"parts":[{"text":system}]},"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.35,"maxOutputTokens":1200}}))
             .send().await?.error_for_status()?.json().await?;
         value.pointer("/candidates/0/content/parts/0/text").and_then(Value::as_str)
