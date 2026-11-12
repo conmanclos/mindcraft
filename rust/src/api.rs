@@ -1074,7 +1074,9 @@ mod tests {
     #[test]
     fn container_transfer_coordinates_and_slot_are_bounded() {
         assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,27"))), Ok(BotCommand::ContainerTransfer(1,64,-2,Some((27,27))))));
-        for target in ["1,64,2", "1,64,2,101", "1,321,2,4", "x,64,2,4"] {
+        assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,0-26"))), Ok(BotCommand::ContainerTransfer(1,64,-2,Some((0,26))))));
+        assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,all"))), Ok(BotCommand::ContainerTransfer(1,64,-2,None))));
+        for target in ["1,64,2", "1,64,2,101", "1,64,2,27-12", "1,64,2,90-91", "1,321,2,4", "x,64,2,4", "1,64,2,all,extra"] {
             assert!(command_from_action(action("container_transfer", Some(target))).is_err());
         }
     }
