@@ -324,7 +324,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             )
                         }));
                     if let Some(goal) = goal {
-                        bot.start_goto(BlockPosGoal(goal));
+                        bot.start_goto_with_opts(BlockPosGoal(goal), PathfinderOpts::new().allow_mining(false));
                         if let Some(following) = &state.is_following { following.store(true, Ordering::Relaxed); }
                     } else {
                         bot.stop_pathfinding();
@@ -349,7 +349,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let (dx,dz) = offsets[step % offsets.len()];
                     if let Ok(position) = bot.position() {
                         let destination = BlockPos::new(position.x.floor() as i32 + dx * radius, position.y.floor() as i32, position.z.floor() as i32 + dz * radius);
-                        bot.start_goto(BlockPosGoal(destination));
+                        bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
                         tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
                     }
                 }
@@ -419,7 +419,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
-                        bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
+                        bot.start_goto_with_opts(BlockPosGoal(BlockPos::new(x, y, z)), PathfinderOpts::new().allow_mining(false));
                     }
                     BotCommand::Mine(x, y, z) => {
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
