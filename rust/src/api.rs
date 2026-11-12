@@ -417,6 +417,15 @@ mod action_tests {
     }
 
     #[test]
+    fn exploration_radius_is_bounded_and_non_destructive() {
+        assert!(matches!(
+            command_from_action(action("explore", Some("24"))),
+            Ok(BotCommand::Explore(24))
+        ));
+        assert!(command_from_action(action("explore", Some("500"))).is_err());
+    }
+
+    #[test]
     fn withdrawal_requires_coordinates_and_a_valid_item_id() {
         assert!(matches!(
             command_from_action(action("withdraw", Some("10,64,-3,minecraft:oak_log"))),
