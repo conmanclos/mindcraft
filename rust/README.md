@@ -12,7 +12,7 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - Deterministic reflex safety layer stops movement and warns when health reaches 6/20; it does not consume items or depend on an LLM.
 - Tactical single-action planner and strategic goal decomposition are separate provider-backed paths.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Attack/drop remain blocked until target-aware execution is implemented.
-- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/inventory telemetry, and AI chat replies when players mention `Mindcraft`.
+- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/inventory telemetry, and AI chat replies when players mention `Mindcraft`. Because the pinned 1.21.1 Azalea release predates the newer built-in reconnect behavior, a disconnect exits and restarts the whole swarm after a five-second delay.
 - A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, `place x,y,z` (right-click a target block with the selected item), and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
