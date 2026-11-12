@@ -290,12 +290,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let mut queued = Vec::new();
             if let Some(receiver) = &state.commands {
                 let mut receiver = receiver.lock().await;
-                while let Ok(envelope) = receiver.try_recv() {
-                    let matches_target = match envelope.target.as_deref() {
-                        Some(target) => target.eq_ignore_ascii_case(&bot.username()),
-                        None => state.is_primary,
-                    };
-                    if matches_target { queued.push(envelope.command); }
+                loop {
+                    match receiver.try_recv() {
+                        Ok(envelope) => {
+                            let matches_target = match envelope.target.as_deref() {
+                                Some(target) => target.eq_ignore_ascii_case(&bot.username()),
+                                None => state.is_primary,
+                            };
+                            if matches_target { queued.push(envelope.command); }
+                        }
+                        Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+                            tracing::warn!(username = %bot.username(), skipped, "Minecraft command receiver lagged; older queued commands were dropped");
+                        }
+                        Err(broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed) => break,
+                    }
                 }
             }
             if critical_health {
