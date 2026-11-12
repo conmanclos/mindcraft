@@ -1373,6 +1373,27 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "diamond_sword" => Some((true, "diamond_sword", &[(2, "diamond"), (5, "diamond"), (8, "stick")])),
         "diamond_shovel" => Some((true, "diamond_shovel", &[(2, "diamond"), (5, "stick"), (8, "stick")])),
         "diamond_hoe" => Some((true, "diamond_hoe", &[(1, "diamond"), (2, "diamond"), (5, "stick"), (8, "stick")])),
+        "golden_pickaxe" => Some((true, "golden_pickaxe", &[(1, "gold_ingot"), (2, "gold_ingot"), (3, "gold_ingot"), (5, "stick"), (8, "stick")])),
+        "golden_axe" => Some((true, "golden_axe", &[(1, "gold_ingot"), (2, "gold_ingot"), (4, "gold_ingot"), (5, "stick"), (8, "stick")])),
+        "golden_sword" => Some((true, "golden_sword", &[(2, "gold_ingot"), (5, "gold_ingot"), (8, "stick")])),
+        "golden_shovel" => Some((true, "golden_shovel", &[(2, "gold_ingot"), (5, "stick"), (8, "stick")])),
+        "golden_hoe" => Some((true, "golden_hoe", &[(1, "gold_ingot"), (2, "gold_ingot"), (5, "stick"), (8, "stick")])),
+        "leather_helmet" => Some((true, "leather_helmet", &[(1, "leather"), (2, "leather"), (3, "leather"), (4, "leather"), (6, "leather")])),
+        "leather_chestplate" => Some((true, "leather_chestplate", &[(1, "leather"), (3, "leather"), (4, "leather"), (5, "leather"), (6, "leather"), (7, "leather"), (8, "leather"), (9, "leather")])),
+        "leather_leggings" => Some((true, "leather_leggings", &[(1, "leather"), (2, "leather"), (3, "leather"), (4, "leather"), (6, "leather"), (7, "leather"), (9, "leather")])),
+        "leather_boots" => Some((true, "leather_boots", &[(4, "leather"), (6, "leather"), (7, "leather"), (9, "leather")])),
+        "iron_helmet" => Some((true, "iron_helmet", &[(1, "iron_ingot"), (2, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (6, "iron_ingot")])),
+        "iron_chestplate" => Some((true, "iron_chestplate", &[(1, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "iron_ingot"), (6, "iron_ingot"), (7, "iron_ingot"), (8, "iron_ingot"), (9, "iron_ingot")])),
+        "iron_leggings" => Some((true, "iron_leggings", &[(1, "iron_ingot"), (2, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (6, "iron_ingot"), (7, "iron_ingot"), (9, "iron_ingot")])),
+        "iron_boots" => Some((true, "iron_boots", &[(4, "iron_ingot"), (6, "iron_ingot"), (7, "iron_ingot"), (9, "iron_ingot")])),
+        "golden_helmet" => Some((true, "golden_helmet", &[(1, "gold_ingot"), (2, "gold_ingot"), (3, "gold_ingot"), (4, "gold_ingot"), (6, "gold_ingot")])),
+        "golden_chestplate" => Some((true, "golden_chestplate", &[(1, "gold_ingot"), (3, "gold_ingot"), (4, "gold_ingot"), (5, "gold_ingot"), (6, "gold_ingot"), (7, "gold_ingot"), (8, "gold_ingot"), (9, "gold_ingot")])),
+        "golden_leggings" => Some((true, "golden_leggings", &[(1, "gold_ingot"), (2, "gold_ingot"), (3, "gold_ingot"), (4, "gold_ingot"), (6, "gold_ingot"), (7, "gold_ingot"), (9, "gold_ingot")])),
+        "golden_boots" => Some((true, "golden_boots", &[(4, "gold_ingot"), (6, "gold_ingot"), (7, "gold_ingot"), (9, "gold_ingot")])),
+        "diamond_helmet" => Some((true, "diamond_helmet", &[(1, "diamond"), (2, "diamond"), (3, "diamond"), (4, "diamond"), (6, "diamond")])),
+        "diamond_chestplate" => Some((true, "diamond_chestplate", &[(1, "diamond"), (3, "diamond"), (4, "diamond"), (5, "diamond"), (6, "diamond"), (7, "diamond"), (8, "diamond"), (9, "diamond")])),
+        "diamond_leggings" => Some((true, "diamond_leggings", &[(1, "diamond"), (2, "diamond"), (3, "diamond"), (4, "diamond"), (6, "diamond"), (7, "diamond"), (9, "diamond")])),
+        "diamond_boots" => Some((true, "diamond_boots", &[(4, "diamond"), (6, "diamond"), (7, "diamond"), (9, "diamond")])),
         "door" => Some((true, "door", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         "trapdoor" => Some((true, "trapdoor", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks")])),
         "slab" => Some((true, "slab", &[(1, "planks"), (2, "planks"), (3, "planks")])),
@@ -2107,7 +2128,7 @@ mod recipe_tests {
 
     #[test]
     fn allowlisted_recipes_fit_their_declared_crafting_grid() {
-        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe", "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe", "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe", "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl", "furnace", "chest", "bread", "ladder"] {
+        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe", "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe", "golden_pickaxe", "golden_axe", "golden_sword", "golden_shovel", "golden_hoe", "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe", "leather_helmet", "leather_chestplate", "leather_leggings", "leather_boots", "iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots", "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl", "furnace", "chest", "bread", "ladder"] {
             let (requires_table, _, ingredients) = recipe_spec(recipe).expect("recipe must be allowlisted");
             let grid_size = if requires_table { 9 } else { 4 };
             let mut used = std::collections::HashSet::new();
