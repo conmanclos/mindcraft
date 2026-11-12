@@ -57,7 +57,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             }
             tracing::info!(username = %bot.username(), "Minecraft bot spawned and ready");
         }
-        Event::Disconnect(_) | Event::ConnectionFailed(_) => {
+        Event::Disconnect(_) => {
             if let Some(status) = &state.status {
                 status.minecraft_connected.store(false, std::sync::atomic::Ordering::Relaxed);
             }
@@ -102,8 +102,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             tracing::info!(sender = ?sender, %content, "Minecraft chat");
 
             let from_self = sender.as_deref() == state.bot_name.as_deref();
-            let addressed_to_bot = message.is_whisper()
-                || (sender.is_some() && content.to_lowercase().contains("mindcraft"));
+            let addressed_to_bot = sender.is_some() && content.to_lowercase().contains("mindcraft");
             if !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
                     let mut last = cooldown.lock().await;
