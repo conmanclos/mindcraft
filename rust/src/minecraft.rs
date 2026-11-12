@@ -1213,17 +1213,21 @@ async fn execute_craft(
         container.right_click(*grid_slot);
         container.left_click(source_slot);
         placed_slots.push(*grid_slot);
-        bot.wait_ticks(1).await;
-        if cancelled() {
-            for slot in &placed_slots { container.shift_click(*slot); }
-            bot.wait_ticks(2).await;
-            return;
+        let mut ingredient_placed = false;
+        for _ in 0..5 {
+            bot.wait_ticks(1).await;
+            if cancelled() {
+                for slot in &placed_slots { container.shift_click(*slot); }
+                bot.wait_ticks(2).await;
+                return;
+            }
+            ingredient_placed = container.slots()
+                .and_then(|slots| slots.get(*grid_slot).map(|item| {
+                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), selector)
+                }))
+                .unwrap_or(false);
+            if ingredient_placed { break; }
         }
-        let ingredient_placed = container.slots()
-            .and_then(|slots| slots.get(*grid_slot).map(|item| {
-                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), selector)
-            }))
-            .unwrap_or(false);
         if !ingredient_placed {
             for slot in &placed_slots { container.shift_click(*slot); }
             bot.wait_ticks(2).await;
@@ -1232,17 +1236,21 @@ async fn execute_craft(
         }
     }
 
-    bot.wait_ticks(1).await;
-    if cancelled() {
-        for slot in &placed_slots { container.shift_click(*slot); }
-        bot.wait_ticks(2).await;
-        return;
+    let mut output_matches = false;
+    for _ in 0..10 {
+        bot.wait_ticks(1).await;
+        if cancelled() {
+            for slot in &placed_slots { container.shift_click(*slot); }
+            bot.wait_ticks(2).await;
+            return;
+        }
+        output_matches = container.slots()
+            .and_then(|slots| slots.first().map(|item| {
+                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
+            }))
+            .unwrap_or(false);
+        if output_matches { break; }
     }
-    let output_matches = container.slots()
-        .and_then(|slots| slots.first().map(|item| {
-            !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), result_name)
-        }))
-        .unwrap_or(false);
     if !output_matches {
         for slot in &placed_slots { container.shift_click(*slot); }
         bot.wait_ticks(2).await;
