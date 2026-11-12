@@ -1323,7 +1323,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     return;
                                 }
                                 client.chat(format!("Starting furnace queue job {} of {} at {}, {}, {}.", index + 1, total, job.x, job.y, job.z));
-                                execute_smelt(
+                                let completed = execute_smelt(
                                     client.clone(),
                                     job.input,
                                     BlockPos::new(job.x, job.y, job.z),
@@ -1331,6 +1331,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     generation_state.clone(),
                                     generation,
                                 ).await;
+                                if !completed {
+                                    if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                        client.chat(format!("Furnace queue stopped at job {} of {}; later furnaces were left untouched.", index + 1, total));
+                                    }
+                                    return;
+                                }
                             }
                             if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 client.chat(format!("Finished processing the {} queued furnace jobs. Check each furnace output and inventory.", total));
