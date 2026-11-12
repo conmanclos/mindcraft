@@ -1,0 +1,27 @@
+# macOS build helper
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "This script must run on macOS." >&2
+  exit 1
+fi
+if ! command -v cargo-tauri >/dev/null 2>&1 && ! cargo tauri --help >/dev/null 2>&1; then
+  echo "Install the Tauri CLI first: cargo install tauri-cli --version '^2'." >&2
+  exit 1
+fi
+
+echo "Building the native Minecraft 26.1 Rust runtime..."
+cargo build --release --bin mindcraft
+mkdir -p desktop/binaries
+cp target/release/mindcraft desktop/binaries/mindcraft
+chmod 755 desktop/binaries/mindcraft
+
+echo "Bundling the macOS app and DMG..."
+cd desktop
+cargo tauri build --bundles app,dmg
+
+echo "Build output is under rust/desktop/target/release/bundle."
+echo "Sign and notarize before distributing outside your own Mac."
