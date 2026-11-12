@@ -43,6 +43,8 @@ struct BotState {
     last_auto_eat: Option<Arc<Mutex<Instant>>>,
     last_auto_armor: Option<Arc<Mutex<Instant>>>,
     last_auto_combat: Option<Arc<Mutex<Instant>>>,
+    last_task_poll: Option<Arc<Mutex<Instant>>>,
+    task_busy: Option<Arc<AtomicBool>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
@@ -177,6 +179,97 @@ fn instant_before(duration: Duration) -> Instant {
     now.checked_sub(duration).unwrap_or(now)
 }
 
+async fn run_specialist_task(
+    bot: &Client,
+    brain: Arc<Brain>,
+    status: Arc<RuntimeStatus>,
+    store: Arc<Store>,
+    role: String,
+) -> Result<()> {
+    let agent_id = bot.username();
+    let Some(task) = store.claim_task(&agent_id, &role)? else { return Ok(()); };
+    let result = async {
+        let snapshot = status.agents.lock().await.get(&agent_id).cloned();
+        let world_context = snapshot.map(|snapshot| format!(
+            "Current game state: position {:?}, health {:.1}/20, food {}/20, inventory {:?}.",
+            snapshot.position, snapshot.health, snapshot.food, snapshot.inventory.iter().take(24).collect::<Vec<_>>()
+        )).unwrap_or_else(|| "Current game telemetry is not available yet; use only information you can verify.".into());
+        let prompt = format!(
+            "You are the {role} specialist controlling Minecraft teammate {agent_id}. Work on this single queued task: {}. {world_context} Choose exactly one immediate action supported by the Rust runtime. Do not claim the task is complete, do not invent world observations, and do not issue an action that requires explicit approval. If the task cannot be safely advanced with one supported action, explain that in a say action. The action will be placed in a human review queue after dispatch; the player will verify the actual game result.",
+            task.description
+        );
+        let planning = brain.plan(&prompt);
+        tokio::pin!(planning);
+        let action = loop {
+            tokio::select! {
+                result = &mut planning => break result?,
+                _ = tokio::time::sleep(Duration::from_secs(45)) => {
+                    if !store.renew_task_lease(task.id, &agent_id)? {
+                        anyhow::bail!("task lease expired while the specialist was planning");
+                    }
+                }
+            }
+        };
+        brain.authorize_action(&action, false)
+            .map_err(|reason| anyhow::anyhow!("planner action requires explicit approval: {reason}"))?;
+        let command = crate::api::command_from_action(action.clone())
+            .map_err(|(_, reason)| anyhow::anyhow!("planner produced an unsupported task action: {reason}"))?;
+        if !store.mark_task_for_review(task.id, &agent_id)? {
+            anyhow::bail!("task lease could not be moved into the review queue");
+        }
+        let sender = status.command_tx.lock().await.clone()
+            .ok_or_else(|| anyhow::anyhow!("Minecraft command dispatcher is unavailable"))?;
+        if sender.send(AgentCommand { target: Some(agent_id.clone()), command }).is_err() {
+            let _ = store.release_task(task.id, &agent_id);
+            anyhow::bail!("no connected bot accepted the specialist action");
+        }
+        bot.chat(format!("Specialist task #{} queued one action for review. Check the in-game result before marking it complete.", task.id));
+        Ok::<(), anyhow::Error>(())
+    }.await;
+    if let Err(error) = result {
+        let _ = store.release_task(task.id, &agent_id);
+        bot.chat(format!("I couldn't safely execute specialist task #{}: {}. The task was returned to the pending queue.", task.id, error));
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn maybe_dispatch_specialist_task(bot: &Client, state: &BotState) {
+    let Some(brain) = state.brain.as_ref().cloned() else { return; };
+    if !brain.is_autonomous() { return; }
+    let (Some(status), Some(store), Some(role), Some(last_poll), Some(task_busy)) = (
+        state.status.as_ref().cloned(),
+        state.store.as_ref().cloned(),
+        state.role.clone(),
+        state.last_task_poll.as_ref(),
+        state.task_busy.as_ref(),
+    ) else { return; };
+    let agent_id = bot.username();
+    if store.has_review_task(&agent_id).unwrap_or(true) { return; }
+    if task_busy.swap(true, Ordering::AcqRel) { return; }
+    let should_poll = {
+        let mut last = last_poll.lock().await;
+        if last.elapsed() >= Duration::from_secs(5) {
+            *last = Instant::now();
+            true
+        } else {
+            false
+        }
+    };
+    if !should_poll {
+        task_busy.store(false, Ordering::Release);
+        return;
+    }
+    let busy = task_busy.clone();
+    let client = bot.clone();
+    tokio::task::spawn_local(async move {
+        if let Err(error) = run_specialist_task(&client, brain, status, store, role).await {
+            tracing::warn!(username = %client.username(), %error, "autonomous specialist task worker could not dispatch work");
+        }
+        busy.store(false, Ordering::Release);
+    });
+}
+
 fn make_state(
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
@@ -200,6 +293,8 @@ fn make_state(
         last_auto_eat: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
         last_auto_armor: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(30))))),
         last_auto_combat: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(2))))),
+        last_task_poll: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(10))))),
+        task_busy: Some(Arc::new(AtomicBool::new(false))),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
@@ -284,6 +379,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if state.is_primary { *status.world.lock().await = Some(snapshot); }
                         }
                     }
+                }
+                if !critical_health {
+                    maybe_dispatch_specialist_task(&bot, &state).await;
                 }
                 // Autonomous close-range defense attacks only a whitelisted hostile monster,
                 // only when it is close and the server raycast confirms that exact target.
