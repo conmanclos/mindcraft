@@ -445,7 +445,10 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     }
                     BotCommand::AttackPlayer(username) => {
-                        stop_mining(&bot);
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        stop_walking(&bot);
                         if !bot.has_attack_cooldown() {
                             if let Some((target_position, target_id)) = find_player(&bot, &username) {
                                 let own_position = bot.position();
@@ -477,7 +480,8 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         stop_walking(&bot);
                     }
                     BotCommand::Follow(username) => {
-                        stop_mining(&bot);
+                        bot.stop_pathfinding();
+                        stop_walking(&bot);
                         if let Some(pending) = &state.pending_block_action {
                             *pending.lock().await = None;
                         }
@@ -572,7 +576,8 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                     BotCommand::UseItem => {
                         if let Some(hit) = bot.get_component::<HitResultComponent>() {
                             if !hit.miss {
-                                stop_mining(&bot);
+                                bot.stop_pathfinding();
+                                stop_walking(&bot);
                                 bot.block_interact(hit.block_pos);
                             } else if let Some(use_flag) = state.is_using_item.clone() {
                                 if !use_flag.swap(true, Ordering::Relaxed) {
