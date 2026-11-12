@@ -27,7 +27,7 @@ Install Rustup and a C toolchain required by bundled SQLite. The checked-in `rus
 ```sh
 cd rust
 cp .env.example .env
-cargo fmt --all -- --check
+cargo fmt --all
 cargo check --all-targets
 cargo test
 cargo build --release
