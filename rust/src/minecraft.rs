@@ -216,6 +216,7 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
     else if name.contains("chest") || name.contains("barrel") || name.contains("shulker_box") { Some("storage") }
     else if name.contains("crafting_table") || name.contains("furnace") || name.contains("smoker") || name.contains("blast_furnace") { Some("workstation") }
     else if name.contains("anvil") || name.contains("enchanting_table") || name.contains("brewing_stand") || name.contains("grindstone") || name.contains("stonecutter") { Some("utility workstation") }
+    else if name.contains("end_portal_frame") || name.contains("end_gateway") || name.contains("nether_portal") || name.contains("beacon") || name.contains("lodestone") || name.contains("respawn_anchor") { Some("structure landmark") }
     else if name.contains("bell") || name.contains("loom") || name.contains("cartography_table") || name.contains("smithing_table") || name.contains("fletching_table") { Some("village workstation") }
     else { None }
 }
