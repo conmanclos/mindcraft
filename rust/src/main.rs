@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
                 let microsoft_email = config.microsoft_email.clone();
                 tokio::select! {
                     result = api::serve(config.clone(), brain, store, status) => result?,
-                    result = minecraft::connect(server, bot_accounts, bot_auth, microsoft_email, bot_brain, bot_status) => result?,
+                    result = minecraft::connect(server, bot_accounts, bot_auth, microsoft_email, bot_brain, bot_status, config.mode.clone()) => result?,
                 }
             } else {
                 tracing::warn!("MINDCRAFT_MC_SERVER is unset; dashboard/API will start without a Minecraft connection");
