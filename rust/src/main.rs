@@ -27,7 +27,7 @@ enum Command {
     Doctor,
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
