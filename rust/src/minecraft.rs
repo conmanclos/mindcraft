@@ -210,7 +210,6 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 // Never consume arbitrary held items, potions, or items from an open container.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
                     && hunger.food <= 12
-                    && !critical_health
                 {
                     let should_eat = if let Some(last) = &state.last_auto_eat {
                         let mut last = last.lock().await;
