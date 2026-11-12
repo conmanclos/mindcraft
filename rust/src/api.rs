@@ -221,6 +221,13 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             Ok(BotCommand::Say(text))
         }
         "stop" => Ok(BotCommand::Stop),
+        "follow" => {
+            let username = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a Minecraft username".into()))?;
+            if !(3..=16).contains(&username.len()) || !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return Err((StatusCode::BAD_REQUEST, "target must be a valid Minecraft username".into()));
+            }
+            Ok(BotCommand::Follow(username))
+        }
         "equip" => {
             let slot = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?
                 .parse::<u8>().map_err(|_| (StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?;
