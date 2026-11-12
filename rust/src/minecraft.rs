@@ -305,6 +305,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                     }
                     BotCommand::Follow(username) => {
+                        if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
                         if let Some(target) = &state.follow_target { *target.lock().await = Some(username); }
                     }
                     BotCommand::Look(x, y, z) => {
@@ -320,18 +321,27 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
                     }
-                    BotCommand::Mine(x, y, z) | BotCommand::Place(x, y, z) => {
+                    BotCommand::Mine(x, y, z) => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
-                        let kind = if matches!(command, BotCommand::Mine(_, _, _)) {
-                            PendingBlockActionKind::Mine
-                        } else {
-                            PendingBlockActionKind::Place
-                        };
                         if let Some(pending) = &state.pending_block_action {
-                            *pending.lock().await = Some(PendingBlockAction { kind, position, attempts: 0 });
+                            *pending.lock().await = Some(PendingBlockAction {
+                                kind: PendingBlockActionKind::Mine, position, attempts: 0,
+                            });
+                        }
+                        bot.look_at(position.center());
+                    }
+                    BotCommand::Place(x, y, z) => {
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        let position = BlockPos::new(x, y, z);
+                        if let Some(pending) = &state.pending_block_action {
+                            *pending.lock().await = Some(PendingBlockAction {
+                                kind: PendingBlockActionKind::Place, position, attempts: 0,
+                            });
                         }
                         bot.look_at(position.center());
                     }
