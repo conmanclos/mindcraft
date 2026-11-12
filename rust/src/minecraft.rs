@@ -275,8 +275,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
-                        bot.look_at(position.center());
-                        bot.block_interact(position);
+                        match bot.hit_result() {
+                            HitResult::Block(hit) if !hit.miss && hit.block_pos == position => bot.block_interact(position),
+                            _ => bot.chat("I can only place against a block that is currently in my crosshair."),
+                        }
                     }
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
                 }
