@@ -270,10 +270,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                     match reflex_action {
                         crate::reflex::ReflexAction::StopAndWarn => {
                             bot.stop_pathfinding();
-                            bot.ecs.lock().send_event(StartWalkEvent {
-                                entity: bot.entity,
-                                direction: WalkDirection::None,
-                            });
+                            stop_walking(&bot);
                             if should_warn {
                                 bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
                                 tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
@@ -361,6 +358,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         }
                     } else {
                         bot.stop_pathfinding();
+                        stop_walking(&bot);
                     }
                 }
             } else if let Some(following) = &state.is_following {
@@ -443,6 +441,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             following.store(false, Ordering::Relaxed);
                         }
                         bot.stop_pathfinding();
+                        stop_walking(&bot);
                         bot.look_at(BlockPos::new(x, y, z).center());
                     }
                     BotCommand::Goto(x, y, z) => {
@@ -465,6 +464,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             following.store(false, Ordering::Relaxed);
                         }
                         bot.stop_pathfinding();
+                        stop_walking(&bot);
                         let position = BlockPos::new(x, y, z);
                         if let Some(pending) = &state.pending_block_action {
                             *pending.lock().await = Some(PendingBlockAction {
@@ -582,6 +582,13 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
         _ => {}
     }
     Ok(())
+}
+
+fn stop_walking(bot: &Client) {
+    bot.ecs.lock().send_event(StartWalkEvent {
+        entity: bot.entity,
+        direction: WalkDirection::None,
+    });
 }
 
 fn find_player(bot: &Client, username: &str) -> Option<(azalea::Vec3, MinecraftEntityId)> {
