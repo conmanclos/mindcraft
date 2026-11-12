@@ -97,7 +97,23 @@ fn valid_minecraft_server(value: &str) -> bool {
         Some((host, _)) => host,
         None => value,
     };
-    !host.is_empty() && host.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_'))
+    valid_server_host(host)
+}
+
+fn valid_server_host(host: &str) -> bool {
+    if host.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
+    }
+    if host.is_empty() || host.len() > 253 {
+        return false;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+            && label.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
+            && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
 }
 
 fn dotenv_value(value: &str) -> String {
