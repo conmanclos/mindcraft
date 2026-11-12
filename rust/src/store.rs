@@ -100,6 +100,27 @@ impl Store {
         Ok(connection.last_insert_rowid())
     }
 
+    pub fn create_goal_with_tasks(
+        &self,
+        description: &str,
+        tasks: &[(String, String, i32)],
+    ) -> Result<(i64, Vec<i64>)> {
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
+        let goal_id = tx.last_insert_rowid();
+        let mut task_ids = Vec::with_capacity(tasks.len());
+        for (role, task_description, priority) in tasks {
+            tx.execute(
+                "INSERT INTO agent_tasks(goal_id, role, description, priority) VALUES (?1, ?2, ?3, ?4)",
+                params![goal_id, role, task_description, priority.clamp(0, 100)],
+            )?;
+            task_ids.push(tx.last_insert_rowid());
+        }
+        tx.commit()?;
+        Ok((goal_id, task_ids))
+    }
+
     pub fn add_task(&self, goal_id: i64, role: &str, description: &str, priority: i32) -> Result<i64> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute(
