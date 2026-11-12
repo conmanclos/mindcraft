@@ -2094,6 +2094,28 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
     }
 }
 
+#[cfg(test)]
+mod placement_face_tests {
+    use super::{placement_face_point, Direction, BlockPos};
+
+    #[test]
+    fn placement_ray_targets_the_center_of_each_support_face() {
+        let support = BlockPos::new(1, 2, 3);
+        let top = placement_face_point(support, Direction::Up);
+        let bottom = placement_face_point(support, Direction::Down);
+        let north = placement_face_point(support, Direction::North);
+        let south = placement_face_point(support, Direction::South);
+        let east = placement_face_point(support, Direction::East);
+        let west = placement_face_point(support, Direction::West);
+        assert!((top.y - 2.99).abs() < 0.001);
+        assert!((bottom.y - 2.01).abs() < 0.001);
+        assert!((north.z - 3.01).abs() < 0.001);
+        assert!((south.z - 3.99).abs() < 0.001);
+        assert!((east.x - 1.99).abs() < 0.001);
+        assert!((west.x - 1.01).abs() < 0.001);
+    }
+}
+
 fn is_hostile_mob_kind(debug_name: &str) -> bool {
     let compact: String = debug_name.chars()
         .filter(|character| character.is_ascii_alphanumeric())
