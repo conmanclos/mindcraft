@@ -64,7 +64,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, mine, place, equip, attack. Use only these actions. Attack target must be exactly crosshair.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, mine, place, equip, attack, jump, use_item. Use only these actions. Attack target must be exactly crosshair.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn planner_rejects_actions_without_runtime_executors() {
-        for name in ["status", "inspect", "craft", "use_item", "drop"] {
+        for name in ["status", "inspect", "craft", "drop"] {
             let action = PlannedAction {
                 action: name.into(),
                 target: None,
