@@ -54,7 +54,8 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn dotenv_value(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('\"', "\\\"").replace('\n', ""))
+    let safe = value.chars().filter(|character| !character.is_control()).collect::<String>();
+    format!("\"{}\"", safe.replace('\\', "\\\\").replace('\"', "\\\""))
 }
 
 fn validate_offline_accounts(raw: &str, fallback: &str) -> Result<String, String> {
@@ -291,6 +292,12 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::validate_offline_accounts;
+
+    #[test]
+    fn dotenv_values_cannot_inject_additional_environment_lines() {
+        assert_eq!(super::dotenv_value("safe\\r\\nMINDCRAFT_MODE=autonomous"), "\"safeMINDCRAFT_MODE=autonomous\"");
+        assert_eq!(super::dotenv_value("quoted\\\"value"), "\"quoted\\\\\"value\"");
+    }
 
     #[test]
     fn offline_team_accepts_one_to_eight_unique_valid_names() {
