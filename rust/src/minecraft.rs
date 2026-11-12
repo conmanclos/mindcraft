@@ -13,6 +13,15 @@ pub struct BuildBlock {
 }
 
 #[derive(Debug, Clone)]
+pub struct SmeltJob {
+    pub input: String,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub count: u8,
+}
+
+#[derive(Debug, Clone)]
 pub enum BotCommand {
     Say(String),
     Stop,
@@ -35,6 +44,7 @@ pub enum BotCommand {
     ContainerDeposit(i32, i32, i32),
     Craft(String, Option<(i32, i32, i32)>),
     Smelt(String, (i32, i32, i32), u8),
+    SmeltQueue(Vec<SmeltJob>),
 }
 
 #[derive(Debug, Clone)]
