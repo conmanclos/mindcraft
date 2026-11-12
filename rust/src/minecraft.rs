@@ -12,6 +12,7 @@ use azalea::{
     inventory::SetSelectedHotbarSlotEvent,
     movement::{StartWalkEvent, WalkDirection},
     world::MinecraftEntityId,
+    protocol::packets::game::serverbound_player_command_packet::{Action as PlayerCommandAction, ServerboundPlayerCommandPacket},
 };
 use std::{
     sync::{
@@ -47,6 +48,7 @@ pub enum BotCommand {
     Place(i32, i32, i32),
     Equip(u8),
     Jump,
+    Sneak(bool),
     UseItem,
 }
 
@@ -498,6 +500,19 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         });
                     }
                     BotCommand::Jump => bot.jump(),
+                    BotCommand::Sneak(enabled) => {
+                        let action = if enabled {
+                            PlayerCommandAction::PressShiftKey
+                        } else {
+                            PlayerCommandAction::ReleaseShiftKey
+                        };
+                        let entity_id = *bot.component::<MinecraftEntityId>();
+                        bot.write_packet(ServerboundPlayerCommandPacket {
+                            id: entity_id,
+                            action,
+                            data: 0,
+                        }.get())?;
+                    }
                     BotCommand::UseItem => {
                         if let Some(hit) = bot.get_component::<HitResultComponent>() {
                             if !hit.miss {
