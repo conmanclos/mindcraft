@@ -149,6 +149,20 @@ struct PlanRequest { message: String, #[serde(default)] agent: Option<String> }
 #[derive(Deserialize)]
 struct ExecuteRequest { action: PlannedAction, #[serde(default)] agent: Option<String> }
 
+#[derive(Deserialize)]
+struct SchematicBuildRequest {
+    origin: [i32; 3],
+    blocks: Vec<SchematicBlock>,
+    #[serde(default)]
+    rotation: u16,
+    #[serde(default)]
+    mirror_x: bool,
+    #[serde(default)]
+    mirror_z: bool,
+    #[serde(default)]
+    agent: Option<String>,
+}
+
 #[derive(Serialize)]
 struct ChatResponse { reply: String }
 
@@ -211,6 +225,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/chat", post(chat))
         .route("/api/plan", post(plan))
         .route("/api/execute", post(execute))
+        .route("/api/build", post(build_schematic))
         .route("/api/memory", get(memory_list).post(memory_upsert))
         .route("/api/memory/:memory_id", axum::routing::delete(memory_delete))
         .route("/api/goals", get(list_goals).post(create_goal))
@@ -330,6 +345,33 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         "proposal only; explicitly approve it to execute"
     };
     Ok(Json(PlanResponse { proposed_action, execution, auto_queued: false }))
+}
+
+
+async fn build_schematic(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<SchematicBuildRequest>,
+) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    let document = SchematicDocument {
+        blocks: request.blocks,
+        rotation: request.rotation,
+        mirror_x: request.mirror_x,
+        mirror_z: request.mirror_z,
+    };
+    let json = serde_json::to_string(&document)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let origin = format!("{},{},{}", request.origin[0], request.origin[1], request.origin[2]);
+    let raw = format!("schematic:{json}|{origin}");
+    let blocks = parse_schematic_spec(&raw)?;
+    let target = resolve_agent_target(&state.config, request.agent)?;
+    ensure_agent_connected(&state, target.as_deref()).await?;
+    let sender = state.status.command_tx.lock().await.clone()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
+    sender.send(AgentCommand { target, command: BotCommand::BuildMixed(blocks) })
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
+    Ok(Json(ExecuteResponse { accepted: true, message: "mixed-material schematic queued for the Minecraft runtime" }))
 }
 
 async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ExecuteRequest>) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
@@ -455,7 +497,7 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
 }
 
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct SchematicDocument {
     blocks: Vec<SchematicBlock>,
     #[serde(default)]
@@ -466,7 +508,7 @@ struct SchematicDocument {
     mirror_z: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct SchematicBlock {
     x: i32,
     y: i32,
