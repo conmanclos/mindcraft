@@ -546,6 +546,7 @@ mod tests {
             minecraft_server: Some("localhost".into()), minecraft_username: "Mindcraft".into(),
             minecraft_accounts: vec!["Mindcraft".into(), "Scout".into(), "Builder".into()],
             minecraft_auth: auth.into(), microsoft_email: None,
+            trusted_chat_players: Vec::new(),
             database: std::path::PathBuf::from(":memory:"),
         }
     }
