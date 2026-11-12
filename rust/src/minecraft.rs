@@ -753,20 +753,29 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
     }
 
     bot.wait_ticks(1).await;
-    let output_ready = container.slots()
-        .and_then(|slots| slots.first().map(|item| !item.is_empty()))
+    let output_matches = container.slots()
+        .and_then(|slots| slots.first().map(|item| {
+            !item.is_empty() && format!("{item:?}").to_ascii_lowercase().contains(result_name)
+        }))
         .unwrap_or(false);
-    if !output_ready {
+    if !output_matches {
         for slot in &placed_slots { container.shift_click(*slot); }
         bot.wait_ticks(2).await;
-        bot.chat("The server did not produce that recipe. I returned the remaining ingredients I placed.");
+        bot.chat("The server did not produce the expected item for that recipe. I returned the ingredients I placed.");
         return;
     }
 
     container.shift_click(0);
     bot.wait_ticks(2).await;
-    tracing::info!(username = %bot.username(), %recipe, "craft result shift-click requested");
-    bot.chat(format!("Crafting result for {result_name} was collected if the server accepted the recipe. Check inventory before marking the task complete."));
+    let output_cleared = container.slots()
+        .and_then(|slots| slots.first().map(|item| item.is_empty()))
+        .unwrap_or(false);
+    if output_cleared {
+        tracing::info!(username = %bot.username(), %recipe, "craft output slot cleared after collection");
+        bot.chat(format!("Collected the {result_name} crafting output. Check inventory before marking the task complete."));
+    } else {
+        bot.chat(format!("The {result_name} output is still in the crafting result slot; inventory may be full or the server rejected the transfer."));
+    }
 }
 
 /// Return the best recognized, ordinary food item in the player's hotbar.
