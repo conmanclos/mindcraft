@@ -692,7 +692,7 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
     }
     drop(menu);
 
-    for grid_slot in grid_slots {
+    for &grid_slot in &grid_slots {
         place_one_in_crafting_grid(bot, &handle, source_slot, grid_slot).await?;
     }
 
@@ -701,6 +701,10 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
     let menu = handle.menu()
         .ok_or_else(|| anyhow::anyhow!("player inventory closed during crafting"))?;
     if menu.slots().first().is_none_or(|item| item.is_empty()) {
+        drop(menu);
+        for grid_slot in grid_slots {
+            click_quick_move(bot, &handle, grid_slot).await?;
+        }
         anyhow::bail!("the 2x2 crafting grid did not produce the requested recipe");
     }
     drop(menu);
