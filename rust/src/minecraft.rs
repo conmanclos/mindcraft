@@ -460,6 +460,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
                             }
+                            match client.hit_result() {
+                                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+                                _ => {
+                                    client.chat("I don't have a clear line of sight to that block.");
+                                    return;
+                                }
+                            }
                             // Azalea 0.16 exposes start_mining/is_mining rather than an
                             // async mine() helper. Start the protocol action, then observe
                             // its lifecycle without blocking the ECS tick handler.
