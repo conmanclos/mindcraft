@@ -538,7 +538,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         });
                     }
                     BotCommand::ContainerTransfer(x, y, z, slot) => {
-                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
@@ -549,6 +551,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let position = BlockPos::new(x, y, z);
                             match client.open_container_at(position).await {
                                 Ok(Some(container)) => {
+                                    if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                        drop(container);
+                                        return;
+                                    }
                                     let valid_slot = container.menu().ok().flatten()
                                         .is_some_and(|menu| (slot as usize) < menu.slots().len());
                                     if valid_slot {
