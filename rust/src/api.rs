@@ -458,6 +458,12 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
 #[derive(Deserialize)]
 struct SchematicDocument {
     blocks: Vec<SchematicBlock>,
+    #[serde(default)]
+    rotation: u16,
+    #[serde(default)]
+    mirror_x: bool,
+    #[serde(default)]
+    mirror_z: bool,
 }
 
 #[derive(Deserialize)]
@@ -488,6 +494,9 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
     if document.blocks.is_empty() || document.blocks.len() > 64 {
         return Err((StatusCode::BAD_REQUEST, "schematic must contain 1-64 blocks".into()));
     }
+    if ![0, 90, 180, 270].contains(&document.rotation) {
+        return Err((StatusCode::BAD_REQUEST, "schematic rotation must be 0, 90, 180, or 270 degrees".into()));
+    }
     let mut seen = HashSet::new();
     let mut blocks = Vec::with_capacity(document.blocks.len());
     for block in document.blocks {
@@ -500,9 +509,18 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
         if [block.x, block.y, block.z].iter().any(|value| value.unsigned_abs() > 32) {
             return Err((StatusCode::BAD_REQUEST, "schematic-relative coordinates must stay within 32 blocks of the origin".into()));
         }
-        let x = ox.checked_add(block.x).ok_or((StatusCode::BAD_REQUEST, "schematic x coordinate overflow".into()))?;
+        let mut relative_x = if document.mirror_x { -block.x } else { block.x };
+        let mut relative_z = if document.mirror_z { -block.z } else { block.z };
+        (relative_x, relative_z) = match document.rotation {
+            0 => (relative_x, relative_z),
+            90 => (-relative_z, relative_x),
+            180 => (-relative_x, -relative_z),
+            270 => (relative_z, -relative_x),
+            _ => unreachable!("rotation was validated above"),
+        };
+        let x = ox.checked_add(relative_x).ok_or((StatusCode::BAD_REQUEST, "schematic x coordinate overflow".into()))?;
         let y = oy.checked_add(block.y).ok_or((StatusCode::BAD_REQUEST, "schematic y coordinate overflow".into()))?;
-        let z = oz.checked_add(block.z).ok_or((StatusCode::BAD_REQUEST, "schematic z coordinate overflow".into()))?;
+        let z = oz.checked_add(relative_z).ok_or((StatusCode::BAD_REQUEST, "schematic z coordinate overflow".into()))?;
         if !(-64..=320).contains(&y) || [x, y, z].iter().any(|value| value.unsigned_abs() > 30_000_000) {
             return Err((StatusCode::BAD_REQUEST, "schematic block is outside supported Minecraft world bounds".into()));
         }
