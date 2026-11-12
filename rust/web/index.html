@@ -140,7 +140,7 @@ setInterval(async()=>{
   if(!token||!currentTask||!currentTaskAgent)return;
   try{
     await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgent});
-    $("taskResult").textContent="Task #"+currentTask.id+" lease renewed.\\n"+JSON.stringify(currentTask,null,2);
+    $("taskResult").textContent="Task #"+currentTask.id+" lease renewed.\n"+JSON.stringify(currentTask,null,2);
   }catch(e){
     $("taskResult").textContent="Task #"+currentTask.id+" lease lost: "+e.message;
     currentTask=null;
