@@ -125,8 +125,22 @@ impl Brain {
         if ["attack", "use_item"].contains(&action_name.as_str()) && !explicit_approval {
             bail!("attack and generic item use always require explicit user approval, including in autonomous mode");
         }
-        if self.config.mode != "autonomous" && action.risk.eq_ignore_ascii_case("high") && !explicit_approval {
-            bail!("high-risk action requires explicit approval in {} mode", self.config.mode);
+        // Never let an LLM-provided risk label downgrade a dangerous executor.
+        // The runtime assigns a minimum risk from the action itself, then takes the
+        // more conservative of that floor and the planner's label.
+        let action_floor = match action_name.as_str() {
+            "attack" | "use_item" | "mine" | "place" => "high",
+            "equip" => "medium",
+            _ => "low",
+        };
+        let declared = match action.risk.to_ascii_lowercase().as_str() {
+            "high" => "high",
+            "medium" => "medium",
+            _ => "low",
+        };
+        let effective_high = action_floor == "high" || declared == "high";
+        if self.config.mode != "autonomous" && effective_high && !explicit_approval {
+            bail!("high-risk action '{}' requires explicit approval in {} mode", action.action, self.config.mode);
         }
         Ok(())
     }
@@ -195,6 +209,32 @@ mod tests {
         assert!(brain("autonomous").authorize_action(&action, false).is_ok());
     }
 
+
+    #[test]
+    fn model_cannot_downgrade_mining_or_placement_risk() {
+        for name in ["mine", "place"] {
+            let action = PlannedAction {
+                action: name.into(),
+                target: Some("1,64,1".into()),
+                reason: String::new(),
+                risk: "low".into(),
+            };
+            assert!(brain("balanced").authorize_action(&action, false).is_err(), "{name} must remain approval-gated in balanced mode");
+            assert!(brain("balanced").authorize_action(&action, true).is_ok());
+            assert!(brain("autonomous").authorize_action(&action, false).is_ok());
+        }
+    }
+
+    #[test]
+    fn equipment_switches_are_medium_risk_in_balanced_mode() {
+        let action = PlannedAction {
+            action: "equip".into(),
+            target: Some("1".into()),
+            reason: String::new(),
+            risk: "low".into(),
+        };
+        assert!(brain("balanced").authorize_action(&action, false).is_ok());
+    }
 
     #[test]
     fn attack_requires_explicit_approval_even_in_autonomous_mode() {
