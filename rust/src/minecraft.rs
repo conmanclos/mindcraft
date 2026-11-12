@@ -1645,7 +1645,11 @@ async fn execute_build(
             };
             inventory.left_click(source_slot);
             bot.wait_updates(1).await;
-            if cancelled() { return; }
+            if cancelled() {
+                inventory.left_click(source_slot);
+                bot.wait_updates(1).await;
+                return;
+            }
             inventory.left_click(destination_slot);
             bot.wait_updates(2).await;
             let verified = bot.menu().ok().is_some_and(|menu| {
@@ -1654,7 +1658,14 @@ async fn execute_build(
                 })
             });
             if !verified {
-                bot.chat("The server did not confirm moving the requested material into the hotbar.");
+                let source_is_empty = bot.menu().ok()
+                    .and_then(|menu| menu.slot(source_slot).map(|item| item.is_empty()))
+                    .unwrap_or(false);
+                if source_is_empty {
+                    inventory.left_click(source_slot);
+                    bot.wait_updates(1).await;
+                }
+                bot.chat("The server did not confirm moving the requested material into the hotbar; I attempted to return any cursor-held stack.");
                 return;
             }
             material_slot = Some(destination_slot);
