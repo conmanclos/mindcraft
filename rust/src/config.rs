@@ -64,8 +64,11 @@ impl Config {
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
         let default_base_url = if provider == "ollama" { "http://127.0.0.1:11434/v1" } else { "https://api.openai.com/v1" };
         let base_url = env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| default_base_url.into());
-        if provider == "openai" && api_key.is_empty() {
-            bail!("MINDCRAFT_API_KEY is required when MINDCRAFT_PROVIDER=openai");
+        if ["openai", "anthropic", "google"].contains(&provider.as_str()) && api_key.is_empty() {
+            bail!("MINDCRAFT_API_KEY is required for the selected hosted AI provider");
+        }
+        if base_url.trim().is_empty() || !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+            bail!("MINDCRAFT_BASE_URL must be a valid http:// or https:// base URL");
         }
 
         let mut api_token = env::var("MINDCRAFT_API_TOKEN").unwrap_or_default();
