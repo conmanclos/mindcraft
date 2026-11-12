@@ -1611,32 +1611,36 @@ async fn execute_build(
         bot.chat("A build plan must contain between 1 and 32 block positions.");
         return;
     }
+    let Ok(initial_menu) = bot.menu() else {
+        bot.chat("I can't inspect the player inventory before starting this build.");
+        return;
+    };
+    if initial_menu.try_as_player().is_none() {
+        bot.chat("Close the open container before starting a build.");
+        return;
+    }
     if let Some(material) = material {
-        let Ok(menu) = bot.menu() else {
-            bot.chat("I can't inspect the inventory to select the requested build material.");
-            return;
-        };
-        if menu.try_as_player().is_none() {
-            bot.chat("Close the open container before starting a material-specific build.");
-            return;
-        }
-        let hotbar_start = *menu.hotbar_slots_range().start();
-        let mut material_slot = menu.hotbar_slots_range().find(|slot| {
-            menu.slot(*slot).is_some_and(|item| {
-                !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
+        let hotbar_start = *initial_menu.hotbar_slots_range().start();
+        let mut material_slot = initial_menu.hotbar_slots_range().find(|slot| {
+            initial_menu.slot(*slot).is_some_and(|item| {
+                !item.is_empty()
+                    && item.count() as usize >= positions.len()
+                    && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
             })
         });
         if material_slot.is_none() {
-            let source_slot = menu.player_slots_without_hotbar_range().find(|slot| {
-                menu.slot(*slot).is_some_and(|item| {
-                    !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
+            let source_slot = initial_menu.player_slots_without_hotbar_range().find(|slot| {
+                initial_menu.slot(*slot).is_some_and(|item| {
+                    !item.is_empty()
+                        && item.count() as usize >= positions.len()
+                        && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
                 })
             });
-            let empty_hotbar_slot = menu.hotbar_slots_range().find(|slot| {
-                menu.slot(*slot).is_some_and(|item| item.is_empty())
+            let empty_hotbar_slot = initial_menu.hotbar_slots_range().find(|slot| {
+                initial_menu.slot(*slot).is_some_and(|item| item.is_empty())
             });
             let (Some(source_slot), Some(destination_slot)) = (source_slot, empty_hotbar_slot) else {
-                bot.chat(format!("I couldn't find {material} in the inventory with an empty hotbar slot available. I won't overwrite another item."));
+                bot.chat(format!("I need a stack of at least {} {material} blocks and an empty hotbar slot; I won't overwrite items or start a partial build.", positions.len()));
                 return;
             };
             let Ok(inventory) = bot.get_inventory() else {
@@ -1654,7 +1658,9 @@ async fn execute_build(
             bot.wait_updates(2).await;
             let verified = bot.menu().ok().is_some_and(|menu| {
                 menu.slot(destination_slot).is_some_and(|item| {
-                    !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
+                    !item.is_empty()
+                        && item.count() as usize >= positions.len()
+                        && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
                 })
             });
             if !verified {
@@ -1665,7 +1671,7 @@ async fn execute_build(
                     inventory.left_click(source_slot);
                     bot.wait_updates(1).await;
                 }
-                bot.chat("The server did not confirm moving the requested material into the hotbar; I attempted to return any cursor-held stack.");
+                bot.chat("The server did not confirm moving the complete build material stack into the hotbar; I attempted to return any cursor-held stack.");
                 return;
             }
             material_slot = Some(destination_slot);
@@ -1676,6 +1682,19 @@ async fn execute_build(
         bot.wait_updates(1).await;
         if bot.selected_hotbar_slot().ok() != Some(hotbar_index) {
             bot.chat("The server did not confirm the requested build material selection.");
+            return;
+        }
+    } else {
+        let Some(selected_slot) = bot.selected_hotbar_slot().ok() else {
+            bot.chat("I couldn't determine the selected hotbar slot for this build.");
+            return;
+        };
+        let Some(item) = initial_menu.slot(*initial_menu.hotbar_slots_range().start() + selected_slot as usize) else {
+            bot.chat("The selected hotbar slot is unavailable.");
+            return;
+        };
+        if item.is_empty() || item.count() as usize < positions.len() {
+            bot.chat(format!("The selected hotbar stack needs at least {} placeable blocks; I won't start a partial build.", positions.len()));
             return;
         }
     }
