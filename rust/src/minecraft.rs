@@ -435,10 +435,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.look_at(BlockPos::new(x, y, z).center());
                     }
                     BotCommand::Goto(x, y, z) => {
-                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
                         let destination = BlockPos::new(x, y, z);
                         let Ok(world) = bot.world() else {
                             bot.chat("I can't read the loaded world to validate that destination.");
@@ -456,7 +460,24 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             bot.chat("That destination is more than 256 blocks away; use closer waypoints so pathfinding stays bounded.");
                             continue;
                         }
-                        bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            if !goto_cancellable(&client, BlockPosGoal(destination), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the requested destination timed out or failed.");
+                                }
+                                return;
+                            }
+                            let Ok(current) = client.position() else { return; };
+                            let dx = current.x - (x as f64 + 0.5);
+                            let dy = current.y - (y as f64 + 0.5);
+                            let dz = current.z - (z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz <= 9.0 {
+                                client.chat("Reached the requested destination.");
+                            } else {
+                                client.chat("Pathfinding stopped before the requested destination; the route may be blocked.");
+                            }
+                        });
                     }
                     BotCommand::Mine(x, y, z) => {
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
