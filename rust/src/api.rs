@@ -181,7 +181,12 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     if request.message.trim().is_empty() || request.message.len() > 4_000 {
         return Err((StatusCode::BAD_REQUEST, "planning request must contain 1-4000 bytes".into()));
     }
-    let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&request.message))
+    let world_context = state.status.world.lock().await.clone().map(|world| format!(
+        "\\nCurrent Minecraft state: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
+        world.position, world.health, world.food, world.saturation, world.inventory
+    )).unwrap_or_default();
+    let planning_request = format!("Player request: {}{world_context}", request.message);
+    let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&planning_request))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
