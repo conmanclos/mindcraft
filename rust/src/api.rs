@@ -354,12 +354,9 @@ async fn ensure_agent_connected(state: &ApiState, target: Option<&str>) -> Resul
 
 fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Option<String>, (StatusCode, String)> {
     let Some(target) = target.filter(|value| !value.trim().is_empty()) else { return Ok(None); };
-    if config.minecraft_auth != "offline" {
-        return Err((StatusCode::BAD_REQUEST, "named agent routing is available only for configured offline-mode team members; Microsoft mode routes to the primary client".into()));
-    }
     config.minecraft_accounts.iter().find(|name| name.eq_ignore_ascii_case(&target))
         .cloned().map(Some)
-        .ok_or((StatusCode::BAD_REQUEST, "agent must match one of the configured offline bot usernames".into()))
+        .ok_or((StatusCode::BAD_REQUEST, "agent must match one of the configured Minecraft bot usernames".into()))
 }
 
 fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, String)> {
