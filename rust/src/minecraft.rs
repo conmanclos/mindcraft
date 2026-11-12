@@ -12,7 +12,6 @@ pub enum BotCommand {
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
     Equip(u8),
-    UseItem,
 }
 
 #[derive(Clone, Component, Default)]
@@ -100,7 +99,6 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.start_mining(BlockPos::new(x, y, z));
                     }
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
-                    BotCommand::UseItem => bot.start_use_item(),
                 }
             }
         }
