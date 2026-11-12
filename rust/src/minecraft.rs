@@ -301,7 +301,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::Follow(_) | BotCommand::Goto(_, _, _) | BotCommand::Mine(_, _, _)
                         | BotCommand::Place(_, _, _) | BotCommand::AttackCrosshair | BotCommand::Jump
                 ) {
-                    bot.chat("Survival reflex: movement or combat action blocked while health is critical.");
+                    tracing::debug!(username = %bot.username(), "blocked gameplay action while health is critical");
                     continue;
                 }
                 match command {
