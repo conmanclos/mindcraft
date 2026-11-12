@@ -49,7 +49,7 @@ struct PendingBlockAction {
 }
 
 #[derive(Debug)]
-pub enum BotCommand {
+pub pub(crate) enum BotCommand {
     Say(String),
     Stop,
     AttackPlayer(String),
@@ -657,18 +657,57 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                 if allowed {
                     if let Some(brain) = state.brain.clone() {
                         let reply_bot = bot.clone();
+                        let status = state.status.clone();
+                        let mode = state.mode.clone();
+                        let action_request = content.clone();
                         let prompt = format!(
                             "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action. Message: {content}"
                         );
                         tokio::spawn(async move {
+                            if mode == "autonomous" {
+                                match brain.plan(&action_request).await {
+                                    Ok(action) => {
+                                        if let Err(error) = brain.authorize_action(&action, false) {
+                                            if reply_bot.logged_in() {
+                                                reply_bot.chat("I need explicit approval before performing that action.");
+                                            }
+                                            tracing::info!(%error, action = %action.action, "autonomous chat action denied by policy");
+                                            return;
+                                        }
+                                        match crate::api::command_from_action(action.clone()) {
+                                            Ok(command) => {
+                                                if let Some(status) = status {
+                                                    if status.minecraft_connected.load(Ordering::Relaxed) {
+                                                        let sender = status.command_tx.lock().await.clone();
+                                                        if let Some(sender) = sender {
+                                                            if sender.send(command).await.is_ok() {
+                                                                if action.action != "say" && reply_bot.logged_in() {
+                                                                    reply_bot.chat(&format!("On it: {}", action.reason));
+                                                                }
+                                                                return;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err((_, error)) => {
+                                                tracing::info!(%error, action = %action.action, "autonomous chat action was not executable");
+                                            }
+                                        }
+                                    }
+                                    Err(error) => {
+                                        tracing::debug!(%error, "autonomous chat action planning failed; falling back to a conversational reply");
+                                    }
+                                }
+                            }
+
                             match brain.reply(&prompt).await {
                                 Ok(reply) => {
                                     let safe_reply: String = reply.chars().take(240).collect();
                                     if reply_bot.logged_in()
                                         && !safe_reply.trim().is_empty()
                                         && !safe_reply.trim_start().starts_with('/')
-                                        && !safe_reply.chars().any(|c| c.is_control())
-                                    {
+                                        && !safe_reply.chars().any(|c| c.is_control()) {
                                         reply_bot.chat(&safe_reply);
                                     }
                                 }
