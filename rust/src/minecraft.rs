@@ -322,7 +322,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if state.is_primary && !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
                     let mut last = cooldown.lock().await;
-                    if last.elapsed() >= Duration::from_secs(4) {
+                    if last.elapsed() >= Duration::from_secs(12) {
                         *last = Instant::now();
                         true
                     } else { false }
