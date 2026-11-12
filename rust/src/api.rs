@@ -464,7 +464,8 @@ mod tests {
         assert!(valid_agent_id("Scout"));
         assert!(valid_agent_id("builder-02"));
         assert!(valid_agent_id("worker.team_1"));
-        for invalid in ["", " ", " worker", "worker ", "worker\\n", "a/b", "a".repeat(65).as_str()] {
+        let too_long = "a".repeat(65);
+        for invalid in ["", " ", " worker", "worker ", "worker\\n", "a/b", too_long.as_str()] {
             assert!(!valid_agent_id(invalid), "accepted {invalid:?}");
         }
     }
