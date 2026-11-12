@@ -560,7 +560,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
 /// mutation is treated as a successful craft.
 fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
     match recipe {
+        "planks" => Some((false, "planks", &[(1, "log")])),
         "sticks" => Some((false, "stick", &[(1, "planks"), (3, "planks")])),
+        "torch" => Some((false, "torch", &[(1, "coal"), (3, "stick")])),
         "crafting_table" => Some((false, "crafting_table", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks")])),
         "wooden_pickaxe" => Some((true, "wooden_pickaxe", &[(1, "planks"), (2, "planks"), (3, "planks"), (5, "stick"), (8, "stick")])),
         "wooden_axe" => Some((true, "wooden_axe", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "stick"), (8, "stick")])),
@@ -572,6 +574,8 @@ fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'
         "stone_shovel" => Some((true, "stone_shovel", &[(2, "cobblestone"), (5, "stick"), (8, "stick")])),
         "furnace" => Some((true, "furnace", &[(1, "cobblestone"), (2, "cobblestone"), (3, "cobblestone"), (4, "cobblestone"), (6, "cobblestone"), (7, "cobblestone"), (8, "cobblestone"), (9, "cobblestone")])),
         "chest" => Some((true, "chest", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
+        "bread" => Some((true, "bread", &[(1, "wheat"), (2, "wheat"), (3, "wheat")])),
+        "ladder" => Some((true, "ladder", &[(1, "stick"), (3, "stick"), (4, "stick"), (5, "stick"), (6, "stick"), (7, "stick"), (9, "stick")])),
         _ => None,
     }
 }
