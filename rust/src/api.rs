@@ -275,7 +275,7 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             let y = parts[1].parse::<i32>().map_err(|_| (StatusCode::BAD_REQUEST, "invalid y coordinate".into()))?;
             let z = parts[2].parse::<i32>().map_err(|_| (StatusCode::BAD_REQUEST, "invalid z coordinate".into()))?;
             let item = parts[3].to_lowercase();
-            if y < -64 || y > 320 || [x, y, z].iter().any(|value| value.unsigned_abs() > 30_000_000)
+            if y < -64 || y > 319 || [x, y, z].iter().any(|value| value.unsigned_abs() > 29_999_984)
                 || item.is_empty() || item.len() > 64
                 || !item.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':') {
                 return Err((StatusCode::BAD_REQUEST, "withdraw target must contain valid world coordinates and an item id".into()));
@@ -286,7 +286,7 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z".into()))?;
-            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320 || parsed.iter().any(|v| v.unsigned_abs() > 30_000_000) {
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 319 || parsed.iter().any(|v| v.unsigned_abs() > 29_999_984) {
                 return Err((StatusCode::BAD_REQUEST, "coordinates outside supported world bounds".into()));
             }
             let (x, y, z) = (parsed[0], parsed[1], parsed[2]);
