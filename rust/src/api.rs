@@ -65,6 +65,7 @@ struct ChatResponse { reply: String }
 struct PlanResponse {
     proposed_action: PlannedAction,
     execution: &'static str,
+    auto_queued: bool,
 }
 
 #[derive(Serialize)]
@@ -170,50 +171,71 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let proposed_action = tokio::time::timeout(Duration::from_secs(50), state.brain.plan(&request.message))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "planner timed out".into()))?
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
-    Ok(Json(PlanResponse { proposed_action, execution: "proposal only; explicitly approve it to execute" }))
+
+    if state.config.mode == "autonomous" && state.brain.authorize_action(&proposed_action, false).is_ok() {
+        if let Ok(command) = command_from_action(proposed_action.clone()) {
+            if let Some(sender) = state.status.command_tx.lock().await.clone() {
+                sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
+                return Ok(Json(PlanResponse {
+                    proposed_action,
+                    execution: "AUTONOMOUS: command queued without manual approval",
+                    auto_queued: true,
+                }));
+            }
+        }
+    }
+
+    let execution = if state.config.mode == "autonomous" {
+        "Minecraft client unavailable or action has no executor; review or retry after connection"
+    } else {
+        "proposal only; explicitly approve it to execute"
+    };
+    Ok(Json(PlanResponse { proposed_action, execution, auto_queued: false }))
 }
 
 async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ExecuteRequest>) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
     state.brain.authorize_action(&request.action, true)
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
+    let command = command_from_action(request.action)?;
+    let sender = state.status.command_tx.lock().await.clone()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
+    sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
+    Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
+}
 
-    let command = match request.action.action.to_lowercase().as_str() {
+fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
+    match action.action.to_lowercase().as_str() {
         "say" => {
-            let text = request.action.target.unwrap_or(request.action.reason);
+            let text = action.target.unwrap_or(action.reason);
             if text.trim().is_empty() || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
                 return Err((StatusCode::BAD_REQUEST, "say accepts plain chat text only; slash commands and control characters are blocked".into()));
             }
-            BotCommand::Say(text)
-        },
-        "stop" => BotCommand::Stop,
+            Ok(BotCommand::Say(text))
+        }
+        "stop" => Ok(BotCommand::Stop),
         "equip" => {
-            let slot = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?
+            let slot = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?
                 .parse::<u8>().map_err(|_| (StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?;
             if slot > 8 { return Err((StatusCode::BAD_REQUEST, "hotbar slot must be between 0 and 8".into())); }
-            BotCommand::Equip(slot)
-        },
+            Ok(BotCommand::Equip(slot))
+        }
         "look" | "goto" | "mine" => {
-            let coordinates = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
+            let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z".into()))?;
             if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320 || parsed.iter().any(|v| v.unsigned_abs() > 30_000_000) {
                 return Err((StatusCode::BAD_REQUEST, "coordinates outside supported world bounds".into()));
             }
-            let pos = (parsed[0], parsed[1], parsed[2]);
-            match request.action.action.to_lowercase().as_str() {
-                "look" => BotCommand::Look(pos.0, pos.1, pos.2),
-                "goto" => BotCommand::Goto(pos.0, pos.1, pos.2),
-                _ => BotCommand::Mine(pos.0, pos.1, pos.2),
+            let (x, y, z) = (parsed[0], parsed[1], parsed[2]);
+            match action.action.to_lowercase().as_str() {
+                "look" => Ok(BotCommand::Look(x, y, z)),
+                "goto" => Ok(BotCommand::Goto(x, y, z)),
+                _ => Ok(BotCommand::Mine(x, y, z)),
             }
         }
-        other => return Err((StatusCode::NOT_IMPLEMENTED, format!("executor for '{other}' is not available yet"))),
-    };
-
-    let sender = state.status.command_tx.lock().await.clone()
-        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
-    sender.send(command).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command queue is closed".into()))?;
-    Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
+        other => Err((StatusCode::NOT_IMPLEMENTED, format!("executor for '{other}' is not available yet"))),
+    }
 }
 
 async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<GoalRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
