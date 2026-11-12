@@ -15,7 +15,7 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 
 ## Build
 
-Install Rust (stable toolchain) and a C toolchain required by bundled SQLite, then:
+Install Rust nightly (required by the Azalea crate's toolchain) and a C toolchain required by bundled SQLite. The checked-in `rust-toolchain.toml` selects nightly automatically, then:
 
 ```sh
 cd rust
@@ -23,7 +23,7 @@ cp .env.example .env
 cargo build --release
 ```
 
-If your environment requires nightly for the pinned Azalea release, install the toolchain requested by Cargo's error output; do not update Azalea to a different Minecraft protocol version as a workaround.
+Do not update Azalea to a different Minecraft protocol version as a workaround.
 
 ## Configure
 
