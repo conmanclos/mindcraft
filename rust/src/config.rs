@@ -74,14 +74,18 @@ impl Config {
         }
         let parsed_base_url = reqwest::Url::parse(&base_url)
             .context("MINDCRAFT_BASE_URL must be a valid http:// or https:// base URL")?;
+        let host = parsed_base_url.host_str().unwrap_or_default();
+        let loopback_host = host.eq_ignore_ascii_case("localhost")
+            || host.parse::<std::net::IpAddr>().is_ok_and(|address| address.is_loopback());
         if !["http", "https"].contains(&parsed_base_url.scheme())
-            || parsed_base_url.host_str().is_none()
+            || host.is_empty()
+            || (parsed_base_url.scheme() == "http" && !loopback_host)
             || !parsed_base_url.username().is_empty()
             || parsed_base_url.password().is_some()
             || parsed_base_url.query().is_some()
             || parsed_base_url.fragment().is_some()
         {
-            bail!("MINDCRAFT_BASE_URL must use http:// or https://, include a host, and contain no credentials, query, or fragment");
+            bail!("MINDCRAFT_BASE_URL must use HTTPS for remote hosts (HTTP is allowed only for localhost/loopback), include a host, and contain no credentials, query, or fragment");
         }
 
         let mut api_token = env::var("MINDCRAFT_API_TOKEN").unwrap_or_default();
