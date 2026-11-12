@@ -1733,7 +1733,7 @@ async fn execute_smelt(
         let fuel_source = container.slots().and_then(|slots| {
             menu.player_slots_range().find(|slot| {
                 slots.get(*slot).is_some_and(|item| {
-                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), "coal")
+                    !item.is_empty() && smelt_fuel_matches(&format!("{:?}", item.kind()))
                 })
             })
         });
@@ -1752,7 +1752,7 @@ async fn execute_smelt(
             if cancelled() { drop(container); return; }
             fuel_placed = container.slots()
                 .and_then(|slots| slots.get(1).map(|item| {
-                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), "coal")
+                    !item.is_empty() && smelt_fuel_matches(&format!("{:?}", item.kind()))
                 }))
                 .unwrap_or(false);
             if fuel_placed { break; }
@@ -1814,6 +1814,11 @@ async fn execute_smelt(
     }
 }
 
+fn smelt_fuel_matches(debug_name: &str) -> bool {
+    ["coal", "charcoal", "blaze_rod", "lava_bucket"]
+        .iter().any(|fuel| item_name_matches(debug_name, fuel))
+}
+
 fn smelt_input_matches(debug_name: &str, selector: &str) -> bool {
     let compact = |value: &str| -> String {
         value.chars()
@@ -1850,7 +1855,17 @@ mod smelt_recipe_tests {
 
 #[cfg(test)]
 mod smelt_input_tests {
-    use super::smelt_input_matches;
+    use super::{smelt_fuel_matches, smelt_input_matches};
+
+    #[test]
+    fn smelting_fuel_allowlist_includes_only_sufficient_safe_fuels() {
+        assert!(smelt_fuel_matches("Coal"));
+        assert!(smelt_fuel_matches("Charcoal"));
+        assert!(smelt_fuel_matches("BlazeRod"));
+        assert!(smelt_fuel_matches("LavaBucket"));
+        assert!(!smelt_fuel_matches("Stick"));
+        assert!(!smelt_fuel_matches("UnknownItem"));
+    }
 
     #[test]
     fn smelt_inputs_do_not_confuse_raw_and_cooked_food_or_nether_stems() {
