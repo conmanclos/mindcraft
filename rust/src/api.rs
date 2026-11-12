@@ -516,7 +516,9 @@ mod tests {
     fn crafting_recipes_and_table_coordinates_are_validated() {
         assert!(matches!(command_from_action(action("craft", Some("sticks"))), Ok(BotCommand::Craft(name, None)) if name == "sticks"));
         assert!(matches!(command_from_action(action("craft", Some("wooden_pickaxe@10,64,-4"))), Ok(BotCommand::Craft(name, Some((10,64,-4)))) if name == "wooden_pickaxe"));
-        for target in ["wooden_pickaxe", "unknown_recipe", "furnace@1,321,2", "chest@1,64,2@3,64,4"] {
+        assert!(matches!(command_from_action(action("craft", Some("diamond_pickaxe@10,64,-4"))), Ok(BotCommand::Craft(name, Some((10,64,-4)))) if name == "diamond_pickaxe"));
+        assert!(matches!(command_from_action(action("craft", Some("door@10,64,-4"))), Ok(BotCommand::Craft(name, Some((10,64,-4)))) if name == "door"));
+        for target in ["wooden_pickaxe", "diamond_pickaxe", "unknown_recipe", "furnace@1,321,2", "chest@1,64,2@3,64,4"] {
             assert!(command_from_action(action("craft", Some(target))).is_err());
         }
     }
