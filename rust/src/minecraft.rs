@@ -54,6 +54,7 @@ pub enum BotCommand {
     UseItem,
     Craft(String),
     Deposit(i32, i32, i32),
+    Withdraw(i32, i32, i32, String),
 }
 
 #[derive(Clone, Component, Default)]
@@ -620,7 +621,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
 
 
 
-async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize> {
+async fn open_target_container(bot: &mut Client, position: BlockPos) -> Result<ContainerHandle> {
     let mut ticks = bot.get_tick_broadcaster();
     bot.look_at(position.center());
     wait_ticks(&mut ticks, 4).await?;
@@ -631,15 +632,19 @@ async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize
         anyhow::bail!("the requested container is not under the crosshair");
     }
 
-    let handle = match tokio::time::timeout(Duration::from_secs(8), bot.open_container_at(position)).await {
-        Ok(Some(handle)) => handle,
+    match tokio::time::timeout(Duration::from_secs(8), bot.open_container_at(position)).await {
+        Ok(Some(handle)) => Ok(handle),
         Ok(None) => anyhow::bail!("no openable container exists at the requested position"),
         Err(_) => {
             bot.ecs.lock().entity_mut(bot.entity)
                 .remove::<azalea::container::WaitingForInventoryOpen>();
             anyhow::bail!("container did not open before the timeout");
         }
-    };
+    }
+}
+
+async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize> {
+    let handle = open_target_container(bot, position).await?;
     let mut moved_stacks = 0usize;
 
     for _ in 0..36 {
@@ -670,6 +675,69 @@ async fn deposit_inventory(bot: &mut Client, position: BlockPos) -> Result<usize
     }
 
     Ok(moved_stacks)
+}
+
+fn normalize_item_name(debug_name: &str) -> String {
+    let mut normalized = String::with_capacity(debug_name.len() + 8);
+    for (index, character) in debug_name.chars().enumerate() {
+        if character.is_ascii_uppercase() && index > 0 {
+            normalized.push('_');
+        }
+        normalized.push(character.to_ascii_lowercase());
+    }
+    normalized
+}
+
+fn count_container_item(slots: &[azalea_inventory::ItemSlot], item_name: &str) -> u32 {
+    slots.iter()
+        .filter_map(|slot| slot.as_present())
+        .filter(|item| normalize_item_name(&format!("{:?}", item.kind)) == item_name)
+        .map(|item| item.count.max(0) as u32)
+        .sum()
+}
+
+async fn withdraw_from_container(
+    bot: &mut Client,
+    position: BlockPos,
+    item_name: &str,
+) -> Result<u32> {
+    let item_name = item_name.strip_prefix("minecraft:").unwrap_or(item_name);
+    let handle = open_target_container(bot, position).await?;
+    let mut moved_items = 0u32;
+
+    for _ in 0..54 {
+        let contents = handle.contents()
+            .ok_or_else(|| anyhow::anyhow!("container closed during withdrawal"))?;
+        let before_total = count_container_item(&contents, item_name);
+        if before_total == 0 {
+            break;
+        }
+        let source_slot = contents.iter().position(|slot| {
+            slot.as_present().is_some_and(|item| {
+                normalize_item_name(&format!("{:?}", item.kind)) == item_name
+            })
+        });
+        let Some(source_slot) = source_slot else {
+            break;
+        };
+
+        let mut ticks = bot.get_tick_broadcaster();
+        handle.click(QuickMoveClick::Left { slot: source_slot as u16 });
+        wait_ticks(&mut ticks, 4).await?;
+
+        let updated = handle.contents()
+            .ok_or_else(|| anyhow::anyhow!("container closed during withdrawal"))?;
+        let after_total = count_container_item(&updated, item_name);
+        if after_total >= before_total {
+            break;
+        }
+        moved_items = moved_items.saturating_add(before_total - after_total);
+    }
+
+    if moved_items == 0 {
+        anyhow::bail!("no matching items could be moved; check the item name and available inventory space");
+    }
+    Ok(moved_items)
 }
 
 async fn wait_ticks(
