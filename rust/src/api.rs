@@ -15,6 +15,7 @@ use std::time::Duration;
 
 #[derive(Clone, Serialize)]
 pub struct WorldSnapshot {
+    pub agent: String,
     pub position: [f64; 3],
     pub health: f32,
 }
