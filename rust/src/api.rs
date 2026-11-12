@@ -202,6 +202,7 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         if let Ok(command) = command_from_action(proposed_action.clone()) {
             if let Some(sender) = state.status.command_tx.lock().await.clone() {
                 let target = resolve_agent_target(&state.config, request.agent.clone())?;
+                ensure_agent_connected(&state, target.as_deref()).await?;
                 sender.send(AgentCommand { target, command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
                 return Ok(Json(PlanResponse {
                     proposed_action,
@@ -226,10 +227,22 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
         .map_err(|e| (StatusCode::FORBIDDEN, e.to_string()))?;
     let command = command_from_action(request.action)?;
     let target = resolve_agent_target(&state.config, request.agent)?;
+    ensure_agent_connected(&state, target.as_deref()).await?;
     let sender = state.status.command_tx.lock().await.clone()
         .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
     sender.send(AgentCommand { target, command }).map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
     Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
+}
+
+async fn ensure_agent_connected(state: &ApiState, target: Option<&str>) -> Result<(), (StatusCode, String)> {
+    let connected = if let Some(username) = target {
+        state.status.agents.lock().await.contains_key(username)
+    } else {
+        state.status.world.lock().await.is_some()
+    };
+    if connected { Ok(()) } else {
+        Err((StatusCode::SERVICE_UNAVAILABLE, "selected Minecraft bot is not currently connected".into()))
+    }
 }
 
 fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Option<String>, (StatusCode, String)> {
