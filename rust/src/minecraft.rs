@@ -173,7 +173,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::Tick => {
             let mut critical_health = false;
-            if bot.logged_in() {
+            if bot.exists() {
                 let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) else { return Ok(()); };
                 critical_health = health.is_finite() && health <= 6.0;
                 if let Some(status) = &state.status {
@@ -418,7 +418,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
                             }
-                            if !client.logged_in() || !client.is_goto_target_reached() {
+                            if !client.exists() || !client.is_goto_target_reached() {
                                 client.chat("I couldn't reach that block safely.");
                                 return;
                             }
@@ -446,7 +446,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     client.chat("Mining was cancelled by a newer command.");
                                     return;
                                 }
-                                if !client.logged_in() { return; }
+                                if !client.exists() { return; }
                                 if !client.is_mining() {
                                     client.chat(format!("Mining attempt at {}, {}, {} finished. Check the drops and inventory.", position.x, position.y, position.z));
                                     return;
@@ -479,7 +479,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let chunk_storage = world.read().chunks.clone();
                             client.goto_with_opts(ReachBlockPosGoal::new(support, chunk_storage), PathfinderOpts::new().allow_mining(false)).await;
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
-                            if !client.logged_in() || !client.is_goto_target_reached() {
+                            if !client.exists() || !client.is_goto_target_reached() {
                                 client.chat("I couldn't reach the support block safely.");
                                 return;
                             }
@@ -613,7 +613,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                                 if let Some(sender) = sender {
                                                     match sender.send(AgentCommand { target: None, command }) {
                                                         Ok(_) => {
-                                                            if bot.logged_in() && !action.action.eq_ignore_ascii_case("say") {
+                                                            if bot.exists() && !action.action.eq_ignore_ascii_case("say") {
                                                                 bot.chat("On it.");
                                                             }
                                                             return;
@@ -633,7 +633,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             match brain.reply(&prompt).await {
                                 Ok(reply) => {
                                     let safe_reply: String = reply.chars().take(240).collect();
-                                    if bot.logged_in()
+                                    if bot.exists()
                                         && !safe_reply.trim().is_empty()
                                         && !safe_reply.trim_start().starts_with('/')
                                         && !safe_reply.chars().any(|c| c.is_control()) {
@@ -642,7 +642,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 }
                                 Err(error) => {
                                     tracing::error!(%error, "AI chat response failed");
-                                    if bot.logged_in() {
+                                    if bot.exists() {
                                         bot.chat("I couldn't reach my AI provider just now.");
                                     }
                                 }
