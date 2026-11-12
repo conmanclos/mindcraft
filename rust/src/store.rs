@@ -347,6 +347,26 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Cancel a goal and atomically revoke every queued or leased task.
+    pub fn cancel_goal(&self, goal_id: i64) -> Result<bool> {
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE goals SET status='cancelled' WHERE id=?1 AND status='active'",
+            [goal_id],
+        )?;
+        if changed == 1 {
+            tx.execute(
+                "UPDATE agent_tasks SET status='cancelled', assigned_agent=NULL, lease_until=NULL,
+                 updated_at=CURRENT_TIMESTAMP
+                 WHERE goal_id=?1 AND status IN ('pending','claimed','review')",
+                [goal_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(changed == 1)
+    }
+
     pub fn list_tasks(&self, goal_id: i64) -> Result<Vec<AgentTask>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
