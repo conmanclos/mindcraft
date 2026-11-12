@@ -453,7 +453,7 @@ async fn dispatch_parallel_smelt_jobs(
     if connected.len() < jobs.len() {
         return Err((
             StatusCode::CONFLICT,
-            format!("smelt_parallel needs {} connected bots for {} distinct furnace jobs; only {} are connected", jobs.len(), jobs.len(), connected.len()),
+            format!("smelt_parallel needs {} connected bots for {} distinct furnace jobs; only {} are connected; connect more bots or use smelt_queue for sequential work", jobs.len(), jobs.len(), connected.len()),
         ));
     }
     let sender = state.status.command_tx.lock().await.clone()
