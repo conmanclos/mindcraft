@@ -338,9 +338,23 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::Craft(recipe, table))
         }
         "smelt" => {
-            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be an allowlisted input@x,y,z with a furnace coordinate".into()))?;
-            let (input, coordinates) = raw.split_once('@')
-                .ok_or((StatusCode::BAD_REQUEST, "smelt target must use input@x,y,z syntax".into()))?;
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use input[*count]@x,y,z syntax".into()))?;
+            let (input_spec, coordinates) = raw.split_once('@')
+                .ok_or((StatusCode::BAD_REQUEST, "smelt target must use input[*count]@x,y,z syntax".into()))?;
+            let (input, count) = match input_spec.split_once('*') {
+                Some((input, count)) => {
+                    if count.contains('*') {
+                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be a single integer from 1 to 8".into()));
+                    }
+                    let count = count.trim().parse::<u8>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "smelt batch count must be an integer from 1 to 8".into()))?;
+                    if !(1..=8).contains(&count) {
+                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be from 1 to 8".into()));
+                    }
+                    (input, count)
+                }
+                None => (input_spec, 1),
+            };
             let input = input.trim().to_ascii_lowercase();
             if smelt_spec(&input).is_none() {
                 return Err((StatusCode::NOT_IMPLEMENTED, "that input is not in the runtime's explicit smelting allowlist".into()));
@@ -351,7 +365,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
                 return Err((StatusCode::BAD_REQUEST, "smelt furnace coordinates are outside supported world bounds".into()));
             }
-            Ok(BotCommand::Smelt(input, (parsed[0], parsed[1], parsed[2])))
+            Ok(BotCommand::Smelt(input, (parsed[0], parsed[1], parsed[2]), count))
         }
         "container_transfer" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot for a container transfer".into()))?;
@@ -536,8 +550,13 @@ mod tests {
     }
 
     #[test]
-    fn smelting_requires_an_allowlisted_input_and_valid_furnace_coordinate() {
+    fn smelting_requires_an_allowlisted_input_batch_and_valid_furnace_coordinate() {
         assert!(command_from_action(action("smelt", Some("raw_iron@0,64,0"))).is_ok());
+        assert!(command_from_action(action("smelt", Some("raw_iron*8@0,64,0"))).is_ok());
+        assert!(command_from_action(action("smelt", Some("raw_iron*1@0,64,0"))).is_ok());
+        assert!(command_from_action(action("smelt", Some("raw_iron*0@0,64,0"))).is_err());
+        assert!(command_from_action(action("smelt", Some("raw_iron*9@0,64,0"))).is_err());
+        assert!(command_from_action(action("smelt", Some("raw_iron*many@0,64,0"))).is_err());
         assert!(command_from_action(action("smelt", Some("beef@0,64,0"))).is_ok());
         assert!(command_from_action(action("smelt", Some("unknown_item@0,64,0"))).is_err());
         assert!(command_from_action(action("smelt", Some("raw_iron"))).is_err());
