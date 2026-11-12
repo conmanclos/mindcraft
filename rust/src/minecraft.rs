@@ -1052,6 +1052,17 @@ async fn execute_craft(
             bot.wait_ticks(2).await;
             return;
         }
+        let ingredient_placed = container.slots()
+            .and_then(|slots| slots.get(*grid_slot).map(|item| {
+                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), selector)
+            }))
+            .unwrap_or(false);
+        if !ingredient_placed {
+            for slot in &placed_slots { container.shift_click(*slot); }
+            bot.wait_ticks(2).await;
+            bot.chat("The server did not confirm an ingredient in the crafting grid; I returned the ingredients I placed.");
+            return;
+        }
     }
 
     bot.wait_ticks(1).await;
