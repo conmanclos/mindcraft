@@ -206,18 +206,22 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     }
     let data = app_data(&app)?;
     let key_account = format!("ai-provider-api-key-{}", setup.provider);
-    let entry = Entry::new("com.mindcraft.minecraft", &key_account).map_err(|e| e.to_string())?;
     if setup.api_key.trim().is_empty() {
-        if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) && entry.get_password().is_err() {
-            return Err("This AI provider requires an API key. Enter it once to store it in the operating system credential store.".into());
-        }
-        // Never carry a previously stored hosted-provider key into a
-        // user-configured OpenAI-compatible endpoint unless the user enters
-        // that key explicitly for this setup.
-        if !["openai", "anthropic", "google"].contains(&setup.provider.as_str()) {
+        if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) {
+            let entry = Entry::new("com.mindcraft.minecraft", &key_account)
+                .map_err(|error| format!("The operating system credential store is unavailable: {error}"))?;
+            if entry.get_password().is_err() {
+                return Err("This AI provider requires an API key. Enter it once to store it in the operating system credential store.".into());
+            }
+        } else if let Ok(entry) = Entry::new("com.mindcraft.minecraft", &key_account) {
+            // Never carry a previously stored hosted-provider key into a
+            // user-configured local/OpenAI-compatible endpoint unless the
+            // user enters that key explicitly for this setup.
             let _ = entry.delete_credential();
         }
     } else {
+        let entry = Entry::new("com.mindcraft.minecraft", &key_account)
+            .map_err(|error| format!("The operating system credential store is unavailable: {error}"))?;
         entry.set_password(setup.api_key.trim()).map_err(|e| e.to_string())?;
     }
 
