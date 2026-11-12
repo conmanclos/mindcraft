@@ -141,6 +141,9 @@ struct AgentClaimRequest { agent_id: String, role: String }
 struct CompleteTaskRequest { agent_id: String }
 
 #[derive(Deserialize)]
+struct FailTaskRequest { agent_id: String, reason: String }
+
+#[derive(Deserialize)]
 struct PlanRequest { message: String, #[serde(default)] agent: Option<String> }
 
 #[derive(Deserialize)]
@@ -218,6 +221,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/tasks/:task_id/complete", post(complete_task))
         .route("/api/tasks/:task_id/release", post(release_task))
         .route("/api/tasks/:task_id/heartbeat", post(heartbeat_task))
+        .route("/api/tasks/:task_id/fail", post(fail_task))
         .with_state(state.clone())
         .layer(middleware::from_fn_with_state(state, rate_limit))
         .layer(DefaultBodyLimit::max(16 * 1024))
@@ -816,6 +820,24 @@ async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(
         return Err((StatusCode::CONFLICT, "task lease is no longer owned by this agent".into()));
     }
     Ok(Json(serde_json::json!({"renewed":true})))
+}
+
+
+async fn fail_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<FailTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if !valid_agent_id(&request.agent_id) {
+        return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
+    }
+    if request.reason.trim().is_empty() || request.reason.len() > 1000 {
+        return Err((StatusCode::BAD_REQUEST, "reason must contain 1-1000 bytes".into()));
+    }
+    authorize_agent(&state, &headers, &request.agent_id).await
+        .map_err(|code| (code, "unauthorized for this agent".into()))?;
+    let outcome = state.store.fail_task(task_id, &request.agent_id, &request.reason)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    match outcome {
+        Some(status) => Ok(Json(serde_json::json!({"recorded":true,"status":status}))),
+        None => Err((StatusCode::CONFLICT, "task is not actively leased by this agent".into())),
+    }
 }
 
 async fn release_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
