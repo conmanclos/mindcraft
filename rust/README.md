@@ -119,7 +119,9 @@ The dashboard is served from `/`. `GET /api/health` is public; all other API rou
 | `POST /api/execute` | Explicitly approve and queue a supported game action |
 | `POST /api/build` | Explicitly queue a bounded mixed-material JSON schematic at an absolute origin |
 | `GET/POST /api/goals` | List goals or decompose a new strategic goal into specialist tasks |
-| `GET /api/goals/{id}/tasks` | List a goal's tasks |
+| `GET /api/goals/{id}/tasks` | List a goal's tasks in enforced execution order |
+| `POST /api/goals/{id}/cancel` | Cancel an active goal and revoke its pending, claimed, and review tasks |
+| `POST /api/goals/{id}/retry` | Resume a failed goal without repeating tasks already verified complete |
 | `POST /api/agents/{agent_id}/credential` | Issue/rotate a one-hour, in-memory agent token (master token required) |
 | `DELETE /api/agents/{agent_id}/credential` | Revoke an agent token (master token required) |
 | `POST /api/tasks/claim` | Atomically claim the highest-priority pending task for a role; accepts the master token or that agent's token |
