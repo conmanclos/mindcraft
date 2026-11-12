@@ -36,7 +36,13 @@ impl Brain {
     pub fn new(config: Arc<Config>) -> Self {
         Self {
             config,
-            http: Client::builder().timeout(std::time::Duration::from_secs(45)).build().expect("HTTP client"),
+            http: Client::builder()
+                .timeout(std::time::Duration::from_secs(45))
+                // Provider credentials must not follow endpoint redirects to
+                // another origin or downgrade from HTTPS to HTTP.
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("HTTP client"),
             llm_slots: Arc::new(Semaphore::new(2)),
         }
     }
