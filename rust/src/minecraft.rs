@@ -1,8 +1,16 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
-use azalea::prelude::*;
+use azalea::{pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*};
 use std::{sync::Arc, time::{Duration, Instant}};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
+
+#[derive(Debug)]
+pub enum BotCommand {
+    Say(String),
+    Stop,
+    Goto(i32, i32, i32),
+    Mine(i32, i32, i32),
+}
 
 #[derive(Clone, Component, Default)]
 struct BotState {
@@ -10,6 +18,7 @@ struct BotState {
     status: Option<Arc<RuntimeStatus>>,
     bot_name: Option<String>,
     last_reply: Option<Arc<Mutex<Instant>>>,
+    commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
 }
 
 pub async fn connect(
@@ -19,13 +28,15 @@ pub async fn connect(
     status: Arc<RuntimeStatus>,
 ) -> Result<()> {
     tracing::info!(%server, %username, "connecting Minecraft client (offline account mode)");
-    status.minecraft_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+    let (command_tx, command_rx) = mpsc::channel(64);
+    *status.command_tx.lock().await = Some(command_tx);
     let account = Account::offline(username.clone());
     let state = BotState {
         brain: Some(brain),
         status: Some(status.clone()),
         bot_name: Some(username),
         last_reply: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)))),
+        commands: Some(Arc::new(Mutex::new(command_rx))),
     };
     let result = ClientBuilder::new()
         .set_handler(handle)
@@ -33,6 +44,7 @@ pub async fn connect(
         .start(account, server.as_str())
         .await;
     status.minecraft_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+    *status.command_tx.lock().await = None;
     tracing::warn!("Azalea client stopped: {result:?}");
     Ok(())
 }
@@ -51,26 +63,46 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             }
             tracing::warn!("Minecraft connection lost; Azalea reconnect policy will handle retry");
         }
+        Event::Tick => {
+            let mut queued = Vec::new();
+            if let Some(receiver) = &state.commands {
+                let mut receiver = receiver.lock().await;
+                while let Ok(command) = receiver.try_recv() { queued.push(command); }
+            }
+            for command in queued {
+                match command {
+                    BotCommand::Say(text) => {
+                        let safe: String = text.chars().take(240).collect();
+                        if !safe.trim().is_empty() { bot.chat(safe); }
+                    }
+                    BotCommand::Stop => {
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                    }
+                    BotCommand::Goto(x, y, z) => {
+                        bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
+                    }
+                    BotCommand::Mine(x, y, z) => {
+                        bot.start_mining(BlockPos::new(x, y, z));
+                    }
+                }
+            }
+        }
         Event::Chat(message) => {
             let sender = message.sender();
             let content = message.content();
             tracing::info!(sender = ?sender, %content, "Minecraft chat");
 
             let from_self = sender.as_deref() == state.bot_name.as_deref();
-            let addressed_to_bot = message.is_whisper()
-                || content.to_lowercase().contains("mindcraft");
+            let addressed_to_bot = message.is_whisper() || content.to_lowercase().contains("mindcraft");
             if !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
                     let mut last = cooldown.lock().await;
                     if last.elapsed() >= Duration::from_secs(4) {
                         *last = Instant::now();
                         true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
+                    } else { false }
+                } else { false };
 
                 if allowed {
                     if let Some(brain) = &state.brain {
@@ -80,9 +112,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         match brain.reply(&prompt).await {
                             Ok(reply) => {
                                 let safe_reply: String = reply.chars().take(240).collect();
-                                if !safe_reply.trim().is_empty() {
-                                    bot.chat(safe_reply);
-                                }
+                                if !safe_reply.trim().is_empty() { bot.chat(safe_reply); }
                             }
                             Err(error) => {
                                 tracing::error!(%error, "AI chat response failed");
