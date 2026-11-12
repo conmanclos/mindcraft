@@ -439,8 +439,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             // Azalea 0.16 exposes start_mining/is_mining rather than an
                             // async mine() helper. Start the protocol action, then observe
                             // its lifecycle without blocking the ECS tick handler.
+                            let mut mining_ticks = client.get_tick_broadcaster();
                             client.start_mining(position);
-                            client.wait_ticks(1).await;
                             for _ in 0..200 {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                     client.chat("Mining was cancelled by a newer command.");
@@ -451,7 +451,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     client.chat(format!("Mining attempt at {}, {}, {} finished. Check the drops and inventory.", position.x, position.y, position.z));
                                     return;
                                 }
-                                client.wait_ticks(1).await;
+                                if mining_ticks.recv().await.is_err() { return; }
                             }
                             client.chat("Mining did not finish within 10 seconds; the block may be too hard, protected, or unreachable.");
                         });
