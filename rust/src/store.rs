@@ -248,6 +248,25 @@ mod tests {
     }
 
     #[test]
+    fn expired_task_lease_can_be_reclaimed_by_another_worker() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Explore the area").unwrap();
+        let task = store.add_task(goal, "scout", "Map the nearby area", 70).unwrap();
+        assert!(store.claim_task("scout-1", "scout").unwrap().is_some());
+        {
+            let connection = store.connection.lock().unwrap();
+            connection.execute(
+                "UPDATE agent_tasks SET lease_until=datetime('now','-1 second') WHERE id=?1",
+                [task],
+            ).unwrap();
+        }
+        assert!(!store.renew_task_lease(task, "scout-1").unwrap());
+        assert!(!store.complete_task(task, "scout-1").unwrap());
+        let reclaimed = store.claim_task("scout-2", "scout").unwrap().unwrap();
+        assert_eq!(reclaimed.assigned_agent.as_deref(), Some("scout-2"));
+    }
+
+    #[test]
     fn specialist_tasks_are_claimed_once_and_complete_the_goal() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let goal = store.create_goal("Build a safe starter base").unwrap();
