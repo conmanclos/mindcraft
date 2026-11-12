@@ -56,8 +56,12 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn valid_http_base_url(value: &str) -> bool {
     Url::parse(value.trim()).ok().is_some_and(|url| {
+        let host = url.host_str().unwrap_or_default();
+        let loopback_host = host.eq_ignore_ascii_case("localhost")
+            || host.parse::<std::net::IpAddr>().is_ok_and(|address| address.is_loopback());
         ["http", "https"].contains(&url.scheme())
-            && url.host_str().is_some()
+            && !host.is_empty()
+            && (url.scheme() == "https" || loopback_host)
             && url.username().is_empty()
             && url.password().is_none()
             && url.query().is_none()
@@ -142,7 +146,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if ["ollama", "openai-compatible"].contains(&setup.provider.as_str())
         && !setup.base_url.trim().is_empty()
         && !valid_http_base_url(&setup.base_url) {
-        return Err("The AI base URL must be a valid http:// or https:// URL without credentials, query, or fragment.".into());
+        return Err("Use HTTPS for remote AI endpoints; HTTP is allowed only for localhost/loopback URLs without credentials, query, or fragment.".into());
     }
     if !["assisted", "balanced", "autonomous"].contains(&setup.autonomy.as_str()) {
         return Err("Choose an autonomy level.".into());
@@ -322,8 +326,9 @@ mod tests {
     #[test]
     fn provider_base_urls_require_safe_http_endpoints() {
         assert!(super::valid_http_base_url("http://127.0.0.1:11434/v1"));
+        assert!(super::valid_http_base_url("http://localhost:11434/v1"));
         assert!(super::valid_http_base_url("https://api.example.com/v1"));
-        for invalid in ["http://", "ftp://example.com", "https://user:pass@example.com", "https://example.com/?key=secret", "https://example.com/#fragment"] {
+        for invalid in ["http://", "http://api.example.com/v1", "ftp://example.com", "https://user:pass@example.com", "https://example.com/?key=secret", "https://example.com/#fragment"] {
             assert!(!super::valid_http_base_url(invalid), "accepted {invalid}");
         }
     }
