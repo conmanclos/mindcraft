@@ -8,6 +8,7 @@ use tokio::sync::{mpsc, Mutex};
 pub enum BotCommand {
     Say(String),
     Stop,
+    Follow(String),
     Look(i32, i32, i32),
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
@@ -23,6 +24,8 @@ struct BotState {
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     connected: Option<Arc<AtomicBool>>,
     last_reflex: Option<Arc<Mutex<Instant>>>,
+    follow_target: Option<Arc<Mutex<Option<String>>>>,
+    last_follow_repath: Option<Arc<Mutex<Instant>>>,
 }
 
 pub async fn connect(
@@ -80,6 +83,8 @@ fn make_state(
         commands: Some(commands),
         connected: Some(Arc::new(AtomicBool::new(false))),
         last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
+        follow_target: Some(Arc::new(Mutex::new(None))),
+        last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
     }
 }
 
@@ -144,6 +149,28 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let mut receiver = receiver.lock().await;
                 while let Ok(command) = receiver.try_recv() { queued.push(command); }
             }
+            if let Some(target_lock) = &state.follow_target {
+                let target = target_lock.lock().await.clone();
+                if let Some(username) = target {
+                    let should_repath = if let Some(cooldown) = &state.last_follow_repath {
+                        let mut last = cooldown.lock().await;
+                        if last.elapsed() >= Duration::from_millis(1200) {
+                            *last = Instant::now();
+                            true
+                        } else { false }
+                    } else { false };
+                    if should_repath {
+                        if let Ok(Some(uuid)) = bot.player_uuid_by_username(&username) {
+                            if let Some(entity) = bot.entity_by_uuid(uuid) {
+                                if let Ok(position) = entity.position() {
+                                    let goal = BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32);
+                                    bot.start_goto(BlockPosGoal(goal));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             for command in queued {
                 match command {
                     BotCommand::Say(text) => {
@@ -151,8 +178,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if !safe.trim().is_empty() { bot.chat(safe); }
                     }
                     BotCommand::Stop => {
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
+                    }
+                    BotCommand::Follow(username) => {
+                        if let Some(target) = &state.follow_target { *target.lock().await = Some(username); }
                     }
                     BotCommand::Look(x, y, z) => bot.look_at(BlockPos::new(x, y, z).center()),
                     BotCommand::Goto(x, y, z) => bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z))),
