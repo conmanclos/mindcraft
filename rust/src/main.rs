@@ -51,12 +51,13 @@ async fn main() -> Result<()> {
             if let Some(server) = config.minecraft_server.clone() {
                 let bot_brain = brain.clone();
                 let bot_status = status.clone();
+                let bot_store = store.clone();
                 let bot_accounts = config.minecraft_accounts.clone();
                 let bot_auth = config.minecraft_auth.clone();
                 let microsoft_email = config.microsoft_email.clone();
                 tokio::select! {
                     result = api::serve(config.clone(), brain, store, status) => result?,
-                    result = minecraft::connect(server, bot_accounts, bot_auth, microsoft_email, bot_brain, bot_status) => result?,
+                    result = minecraft::connect(server, bot_accounts, bot_auth, microsoft_email, bot_brain, bot_status, bot_store) => result?,
                 }
             } else {
                 tracing::warn!("MINDCRAFT_MC_SERVER is unset; dashboard/API will start without a Minecraft connection");
