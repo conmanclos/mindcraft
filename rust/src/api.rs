@@ -280,6 +280,34 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             Ok(BotCommand::Explore(radius))
         }
+        "craft" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a recipe name, optionally followed by @x,y,z for a crafting table".into()))?;
+            let mut parts = raw.split('@');
+            let recipe = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+            let table = match parts.next() {
+                Some(coordinates) => {
+                    let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "crafting-table target must be x,y,z".into()))?;
+                    if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320 || parsed.iter().any(|v| v.unsigned_abs() > 30_000_000) {
+                        return Err((StatusCode::BAD_REQUEST, "crafting-table coordinates are outside supported world bounds".into()));
+                    }
+                    Some((parsed[0], parsed[1], parsed[2]))
+                }
+                None => None,
+            };
+            if parts.next().is_some() {
+                return Err((StatusCode::BAD_REQUEST, "craft target accepts at most one @x,y,z crafting-table coordinate".into()));
+            }
+            let supported = ["sticks", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "furnace", "chest"];
+            if !supported.contains(&recipe.as_str()) {
+                return Err((StatusCode::NOT_IMPLEMENTED, "supported recipes: sticks, crafting_table, wooden/stone tools, furnace, chest".into()));
+            }
+            let requires_table = !["sticks", "crafting_table"].contains(&recipe.as_str());
+            if requires_table && table.is_none() {
+                return Err((StatusCode::BAD_REQUEST, "this recipe requires a crafting table; append @x,y,z to the recipe name".into()));
+            }
+            Ok(BotCommand::Craft(recipe, table))
+        }
         "container_transfer" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z,slot for a container transfer".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
@@ -484,6 +512,15 @@ mod tests {
             minecraft_accounts: vec!["Mindcraft".into(), "Scout".into(), "Builder".into()],
             minecraft_auth: auth.into(), microsoft_email: None,
             database: std::path::PathBuf::from(":memory:"),
+        }
+    }
+
+    #[test]
+    fn crafting_recipes_and_table_coordinates_are_validated() {
+        assert!(matches!(command_from_action(action("craft", Some("sticks"))), Ok(BotCommand::Craft(name, None)) if name == "sticks"));
+        assert!(matches!(command_from_action(action("craft", Some("wooden_pickaxe@10,64,-4"))), Ok(BotCommand::Craft(name, Some((10,64,-4)))) if name == "wooden_pickaxe"));
+        for target in ["wooden_pickaxe", "unknown_recipe", "furnace@1,321,2", "chest@1,64,2@3,64,4"] {
+            assert!(command_from_action(action("craft", Some(target))).is_err());
         }
     }
 
