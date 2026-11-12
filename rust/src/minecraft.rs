@@ -43,7 +43,14 @@ pub async fn connect(
         let accounts_to_join = if auth_mode == "microsoft" {
             let email = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
             tracing::info!("starting Azalea Microsoft device-code authentication");
-            vec![Account::microsoft(email).await?]
+            match Account::microsoft(email).await {
+                Ok(account) => vec![account],
+                Err(error) => {
+                    tracing::error!(%error, "Microsoft authentication failed; dashboard remains available and login will retry in 30 seconds");
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    continue;
+                }
+            }
         } else {
             accounts.iter().cloned().map(Account::offline).collect::<Vec<_>>()
         };
