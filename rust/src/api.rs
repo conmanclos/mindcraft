@@ -364,8 +364,8 @@ fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Optio
 
 fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, String)> {
     let entries = raw.split(';').map(str::trim).filter(|entry| !entry.is_empty()).collect::<Vec<_>>();
-    if entries.is_empty() || entries.len() > 32 {
-        return Err((StatusCode::BAD_REQUEST, "build target must contain 1-32 semicolon-separated x,y,z block positions".into()));
+    if entries.is_empty() || entries.len() > 64 {
+        return Err((StatusCode::BAD_REQUEST, "build target must contain 1-64 semicolon-separated x,y,z block positions".into()));
     }
     let mut unique = HashSet::new();
     let mut positions = Vec::with_capacity(entries.len());
@@ -389,12 +389,53 @@ fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, S
     Ok(positions)
 }
 
+fn parse_blueprint_origin(raw: &str) -> Result<(i32, i32, i32), (StatusCode, String)> {
+    let parsed = raw.split(',').map(str::trim).map(str::parse::<i32>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| (StatusCode::BAD_REQUEST, "blueprint origin must be integer x,y,z coordinates".into()))?;
+    if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+        || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+        return Err((StatusCode::BAD_REQUEST, "blueprint origin is outside supported Minecraft world bounds".into()));
+    }
+    Ok((parsed[0], parsed[1], parsed[2]))
+}
+
+fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32, i32)>, (StatusCode, String)> {
+    let (ox, oy, oz) = origin;
+    let mut positions = Vec::new();
+    match name.trim().to_ascii_lowercase().as_str() {
+        "platform_5x5" => {
+            for x in 0..5 { for z in 0..5 { positions.push((ox + x, oy, oz + z)); } }
+        }
+        "wall_7x3" => {
+            for x in 0..7 { for y in 0..3 { positions.push((ox + x, oy + y, oz)); } }
+        }
+        "starter_hut" => {
+            // Compact 3x3 shelter shell: floor plus two wall layers.
+            // Leave a two-block opening in the front-center for a door.
+            for x in 0..3 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
+            for y in 1..=2 {
+                for x in 0..3 {
+                    for z in 0..3 {
+                        let perimeter = x == 0 || x == 2 || z == 0 || z == 2;
+                        let doorway = z == 0 && x == 1;
+                        if perimeter && !doorway { positions.push((ox + x, oy + y, oz + z)); }
+                    }
+                }
+            }
+        }
+        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, or starter_hut".into())),
+    }
+    positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
+    if positions.len() > 64 {
+        return Err((StatusCode::BAD_REQUEST, "expanded blueprint exceeds the 64-block single-stack build limit".into()));
+    }
+    Ok(positions)
+}
+
 fn parse_build_spec(raw: &str) -> Result<(Option<String>, Vec<(i32, i32, i32)>), (StatusCode, String)> {
     let (material, coordinates) = match raw.split_once('@') {
-        Some((material, coordinates)) => {
-            if coordinates.contains('@') {
-                return Err((StatusCode::BAD_REQUEST, "build accepts at most one material@ prefix".into()));
-            }
+        Some((material, coordinates)) if !material.trim().eq_ignore_ascii_case("blueprint") => {
             let material = material.trim().to_ascii_lowercase();
             if material.is_empty() || material.len() > 32
                 || !material.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
@@ -402,8 +443,22 @@ fn parse_build_spec(raw: &str) -> Result<(Option<String>, Vec<(i32, i32, i32)>),
             }
             (Some(material), coordinates)
         }
-        None => (None, raw),
+        _ => (None, raw),
     };
+    let blueprint_spec = coordinates.strip_prefix("blueprint:")
+        .or_else(|| raw.strip_prefix("blueprint:"));
+    if let Some(spec) = blueprint_spec {
+        let (name, origin) = spec.split_once('@')
+            .ok_or((StatusCode::BAD_REQUEST, "blueprint syntax is blueprint:name@x,y,z, optionally prefixed with material@".into()))?;
+        if origin.contains('@') {
+            return Err((StatusCode::BAD_REQUEST, "blueprint accepts one origin coordinate".into()));
+        }
+        let positions = expand_blueprint(name, parse_blueprint_origin(origin)?)?;
+        return Ok((material, positions));
+    }
+    if coordinates.contains('@') {
+        return Err((StatusCode::BAD_REQUEST, "build accepts one material@ prefix or one blueprint origin".into()));
+    }
     Ok((material, parse_build_targets(coordinates)?))
 }
 
