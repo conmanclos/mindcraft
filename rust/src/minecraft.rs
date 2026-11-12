@@ -307,19 +307,21 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             }
                         }
                         crate::reflex::ReflexAction::WarnLowFood => {
-                            if should_warn && state.is_primary {
+                            if should_warn {
                                 if state.mode == "autonomous" {
                                     let mut eating_bot = bot.clone();
                                     tokio::spawn(async move {
                                         match eat_food(&mut eating_bot).await {
                                             Ok(food_name) => eating_bot.chat(&format!("Survival reflex: ate {food_name} because food was low.")),
                                             Err(error) => {
-                                                tracing::warn!(%error, "automatic eating could not find or use safe food");
-                                                eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
+                                                tracing::warn!(%error, username = %eating_bot.username(), "automatic eating could not find or use safe food");
+                                                if state.is_primary {
+                                                    eating_bot.chat("Food is low, but I couldn't find safe food in an available hotbar slot.");
+                                                }
                                             }
                                         }
                                     });
-                                } else {
+                                } else if state.is_primary {
                                     bot.chat("Reflex safety: food is low. Approve a use_item action or switch to Autonomous mode to allow safe automatic eating.");
                                 }
                                 tracing::warn!(username = %bot.username(), food = hunger.food, "low-food reflex activated");
