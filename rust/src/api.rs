@@ -1,4 +1,4 @@
-use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_spec, smelt_spec, AgentCommand, BotCommand, BuildBlock}, store::{AgentTask, Goal, Store}};
+use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_spec, smelt_spec, AgentCommand, BotCommand, BuildBlock, SmeltJob}, store::{AgentTask, Goal, Store}};
 use axum::{
     extract::{DefaultBodyLimit, Path, Request, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
@@ -607,6 +607,41 @@ fn parse_build_spec(raw: &str) -> Result<(Option<String>, Vec<(i32, i32, i32)>),
     Ok((material, parse_build_targets(coordinates)?))
 }
 
+
+fn parse_smelt_job(raw: &str) -> Result<SmeltJob, (StatusCode, String)> {
+    let (input_spec, coordinates) = raw.split_once('@')
+        .ok_or((StatusCode::BAD_REQUEST, "smelt job must use input[*count]@x,y,z syntax".into()))?;
+    if coordinates.contains('@') {
+        return Err((StatusCode::BAD_REQUEST, "smelt job accepts exactly one furnace coordinate".into()));
+    }
+    let (input, count) = match input_spec.split_once('*') {
+        Some((input, count)) => {
+            if count.contains('*') {
+                return Err((StatusCode::BAD_REQUEST, "smelt batch count must be a single integer from 1 to 64".into()));
+            }
+            let count = count.trim().parse::<u8>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "smelt batch count must be an integer from 1 to 64".into()))?;
+            if !(1..=64).contains(&count) {
+                return Err((StatusCode::BAD_REQUEST, "smelt batch count must be from 1 to 64".into()));
+            }
+            (input, count)
+        }
+        None => (input_spec, 1),
+    };
+    let input = input.trim().to_ascii_lowercase();
+    if smelt_spec(&input).is_none() {
+        return Err((StatusCode::NOT_IMPLEMENTED, "that input is not in the runtime's explicit smelting allowlist".into()));
+    }
+    let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| (StatusCode::BAD_REQUEST, "smelt furnace target must be x,y,z".into()))?;
+    if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+        || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+        return Err((StatusCode::BAD_REQUEST, "smelt furnace coordinates are outside supported world bounds".into()));
+    }
+    Ok(SmeltJob { input, x: parsed[0], y: parsed[1], z: parsed[2], count })
+}
+
 pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
     match action.action.to_lowercase().as_str() {
         "say" => {
@@ -664,33 +699,25 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "smelt" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use input[*count]@x,y,z syntax".into()))?;
-            let (input_spec, coordinates) = raw.split_once('@')
-                .ok_or((StatusCode::BAD_REQUEST, "smelt target must use input[*count]@x,y,z syntax".into()))?;
-            let (input, count) = match input_spec.split_once('*') {
-                Some((input, count)) => {
-                    if count.contains('*') {
-                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be a single integer from 1 to 64".into()));
-                    }
-                    let count = count.trim().parse::<u8>()
-                        .map_err(|_| (StatusCode::BAD_REQUEST, "smelt batch count must be an integer from 1 to 64".into()))?;
-                    if !(1..=64).contains(&count) {
-                        return Err((StatusCode::BAD_REQUEST, "smelt batch count must be from 1 to 64".into()));
-                    }
-                    (input, count)
+            let job = parse_smelt_job(&raw)?;
+            Ok(BotCommand::Smelt(job.input, (job.x, job.y, job.z), job.count))
+        }
+        "smelt_queue" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must contain 2-4 semicolon-separated input[*count]@x,y,z furnace jobs".into()))?;
+            let entries = raw.split(';').map(str::trim).filter(|entry| !entry.is_empty()).collect::<Vec<_>>();
+            if !(2..=4).contains(&entries.len()) {
+                return Err((StatusCode::BAD_REQUEST, "smelt_queue requires 2-4 furnace jobs".into()));
+            }
+            let mut jobs = Vec::with_capacity(entries.len());
+            let mut positions = HashSet::new();
+            for entry in entries {
+                let job = parse_smelt_job(entry)?;
+                if !positions.insert((job.x, job.y, job.z)) {
+                    return Err((StatusCode::BAD_REQUEST, "smelt_queue cannot target the same furnace more than once".into()));
                 }
-                None => (input_spec, 1),
-            };
-            let input = input.trim().to_ascii_lowercase();
-            if smelt_spec(&input).is_none() {
-                return Err((StatusCode::NOT_IMPLEMENTED, "that input is not in the runtime's explicit smelting allowlist".into()));
+                jobs.push(job);
             }
-            let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
-                .map_err(|_| (StatusCode::BAD_REQUEST, "smelt furnace target must be x,y,z".into()))?;
-            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
-                || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
-                return Err((StatusCode::BAD_REQUEST, "smelt furnace coordinates are outside supported world bounds".into()));
-            }
-            Ok(BotCommand::Smelt(input, (parsed[0], parsed[1], parsed[2]), count))
+            Ok(BotCommand::SmeltQueue(jobs))
         }
         "container_deposit" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z for a container deposit".into()))?;
