@@ -212,6 +212,32 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn task_leases_are_owned_renewable_and_reclaimable_after_expiry() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Gather supplies").unwrap();
+        let task_id = store.add_task(goal, "scout", "Locate nearby wood", 60).unwrap();
+
+        let first = store.claim_task("worker-a", "scout").unwrap().unwrap();
+        assert_eq!(first.id, task_id);
+        assert_eq!(first.assigned_agent.as_deref(), Some("worker-a"));
+        assert!(store.renew_task_lease(task_id, "worker-a").unwrap());
+        assert!(!store.renew_task_lease(task_id, "worker-b").unwrap());
+
+        {
+            let connection = store.connection.lock().unwrap();
+            connection.execute(
+                "UPDATE agent_tasks SET lease_until=datetime('now','-1 second') WHERE id=?1",
+                [task_id],
+            ).unwrap();
+        }
+
+        let recovered = store.claim_task("worker-b", "scout").unwrap().unwrap();
+        assert_eq!(recovered.assigned_agent.as_deref(), Some("worker-b"));
+        assert!(!store.complete_task(task_id, "worker-a").unwrap());
+        assert!(store.complete_task(task_id, "worker-b").unwrap());
+    }
+
+    #[test]
     fn specialist_tasks_are_claimed_once_and_complete_the_goal() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let goal = store.create_goal("Build a safe starter base").unwrap();
