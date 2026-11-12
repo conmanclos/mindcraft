@@ -767,7 +767,46 @@ async fn execute_craft(
     }
 
     let container = match table {
-        Some((x, y, z)) => bot.open_container_at(BlockPos::new(x, y, z)).await.ok().flatten(),
+        Some((x, y, z)) => {
+            let position = BlockPos::new(x, y, z);
+            let Ok(world) = bot.world() else {
+                bot.chat("I can't read the loaded world to reach the crafting table.");
+                return;
+            };
+            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                bot.chat("That crafting-table coordinate is not a loaded non-air block.");
+                return;
+            }
+            let chunk_storage = world.read().chunks.clone();
+            bot.goto_with_opts(
+                ReachBlockPosGoal::new(position, chunk_storage),
+                PathfinderOpts::new().allow_mining(false),
+            ).await;
+            if cancelled() { return; }
+            if !bot.exists() || !bot.is_goto_target_reached() {
+                bot.chat("I couldn't reach the crafting table without breaking blocks.");
+                return;
+            }
+            let Ok(own_position) = bot.position() else { return; };
+            let dx = own_position.x - (x as f64 + 0.5);
+            let dy = own_position.y - (y as f64 + 0.5);
+            let dz = own_position.z - (z as f64 + 0.5);
+            if dx * dx + dy * dy + dz * dz > 20.25 {
+                bot.chat("The crafting table is still outside the 4.5-block interaction reach.");
+                return;
+            }
+            bot.look_at(position.center());
+            bot.wait_updates(1).await;
+            if cancelled() { return; }
+            match bot.hit_result() {
+                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+                _ => {
+                    bot.chat("I don't have a clear line of sight to that crafting table.");
+                    return;
+                }
+            }
+            bot.open_container_at(position).await.ok().flatten()
+        }
         None => bot.open_inventory().ok().flatten(),
     };
     let Some(container) = container else {
