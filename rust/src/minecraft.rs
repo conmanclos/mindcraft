@@ -187,8 +187,10 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             if let Some(connected) = &state.connected {
                 if !connected.swap(true, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
-                        let count = status.connected_agents.fetch_add(1, Ordering::Relaxed) + 1;
-                        status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                        status.connected_agents.fetch_add(1, Ordering::Relaxed);
+                        if state.is_primary {
+                            status.minecraft_connected.store(true, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -198,9 +200,17 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             if let Some(connected) = &state.connected {
                 if connected.swap(false, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
-                        let count = status.connected_agents.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
-                        status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                        status.connected_agents.fetch_sub(1, Ordering::Relaxed);
+                        if state.is_primary {
+                            status.minecraft_connected.store(false, Ordering::Relaxed);
+                            *status.world.lock().await = None;
+                        }
                     }
+                }
+            }
+            if state.is_primary {
+                if let Some(pending) = &state.pending_block_action {
+                    *pending.lock().await = None;
                 }
             }
             tracing::warn!(username = %bot.username(), ?reason, "Minecraft agent disconnected");
