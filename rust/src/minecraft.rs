@@ -26,13 +26,21 @@ struct BotState {
 pub async fn connect(
     server: String,
     username: String,
+    auth_mode: String,
+    microsoft_email: Option<String>,
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
 ) -> Result<()> {
     tracing::info!(%server, %username, "connecting Minecraft client (offline account mode)");
     let (command_tx, command_rx) = mpsc::channel(64);
     *status.command_tx.lock().await = Some(command_tx);
-    let account = Account::offline(username.clone());
+    let account = if auth_mode == "microsoft" {
+        let email = microsoft_email.ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?;
+        tracing::info!("starting Azalea Microsoft device-code authentication");
+        Account::microsoft(email).await?
+    } else {
+        Account::offline(username.clone())
+    };
     let state = BotState {
         brain: Some(brain),
         status: Some(status.clone()),
