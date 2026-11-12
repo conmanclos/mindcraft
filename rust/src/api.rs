@@ -266,9 +266,9 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
     match action.action.to_lowercase().as_str() {
         "say" => {
             let text = action.target.unwrap_or(action.reason);
-            if text.trim().is_empty() || text.chars().count() > 256
+            if text.trim().is_empty() || text.encode_utf16().count() > 256
                 || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
-                return Err((StatusCode::BAD_REQUEST, "say accepts 1-256 characters of plain chat text; slash commands and control characters are blocked".into()));
+                return Err((StatusCode::BAD_REQUEST, "say accepts 1-256 UTF-16 code units of plain chat text; slash commands and control characters are blocked".into()));
             }
             Ok(BotCommand::Say(text))
         }
@@ -482,8 +482,12 @@ mod tests {
     fn chat_length_is_bounded_to_minecraft_message_limit() {
         let max_message = "a".repeat(256);
         let oversized_message = "a".repeat(257);
+        let max_supplementary_message = "🙂".repeat(128);
+        let oversized_supplementary_message = "🙂".repeat(129);
         assert!(command_from_action(action("say", Some(max_message.as_str()))).is_ok());
         assert!(command_from_action(action("say", Some(oversized_message.as_str()))).is_err());
+        assert!(command_from_action(action("say", Some(max_supplementary_message.as_str()))).is_ok());
+        assert!(command_from_action(action("say", Some(oversized_supplementary_message.as_str()))).is_err());
     }
 
     #[test]
