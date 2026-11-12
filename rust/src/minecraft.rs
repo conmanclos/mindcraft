@@ -84,7 +84,7 @@ pub async fn connect(
                 "Maintain safe survival, gather sustainable food and basic materials, and establish a compact shelter near spawn.";
             loop {
                 match goal_store.has_goal_description(DEFAULT_GOAL) {
-                    Ok(true) => break,
+                    Ok(true) => tokio::time::sleep(Duration::from_secs(60)).await,
                     Ok(false) => {
                         let memory = goal_store.memory_context(3_000).unwrap_or_default();
                         let context = format!("{DEFAULT_GOAL}\n{memory}");
@@ -96,7 +96,7 @@ pub async fn connect(
                                 match goal_store.create_goal_with_tasks(DEFAULT_GOAL, &tasks) {
                                     Ok((goal_id, task_ids)) => {
                                         tracing::info!(goal_id, task_count = task_ids.len(), "created the default autonomous survival objective");
-                                        break;
+                                        tokio::time::sleep(Duration::from_secs(60)).await;
                                     }
                                     Err(error) => tracing::error!(%error, "could not persist the autonomous survival objective"),
                                 }
