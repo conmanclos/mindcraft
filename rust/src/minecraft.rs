@@ -1767,11 +1767,11 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "chest" => Some((true, "chest", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
         "bread" => Some((true, "bread", &[(1, "wheat"), (2, "wheat"), (3, "wheat")])),
         "ladder" => Some((true, "ladder", &[(1, "stick"), (3, "stick"), (4, "stick"), (5, "stick"), (6, "stick"), (7, "stick"), (9, "stick")])),
-        "composter" => Some((true, "composter", &[(1, "slab"), (3, "slab"), (4, "slab"), (6, "slab"), (7, "slab"), (9, "slab")])),
+        "composter" => Some((true, "composter", &[(1, "slab"), (3, "slab"), (4, "slab"), (6, "slab"), (7, "slab"), (8, "slab"), (9, "slab")])),
         "shield" => Some((true, "shield", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "iron_ingot"), (6, "planks"), (8, "planks")])),
         "bed" => Some((true, "bed", &[(1, "wool"), (2, "wool"), (3, "wool"), (4, "planks"), (5, "planks"), (6, "planks")])),
         "bookshelf" => Some((true, "bookshelf", &[(1, "book"), (2, "book"), (3, "book"), (4, "planks"), (5, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
-        "smoker" => Some((true, "smoker", &[(1, "log"), (2, "log"), (3, "log"), (4, "log"), (5, "furnace"), (6, "log"), (7, "log"), (8, "log"), (9, "log")])),
+        "smoker" => Some((true, "smoker", &[(2, "log"), (4, "log"), (5, "furnace"), (6, "log"), (8, "log")])),
         "blast_furnace" => Some((true, "blast_furnace", &[(1, "iron_ingot"), (2, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "furnace"), (6, "iron_ingot"), (7, "smooth_stone"), (8, "smooth_stone"), (9, "smooth_stone")]))
         _ => None,
     }
