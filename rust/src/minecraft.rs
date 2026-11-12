@@ -177,7 +177,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if let Some(connected) = &state.connected {
                 if connected.swap(false, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
-                        let count = status.connected_agents.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
+                        let previous = status.connected_agents.fetch_update(
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                            |count| Some(count.saturating_sub(1)),
+                        ).unwrap_or(0);
+                        let count = previous.saturating_sub(1);
                         status.minecraft_connected.store(count > 0, Ordering::Relaxed);
                         status.agents.lock().await.remove(&bot.username());
                         if state.is_primary { *status.world.lock().await = None; }
