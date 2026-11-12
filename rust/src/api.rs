@@ -286,7 +286,7 @@ async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(requ
     Ok(Json(ClaimResponse { task }))
 }
 
-async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
+async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
     if request.agent_id.trim().is_empty() || request.agent_id.len() > 64 {
         return Err((StatusCode::BAD_REQUEST, "agent_id must contain 1-64 bytes".into()));
@@ -296,7 +296,7 @@ async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(
     if !renewed {
         return Err((StatusCode::CONFLICT, "task lease is no longer owned by this agent".into()));
     }
-    Ok(Json(CompleteResponse { completed: false }))
+    Ok(Json(serde_json::json!({"renewed":true})))
 }
 
 async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<CompleteResponse>, (StatusCode, String)> {
