@@ -20,6 +20,7 @@ pub enum BotCommand {
     Explore(u16),
     ContainerTransfer(i32, i32, i32, u16),
     Craft(String, Option<(i32, i32, i32)>),
+    Smelt(String, (i32, i32, i32)),
 }
 
 #[derive(Debug, Clone)]
@@ -1164,6 +1165,34 @@ fn cancel_active_mining(client: &Client) {
 /// Recipes intentionally use a small, explicit allowlist. Ingredient placement is
 /// performed through Azalea's real inventory click events; no local inventory
 /// mutation is treated as a successful craft.
+pub(crate) fn smelt_spec(input: &str) -> Option<&'static str> {
+    Some(match input {
+        "raw_iron" | "iron_ore" | "deepslate_iron_ore" => "iron_ingot",
+        "raw_gold" | "gold_ore" | "deepslate_gold_ore" => "gold_ingot",
+        "raw_copper" | "copper_ore" | "deepslate_copper_ore" => "copper_ingot",
+        "sand" | "red_sand" => "glass",
+        "cobblestone" => "stone",
+        "stone" => "smooth_stone",
+        "clay_ball" => "brick",
+        "clay" => "terracotta",
+        "cactus" => "green_dye",
+        "wet_sponge" => "sponge",
+        "kelp" => "dried_kelp",
+        "beef" => "cooked_beef",
+        "porkchop" => "cooked_porkchop",
+        "chicken" => "cooked_chicken",
+        "mutton" => "cooked_mutton",
+        "rabbit" => "cooked_rabbit",
+        "cod" => "cooked_cod",
+        "salmon" => "cooked_salmon",
+        "potato" => "baked_potato",
+        "log" => "charcoal",
+        "ancient_debris" => "netherite_scrap",
+        "netherrack" => "nether_brick",
+        _ => return None,
+    })
+}
+
 pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
     match recipe {
         "planks" => Some((false, "planks", &[(1, "log")])),
