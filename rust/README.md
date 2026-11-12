@@ -22,7 +22,7 @@ The dependency is pinned to the published `0.10.3+mc1.21.1` Azalea release. The 
 
 ## Build
 
-Install Rust nightly (required by the Azalea crate's toolchain) and a C toolchain required by bundled SQLite. The checked-in `rust-toolchain.toml` selects nightly automatically:
+Install Rustup and a C toolchain required by bundled SQLite. The checked-in `rust-toolchain.toml` pins the known-compatible `nightly-2025-06-01` toolchain automatically:
 
 ```sh
 cd rust
