@@ -354,6 +354,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::AttackCrosshair => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
@@ -382,6 +383,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Stop => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
@@ -390,6 +392,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Follow(username) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
@@ -400,6 +403,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Look(x, y, z) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
@@ -408,6 +412,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Goto(x, y, z) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
@@ -484,6 +489,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Place(x, y, z) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
@@ -539,6 +545,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::Jump => bot.jump(),
                     BotCommand::UseItem => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
@@ -548,10 +555,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Equip(slot) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         bot.set_selected_hotbar_slot(slot);
                     }
                     BotCommand::Explore(radius) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        cancel_active_mining(&bot);
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
