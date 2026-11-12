@@ -141,7 +141,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
-        minecraft_target: "1.21.1",
+        minecraft_target: "26.1",
         minecraft_connected: state.status.minecraft_connected.load(std::sync::atomic::Ordering::Relaxed),
         connected_agents: state.status.connected_agents.load(std::sync::atomic::Ordering::Relaxed),
         autonomy: state.config.mode.clone(),
