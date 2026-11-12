@@ -1772,7 +1772,16 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "bed" => Some((true, "bed", &[(1, "wool"), (2, "wool"), (3, "wool"), (4, "planks"), (5, "planks"), (6, "planks")])),
         "bookshelf" => Some((true, "bookshelf", &[(1, "book"), (2, "book"), (3, "book"), (4, "planks"), (5, "planks"), (6, "planks"), (7, "planks"), (8, "planks"), (9, "planks")])),
         "smoker" => Some((true, "smoker", &[(2, "log"), (4, "log"), (5, "furnace"), (6, "log"), (8, "log")])),
-        "blast_furnace" => Some((true, "blast_furnace", &[(1, "iron_ingot"), (2, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "furnace"), (6, "iron_ingot"), (7, "smooth_stone"), (8, "smooth_stone"), (9, "smooth_stone")]))
+        "blast_furnace" => Some((true, "blast_furnace", &[(1, "iron_ingot"), (2, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "furnace"), (6, "iron_ingot"), (7, "smooth_stone"), (8, "smooth_stone"), (9, "smooth_stone")])),
+        "wooden_button" => Some((false, "wooden_button", &[(1, "planks")])),
+        "stone_button" => Some((false, "stone_button", &[(1, "cobblestone")])),
+        "wooden_pressure_plate" => Some((false, "wooden_pressure_plate", &[(1, "planks"), (2, "planks")])),
+        "stone_pressure_plate" => Some((false, "stone_pressure_plate", &[(1, "cobblestone"), (2, "cobblestone")])),
+        "lever" => Some((false, "lever", &[(2, "stick"), (5, "cobblestone")])),
+        "fence_gate" => Some((true, "fence_gate", &[(1, "planks"), (2, "stick"), (3, "planks"), (4, "planks"), (5, "stick"), (6, "planks")])),
+        "flower_pot" => Some((true, "flower_pot", &[(1, "brick"), (3, "brick"), (8, "brick")])),
+        "glass_bottle" => Some((true, "glass_bottle", &[(1, "glass"), (3, "glass"), (5, "glass")])),
+        "item_frame" => Some((true, "item_frame", &[(1, "stick"), (2, "stick"), (3, "stick"), (4, "stick"), (5, "leather"), (6, "stick"), (7, "stick"), (8, "stick"), (9, "stick")]))
         _ => None,
     }
 }
