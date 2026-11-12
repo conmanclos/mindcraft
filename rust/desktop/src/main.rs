@@ -45,6 +45,26 @@ fn dotenv_value(value: &str) -> String {
 }
 
 #[tauri::command]
+fn load_setup(app: AppHandle) -> Result<Option<SavedSetup>, String> {
+    let data = app_data(&app)?;
+    let path = data.join(".env");
+    if !path.exists() { return Ok(None); }
+    let values = dotenvy::from_path_iter(path).map_err(|e| e.to_string())?
+        .collect::<Result<std::collections::HashMap<_, _>, _>>().map_err(|e| e.to_string())?;
+    let get = |key: &str| values.get(key).cloned().unwrap_or_default();
+    Ok(Some(SavedSetup {
+        server: get("MINDCRAFT_MC_SERVER"),
+        username: get("MINDCRAFT_MC_USERNAME"),
+        auth: get("MINDCRAFT_MC_AUTH"),
+        microsoft_email: get("MINDCRAFT_MICROSOFT_EMAIL"),
+        provider: get("MINDCRAFT_PROVIDER"),
+        model: get("MINDCRAFT_MODEL"),
+        base_url: get("MINDCRAFT_BASE_URL"),
+        autonomy: get("MINDCRAFT_MODE"),
+    }))
+}
+
+#[tauri::command]
 fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.server.trim().is_empty() {
         return Err("Enter your Minecraft server address.".into());
@@ -152,7 +172,19 @@ fn runtime_running(process: State<'_, RuntimeProcess>) -> Result<bool, String> {
 fn main() {
     tauri::Builder::default()
         .manage(RuntimeProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![save_setup, start_runtime, stop_runtime, runtime_running])
-        .run(tauri::generate_context!())
-        .expect("error while running Mindcraft desktop");
+        .invoke_handler(tauri::generate_handler![load_setup, save_setup, start_runtime, stop_runtime, runtime_running])
+        .build(tauri::generate_context!())
+        .expect("error while building Mindcraft desktop")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(process) = app.try_state::<RuntimeProcess>() {
+                    if let Ok(mut child) = process.0.lock() {
+                        if let Some(mut running) = child.take() {
+                            let _ = running.kill();
+                            let _ = running.wait();
+                        }
+                    }
+                }
+            }
+        });
 }
