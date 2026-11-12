@@ -1267,10 +1267,14 @@ async fn execute_craft(
     }
 
     container.shift_click(0);
-    bot.wait_ticks(2).await;
-    let output_cleared = container.slots()
-        .and_then(|slots| slots.first().map(|item| item.is_empty()))
-        .unwrap_or(false);
+    let mut output_cleared = false;
+    for _ in 0..10 {
+        bot.wait_ticks(1).await;
+        output_cleared = container.slots()
+            .and_then(|slots| slots.first().map(|item| item.is_empty()))
+            .unwrap_or(false);
+        if output_cleared { break; }
+    }
     if output_cleared {
         tracing::info!(username = %bot.username(), %recipe, "craft output slot cleared after collection");
         bot.chat(format!("Collected the {result_name} crafting output. Check inventory before marking the task complete."));
