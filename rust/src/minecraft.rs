@@ -521,11 +521,28 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("That block is still outside the 4.5-block mining reach.");
                                 return;
                             }
-                            if let Some(block_state) = world.read().get_block_state(position) {
-                                if let Ok(best_tool) = client.best_tool_in_hotbar_for_block(block_state) {
-                                    client.set_selected_hotbar_slot(best_tool.index as u8);
-                                    client.wait_updates(1).await;
+                            let Some(block_state) = world.read().get_block_state(position) else {
+                                client.chat("The target block unloaded before I could choose a tool.");
+                                return;
+                            };
+                            let best_tool = match client.best_tool_in_hotbar_for_block(block_state) {
+                                Ok(tool) if tool.percentage_per_tick.is_finite() && tool.percentage_per_tick > 0.0 => tool,
+                                Ok(_) => {
+                                    client.chat("I can't safely mine that block with any tool in my hotbar.");
+                                    return;
                                 }
+                                Err(error) => {
+                                    tracing::warn!(username = %client.username(), %error, "could not determine the best mining tool");
+                                    client.chat("I couldn't determine a safe mining tool for that block.");
+                                    return;
+                                }
+                            };
+                            let selected_slot = best_tool.index as u8;
+                            client.set_selected_hotbar_slot(selected_slot);
+                            client.wait_updates(1).await;
+                            if client.selected_hotbar_slot().ok() != Some(selected_slot) {
+                                client.chat("The server did not confirm the required hotbar tool selection.");
+                                return;
                             }
                             client.look_at(target_position);
                             client.wait_updates(1).await;
