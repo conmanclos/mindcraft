@@ -281,9 +281,14 @@ impl Store {
             tx.commit()?;
             return Ok(false);
         };
+        // A task may be completed directly while its lease is active, or
+        // after the worker explicitly submitted it for human review. Review
+        // tasks intentionally have no lease, so do not apply the lease check
+        // to that state.
         let changed = tx.execute(
             "UPDATE agent_tasks SET status='complete', lease_until=NULL, updated_at=CURRENT_TIMESTAMP
-             WHERE id=?1 AND assigned_agent=?2 AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+             WHERE id=?1 AND assigned_agent=?2
+               AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
         )?;
         if changed != 1 {
@@ -346,6 +351,22 @@ mod tests {
         assert_eq!(stored[0].role, "scout");
         assert_eq!(stored[1].role, "gatherer");
         assert!(stored.iter().all(|task| task.status == "pending"));
+    }
+
+    #[test]
+    fn reviewed_task_can_be_completed_by_its_assigned_worker() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Build a shelter").unwrap();
+        let task_id = store.add_task(goal, "builder", "Place the shelter blocks", 80).unwrap();
+
+        let claimed = store.claim_task("Builder", "builder").unwrap().unwrap();
+        assert_eq!(claimed.id, task_id);
+        assert!(store.mark_task_for_review(task_id, "Builder").unwrap());
+        assert!(store.complete_task(task_id, "Builder").unwrap());
+
+        let tasks = store.list_tasks(goal).unwrap();
+        assert_eq!(tasks[0].status, "complete");
+        assert!(store.list_goals().unwrap().iter().find(|item| item.id == goal).unwrap().status == "complete");
     }
 
     #[test]
