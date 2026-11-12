@@ -1094,7 +1094,13 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
             .collect()
     };
     let selector = compact(selector);
-    !selector.is_empty() && compact(debug_name).contains(&selector)
+    if selector.is_empty() { return false; }
+    let name = compact(debug_name);
+    if selector == "log" {
+        name.ends_with("log") || name.ends_with("stem")
+    } else {
+        name.ends_with(&selector)
+    }
 }
 
 /// Return the best recognized, ordinary food item in the player's hotbar.
@@ -1170,6 +1176,10 @@ mod food_tests {
         assert!(super::item_name_matches("ItemStack { kind: IronPickaxe }", "iron_pickaxe"));
         assert!(super::item_name_matches("ItemStack { kind: OakTrapdoor }", "trapdoor"));
         assert!(super::item_name_matches("ItemStack { kind: OakSlab }", "slab"));
+        assert!(super::item_name_matches("ItemStack { kind: Charcoal }", "coal"));
+        assert!(super::item_name_matches("ItemStack { kind: CrimsonStem }", "log"));
+        assert!(!super::item_name_matches("ItemStack { kind: StickyPiston }", "stick"));
+        assert!(!super::item_name_matches("ItemStack { kind: DiamondSword }", "diamond"));
         assert!(!super::item_name_matches("ItemStack { kind: StonePickaxe }", "wooden_pickaxe"));
     }
 
