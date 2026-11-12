@@ -18,7 +18,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 </style>
 </head>
 <body><main>
-<div class="top"><div><h1>Mindcraft Native</h1><div class="muted">Rust runtime · Minecraft Java 1.21.1</div></div><div class="muted" id="connection">API not checked</div></div>
+<div class="top"><div><h1>Mindcraft Native</h1><div class="muted">Rust runtime · Minecraft Java 26.1</div></div><div class="muted" id="connection">API not checked</div></div>
 <section class="panel"><label for="token">Dashboard API token (kept in this tab only)</label><div class="row"><input id="token" type="password" autocomplete="off" placeholder="Paste the token printed by the runtime"><button id="connect">Connect</button></div></section>
 <section class="panel"><div class="grid">
 <div class="stat"><span class="muted">Agents connected</span><b id="mc">Unknown</b></div>
@@ -48,6 +48,16 @@ const $=id=>document.getElementById(id);
 let token="";
 let lastPlan=null;
 let currentTask=null;
+let taskHeartbeat=null;
+function stopTaskHeartbeat(){if(taskHeartbeat){clearInterval(taskHeartbeat);taskHeartbeat=null;}}
+function startTaskHeartbeat(){
+  stopTaskHeartbeat();
+  taskHeartbeat=setInterval(async()=>{
+    if(!currentTask)return;
+    try{await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:$("agentId").value.trim()});}
+    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;$("completeTask").disabled=true;}
+  },45000);
+}
 function log(s){$("log").textContent+="\n"+s;$("log").scrollTop=$("log").scrollHeight}
 async function api(path,body){
   const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
@@ -129,6 +139,7 @@ $("claimTask").onclick=async()=>{
     const role=$("agentRole").value;
     const r=await api("/api/tasks/claim",{agent_id,role});
     currentTask=r.task;
+    if(currentTask)startTaskHeartbeat();else stopTaskHeartbeat();
     $("completeTask").disabled=!currentTask;
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
   }catch(e){$("taskResult").textContent="Claim failed: "+e.message}
@@ -141,6 +152,7 @@ $("completeTask").onclick=async()=>{
     await api("/api/tasks/"+currentTask.id+"/complete",{agent_id});
     $("taskResult").textContent="Task #"+currentTask.id+" marked complete.";
     currentTask=null;
+    stopTaskHeartbeat();
     $("completeTask").disabled=true;
   }catch(e){$("taskResult").textContent="Completion failed: "+e.message}
 };
