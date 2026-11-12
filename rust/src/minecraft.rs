@@ -1624,7 +1624,7 @@ async fn execute_build(
         let mut material_slot = initial_menu.hotbar_slots_range().find(|slot| {
             initial_menu.slot(*slot).is_some_and(|item| {
                 !item.is_empty()
-                    && item.count() as usize >= positions.len()
+                    && (item.count() as usize) >= positions.len()
                     && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
             })
         });
@@ -1632,7 +1632,7 @@ async fn execute_build(
             let source_slot = initial_menu.player_slots_without_hotbar_range().find(|slot| {
                 initial_menu.slot(*slot).is_some_and(|item| {
                     !item.is_empty()
-                        && item.count() as usize >= positions.len()
+                        && (item.count() as usize) >= positions.len()
                         && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
                 })
             });
@@ -1659,7 +1659,7 @@ async fn execute_build(
             let verified = bot.menu().ok().is_some_and(|menu| {
                 menu.slot(destination_slot).is_some_and(|item| {
                     !item.is_empty()
-                        && item.count() as usize >= positions.len()
+                        && (item.count() as usize) >= positions.len()
                         && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
                 })
             });
