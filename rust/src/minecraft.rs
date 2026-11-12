@@ -2493,7 +2493,7 @@ fn is_plantable_seed(debug_name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart"]
+    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart", "sugarcan", "cactus", "bamboo"]
         .contains(&compact.as_str())
 }
 
@@ -2531,11 +2531,43 @@ async fn plant_crop_at(
         return false;
     };
     let seed_name = slots.get(seed_slot).map(|item| format!("{:?}", item.kind())).unwrap_or_default().to_ascii_lowercase();
-    let nether_wart = seed_name.contains("nether_wart") || seed_name.contains("netherwart");
-    if (nether_wart && !soil_name.contains("soul_sand") && !soil_name.contains("soulsand"))
-        || (!nether_wart && !soil_name.contains("farmland")) {
+    let compact_seed: String = seed_name.chars().filter(|character| character.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect();
+    let nether_wart = compact_seed == "netherwart";
+    let sugar_cane = compact_seed == "sugarcane";
+    let cactus = compact_seed == "cactus";
+    let bamboo = compact_seed == "bamboo";
+    let ordinary_crop = !nether_wart && !sugar_cane && !cactus && !bamboo;
+    let horizontal = [farmland.north(), farmland.south(), farmland.east(), farmland.west()];
+    let water_adjacent = horizontal.iter().any(|position| {
+        world.read().get_block_state(*position).is_some_and(|block| {
+            let name = format!("{block:?}").to_ascii_lowercase();
+            name.contains("water")
+        })
+    });
+    let cactus_clear = [crop_position.north(), crop_position.south(), crop_position.east(), crop_position.west()]
+        .iter().all(|position| world.read().get_block_state(*position).is_some_and(|block| block.is_air()));
+    let valid_soil = if nether_wart {
+        soil_name.contains("soul_sand")
+    } else if sugar_cane {
+        (soil_name.contains("dirt") || soil_name.contains("grass_block") || soil_name.contains("sand") || soil_name.contains("mud"))
+            && water_adjacent
+    } else if cactus {
+        (soil_name.contains("sand")) && cactus_clear
+    } else if bamboo {
+        soil_name.contains("dirt") || soil_name.contains("grass_block") || soil_name.contains("sand")
+            || soil_name.contains("gravel") || soil_name.contains("podzol") || soil_name.contains("mud")
+    } else {
+        soil_name.contains("farmland")
+    };
+    if !valid_soil {
         bot.chat(if nether_wart {
             "Nether wart must be planted on soul sand; I won't replace the target block."
+        } else if sugar_cane {
+            "Sugar cane needs a supported dirt/grass/sand/mud substrate with adjacent water."
+        } else if cactus {
+            "Cactus needs sand and clear horizontal space; I won't replace terrain."
+        } else if bamboo {
+            "Bamboo needs a supported dirt, grass, sand, gravel, podzol, or mud substrate."
         } else {
             "This crop requires farmland; I won't till or replace terrain automatically."
         });
