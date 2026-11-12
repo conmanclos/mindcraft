@@ -10,7 +10,7 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - SQLite conversation and strategic-goal persistence using WAL mode.
 - Specialist-role task decomposition (planner, scout, gatherer, builder, crafter, guardian), durable priority queue, atomic task claims with two-minute renewable leases, abandoned-task recovery, and completion tracking shared by workers using the same database. Workers renew with `POST /api/tasks/{id}/heartbeat`. Azalea can run a multi-client offline-mode swarm with a staggered join delay; Microsoft auth currently supports one account.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Attack/drop remain blocked until target-aware execution is implemented.
-- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health telemetry, and AI chat replies when players mention `Mindcraft`.
+- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/inventory telemetry, and AI chat replies when players mention `Mindcraft`.
 - A bounded in-process command queue. `say`, `stop`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
