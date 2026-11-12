@@ -248,6 +248,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "stop" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
+        "explore" => {
+            let radius = action.target.as_deref().unwrap_or("32").parse::<u16>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "explore radius must be an integer from 8 to 128 blocks".into()))?;
+            if !(8..=128).contains(&radius) {
+                return Err((StatusCode::BAD_REQUEST, "explore radius must be from 8 to 128 blocks".into()));
+            }
+            Ok(BotCommand::Explore(radius))
+        }
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
@@ -442,6 +450,15 @@ mod tests {
             minecraft_accounts: vec!["Mindcraft".into(), "Scout".into(), "Builder".into()],
             minecraft_auth: auth.into(), microsoft_email: None,
             database: std::path::PathBuf::from(":memory:"),
+        }
+    }
+
+    #[test]
+    fn exploration_radius_is_bounded() {
+        assert!(matches!(command_from_action(action("explore", None)), Ok(BotCommand::Explore(32))));
+        assert!(matches!(command_from_action(action("explore", Some("64"))), Ok(BotCommand::Explore(64))));
+        for radius in ["0", "7", "129", "-1", "far"] {
+            assert!(command_from_action(action("explore", Some(radius))).is_err());
         }
     }
 
