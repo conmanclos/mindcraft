@@ -165,7 +165,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 return Ok(());
             }
             if bot.exists() {
-                if let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) {
+                {
+                    let health = bot.health();
+                    let hunger = bot.hunger();
                     if state.is_primary {
                         if let Some(status) = &state.status {
                             let should_snapshot = if let Some(last) = &state.last_snapshot {
@@ -286,13 +288,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let pending = pending_lock.lock().await.take();
                     if let Some(mut pending) = pending {
                         match bot.hit_result() {
-                            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == pending.position => {
+                            HitResult::Block(hit) if !hit.miss && hit.block_pos == pending.position => {
                                 match pending.kind {
                                     PendingBlockActionKind::Mine => bot.start_mining(pending.position),
                                     PendingBlockActionKind::Place => bot.block_interact(pending.position),
                                 }
                             }
-                            Ok(_) | Err(_) => {
+                            _ => {
                                 pending.attempts = pending.attempts.saturating_add(1);
                                 if pending.attempts >= 20 {
                                     bot.chat("I couldn't get a clear line of sight to that block. The action was cancelled.");
@@ -324,9 +326,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false }
                 } else { false };
                 if should_repath {
-                    let goal = bot.player_uuid_by_username(&username).ok().flatten()
+                    let goal = bot.player_uuid_by_username(&username)
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
-                        .and_then(|entity| entity.position().ok())
+                        .map(|entity| entity.position())
                         .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
                     if let Some(goal) = goal {
                         bot.start_goto(BlockPosGoal(goal));
@@ -350,24 +352,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::AttackCrosshair => {
                         if !bot.has_attack_cooldown() {
                             match bot.hit_result() {
-                                Ok(HitResult::Entity(hit)) => {
-                                    if let Ok(target_position) = bot.entity_ref_for(hit.entity).position() {
-                                        let own_position = bot.position();
-                                        let dx = target_position.x - own_position.x;
-                                        let dy = target_position.y - own_position.y;
-                                        let dz = target_position.z - own_position.z;
-                                        if dx * dx + dy * dy + dz * dz <= 12.25 {
-                                            bot.look_at(target_position);
-                                            bot.attack(hit.entity);
-                                        } else {
-                                            bot.chat("Target is outside safe melee range.");
-                                        }
+                                HitResult::Entity(hit) => {
+                                    let target_position = bot.entity_ref_for(hit.entity).position();
+                                    let own_position = bot.position();
+                                    let dx = target_position.x - own_position.x;
+                                    let dy = target_position.y - own_position.y;
+                                    let dz = target_position.z - own_position.z;
+                                    if dx * dx + dy * dy + dz * dz <= 12.25 {
+                                        bot.look_at(target_position);
+                                        bot.attack(hit.entity);
                                     } else {
-                                        bot.chat("I lost track of that target.");
+                                        bot.chat("Target is outside safe melee range.");
                                     }
                                 }
-                                Ok(_) => bot.chat("No visible entity is in my crosshair."),
-                                Err(_) => bot.chat("I can't read the current crosshair target."),
+                                _ => bot.chat("No visible entity is in my crosshair."),
                             }
                         }
                     }
