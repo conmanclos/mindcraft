@@ -187,7 +187,6 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
             BotCommand::Say(text)
         },
         "stop" => BotCommand::Stop,
-        "use_item" => BotCommand::UseItem,
         "equip" => {
             let slot = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?
                 .parse::<u8>().map_err(|_| (StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?;
