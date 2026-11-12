@@ -48,6 +48,9 @@ impl Config {
         if minecraft_auth == "microsoft" && minecraft_accounts.len() != 1 {
             bail!("Microsoft auth currently supports one account; use MINDCRAFT_MC_ACCOUNTS for multiple offline accounts");
         }
+        if minecraft_accounts.len() > 8 {
+            bail!("MINDCRAFT_MC_ACCOUNTS is limited to 8 clients per runtime");
+        }
         if minecraft_auth == "offline" {
             let mut unique = std::collections::HashSet::new();
             for account in &minecraft_accounts {
