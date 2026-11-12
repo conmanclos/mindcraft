@@ -26,7 +26,7 @@ struct RuntimeLaunch {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SavedSetup {
-    server: String, username: String, auth: String, microsoft_email: String,
+    server: String, username: String, accounts: String, auth: String, microsoft_email: String,
     provider: String, model: String, base_url: String, autonomy: String,
 }
 
@@ -35,6 +35,7 @@ struct SavedSetup {
 struct Setup {
     server: String,
     username: String,
+    accounts: String,
     auth: String,
     microsoft_email: String,
     provider: String,
@@ -67,6 +68,7 @@ fn load_setup(app: AppHandle) -> Result<Option<SavedSetup>, String> {
     Ok(Some(SavedSetup {
         server: get("MINDCRAFT_MC_SERVER"),
         username: get("MINDCRAFT_MC_USERNAME"),
+        accounts: get("MINDCRAFT_MC_ACCOUNTS"),
         auth: get("MINDCRAFT_MC_AUTH"),
         microsoft_email: get("MINDCRAFT_MICROSOFT_EMAIL"),
         provider: get("MINDCRAFT_PROVIDER"),
@@ -93,6 +95,24 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.auth == "microsoft" && setup.microsoft_email.trim().is_empty() {
         return Err("Enter the Microsoft account email.".into());
     }
+    let accounts = if setup.auth == "offline" {
+        let raw = if setup.accounts.trim().is_empty() { setup.username.trim() } else { setup.accounts.trim() };
+        let parsed = raw.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>();
+        if parsed.is_empty() || parsed.len() > 8 {
+            return Err("Enter between 1 and 8 offline bot usernames.".into());
+        }
+        let mut unique = std::collections::HashSet::new();
+        for name in &parsed {
+            if !(3..=16).contains(&name.len())
+                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                || !unique.insert(name.to_ascii_lowercase()) {
+                return Err("Offline bot usernames must be unique, 3-16 letters, numbers, or underscores.".into());
+            }
+        }
+        parsed.join(",")
+    } else {
+        setup.username.trim().to_owned()
+    };
     if !["openai", "openai-compatible", "anthropic", "google", "ollama"].contains(&setup.provider.as_str()) {
         return Err("Choose a supported AI provider.".into());
     }
@@ -125,6 +145,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     let values = [
         ("MINDCRAFT_MC_SERVER", setup.server.trim().to_owned()),
         ("MINDCRAFT_MC_USERNAME", setup.username.trim().to_owned()),
+        ("MINDCRAFT_MC_ACCOUNTS", accounts),
         ("MINDCRAFT_MC_AUTH", setup.auth.clone()),
         ("MINDCRAFT_MICROSOFT_EMAIL", setup.microsoft_email.trim().to_owned()),
         ("MINDCRAFT_PROVIDER", setup.provider.clone()),
