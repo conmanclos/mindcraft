@@ -98,6 +98,7 @@ The dashboard is served from `/`. `GET /api/health` is public; all other API rou
 | `DELETE /api/agents/{agent_id}/credential` | Revoke an agent token (master token required) |
 | `POST /api/tasks/claim` | Atomically claim the highest-priority pending task for a role; accepts the master token or that agent's token |
 | `POST /api/tasks/{id}/heartbeat` | Renew a two-minute task lease |
+| `POST /api/tasks/{id}/release` | Release a task back to the pending queue when a worker cannot complete it |
 | `POST /api/tasks/{id}/complete` | Complete a task owned by the requesting agent |
 
 Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guardian`. Claims include an agent ID so multiple workers can share the same SQLite database without taking the same live task.
