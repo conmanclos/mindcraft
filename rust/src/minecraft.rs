@@ -352,7 +352,12 @@ async fn run_specialist_task(
         Ok::<(), anyhow::Error>(())
     }.await;
     if let Err(error) = result {
-        let reason = error.to_string().chars().take(900).collect::<String>();
+        let mut reason = error.to_string();
+        if reason.len() > 900 {
+            let mut boundary = 900;
+            while !reason.is_char_boundary(boundary) { boundary -= 1; }
+            reason.truncate(boundary);
+        }
         let disposition = match store.fail_task(task.id, &agent_id, &reason) {
             Ok(Some(status)) if status == "retry_scheduled" => "A retry has been scheduled with backoff.",
             Ok(Some(_)) => "The task reached its retry limit and its goal was stopped.",
