@@ -13,6 +13,8 @@ pub struct Config {
     pub base_url: String,
     pub minecraft_server: Option<String>,
     pub minecraft_username: String,
+    pub minecraft_auth: String,
+    pub microsoft_email: Option<String>,
     pub database: PathBuf,
 }
 
@@ -28,6 +30,14 @@ impl Config {
         let provider = env::var("MINDCRAFT_PROVIDER").unwrap_or_else(|_| "ollama".into()).to_lowercase();
         if !["openai", "openai-compatible", "anthropic", "google", "ollama"].contains(&provider.as_str()) {
             bail!("MINDCRAFT_PROVIDER must be openai, openai-compatible, anthropic, google, or ollama");
+        }
+        let minecraft_auth = env::var("MINDCRAFT_MC_AUTH").unwrap_or_else(|_| "offline".into()).to_lowercase();
+        if !["offline", "microsoft"].contains(&minecraft_auth.as_str()) {
+            bail!("MINDCRAFT_MC_AUTH must be offline or microsoft");
+        }
+        let microsoft_email = env::var("MINDCRAFT_MICROSOFT_EMAIL").ok().filter(|value| !value.trim().is_empty());
+        if minecraft_auth == "microsoft" && microsoft_email.is_none() {
+            bail!("MINDCRAFT_MICROSOFT_EMAIL is required when MINDCRAFT_MC_AUTH=microsoft");
         }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
         if provider == "openai" && api_key.is_empty() {
@@ -54,6 +64,8 @@ impl Config {
             base_url: env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".into()),
             minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
             minecraft_username: env::var("MINDCRAFT_MC_USERNAME").unwrap_or_else(|_| "Mindcraft".into()),
+            minecraft_auth,
+            microsoft_email,
             database: PathBuf::from(env::var("MINDCRAFT_DATABASE").unwrap_or_else(|_| "./mindcraft.sqlite3".into())),
         })
     }
