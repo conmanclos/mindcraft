@@ -1,4 +1,4 @@
-use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{AgentCommand, BotCommand}, store::{AgentTask, Goal, Store}};
+use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_spec, AgentCommand, BotCommand}, store::{AgentTask, Goal, Store}};
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
@@ -297,19 +297,9 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             if parts.next().is_some() {
                 return Err((StatusCode::BAD_REQUEST, "craft target accepts at most one @x,y,z crafting-table coordinate".into()));
             }
-            let supported = [
-                "planks", "sticks", "torch", "crafting_table",
-                "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe",
-                "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe",
-                "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe",
-                "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe",
-                "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl",
-                "furnace", "chest", "bread", "ladder",
-            ];
-            if !supported.contains(&recipe.as_str()) {
-                return Err((StatusCode::NOT_IMPLEMENTED, "supported recipes include planks, sticks, torches, wooden/stone/iron/diamond tools, doors, trapdoors, slabs, stairs, fences, signs, boats, bowls, furnaces, chests, bread, and ladders".into()));
-            }
-            let requires_table = !["planks", "sticks", "torch", "crafting_table"].contains(&recipe.as_str());
+            let Some((requires_table, _, _)) = recipe_spec(&recipe) else {
+                return Err((StatusCode::NOT_IMPLEMENTED, "that recipe is not in the runtime's explicit crafting allowlist".into()));
+            };
             if requires_table && table.is_none() {
                 return Err((StatusCode::BAD_REQUEST, "this recipe requires a crafting table; append @x,y,z to the recipe name".into()));
             }
