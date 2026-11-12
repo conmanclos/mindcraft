@@ -1083,6 +1083,8 @@ mod tests {
 
     #[test]
     fn container_transfer_coordinates_and_slot_are_bounded() {
+        assert!(matches!(command_from_action(action("container_deposit", Some("1,64,-2"))), Ok(BotCommand::ContainerDeposit(1,64,-2))));
+        assert!(command_from_action(action("container_deposit", Some("1,64,-2,3"))).is_err());
         assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,27"))), Ok(BotCommand::ContainerTransfer(1,64,-2,Some((27,27))))));
         assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,0-26"))), Ok(BotCommand::ContainerTransfer(1,64,-2,Some((0,26))))));
         assert!(matches!(command_from_action(action("container_transfer", Some("1,64,-2,all"))), Ok(BotCommand::ContainerTransfer(1,64,-2,None))));
