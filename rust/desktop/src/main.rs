@@ -11,6 +11,7 @@ use std::{
     sync::Mutex,
 };
 use tauri::{AppHandle, Manager, State};
+use url::Url;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -51,6 +52,17 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
     #[cfg(unix)]
     fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     Ok(path)
+}
+
+fn valid_http_base_url(value: &str) -> bool {
+    Url::parse(value.trim()).ok().is_some_and(|url| {
+        ["http", "https"].contains(&url.scheme())
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+    })
 }
 
 fn dotenv_value(value: &str) -> String {
@@ -129,8 +141,8 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     }
     if ["ollama", "openai-compatible"].contains(&setup.provider.as_str())
         && !setup.base_url.trim().is_empty()
-        && !(setup.base_url.trim().starts_with("http://") || setup.base_url.trim().starts_with("https://")) {
-        return Err("The AI base URL must start with http:// or https://.".into());
+        && !valid_http_base_url(&setup.base_url) {
+        return Err("The AI base URL must be a valid http:// or https:// URL without credentials, query, or fragment.".into());
     }
     if !["assisted", "balanced", "autonomous"].contains(&setup.autonomy.as_str()) {
         return Err("Choose an autonomy level.".into());
