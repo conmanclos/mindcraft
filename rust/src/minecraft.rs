@@ -2,6 +2,7 @@ use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
 use azalea::{
     BlockPos,
+    container::ContainerHandle,
     pathfinder::goals::{BlockPosGoal, RadiusGoal},
     prelude::*,
     swarm::{Swarm, SwarmBuilder, SwarmEvent},
@@ -14,6 +15,7 @@ use azalea::{
     world::MinecraftEntityId,
     protocol::packets::game::serverbound_player_command_packet::{Action as PlayerCommandAction, ServerboundPlayerCommandPacket},
 };
+use azalea_inventory::{operations::{PickupClick, QuickMoveClick}, Menu};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -50,6 +52,7 @@ pub enum BotCommand {
     Jump,
     Sneak(bool),
     UseItem,
+    Craft(String),
 }
 
 #[derive(Clone, Component, Default)]
@@ -529,6 +532,18 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                             bot.chat("The current block target is unavailable.");
                         }
                     }
+                    BotCommand::Craft(recipe) => {
+                        let mut crafting_bot = bot.clone();
+                        tokio::spawn(async move {
+                            match craft_basic(&mut crafting_bot, &recipe).await {
+                                Ok(()) => crafting_bot.chat("Crafting completed."),
+                                Err(error) => {
+                                    tracing::warn!(%error, %recipe, "basic crafting failed");
+                                    crafting_bot.chat("I couldn't complete that recipe. Check that the required materials and inventory space are available.");
+                                }
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -585,6 +600,116 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+
+async fn wait_ticks(
+    ticks: &mut tokio::sync::broadcast::Receiver<()>,
+    count: usize,
+) -> Result<()> {
+    for _ in 0..count {
+        tokio::time::timeout(Duration::from_secs(2), ticks.recv()).await??;
+    }
+    Ok(())
+}
+
+async fn click_pickup(
+    bot: &Client,
+    handle: &ContainerHandle,
+    slot: u16,
+    right_click: bool,
+) -> Result<()> {
+    let mut ticks = bot.get_tick_broadcaster();
+    let click = if right_click {
+        PickupClick::Right { slot: Some(slot) }
+    } else {
+        PickupClick::Left { slot: Some(slot) }
+    };
+    handle.click(click);
+    wait_ticks(&mut ticks, 2).await
+}
+
+async fn click_quick_move(
+    bot: &Client,
+    handle: &ContainerHandle,
+    slot: u16,
+) -> Result<()> {
+    let mut ticks = bot.get_tick_broadcaster();
+    handle.click(QuickMoveClick::Left { slot });
+    wait_ticks(&mut ticks, 3).await
+}
+
+fn find_inventory_slot(menu: &Menu, predicate: impl Fn(&str) -> bool) -> Option<u16> {
+    menu.player_slots_range().find_map(|index| {
+        let item = menu.slots().get(index)?.as_present()?;
+        let name = format!("{:?}", item.kind);
+        predicate(&name).then_some(index as u16)
+    })
+}
+
+fn inventory_slot_count(menu: &Menu, slot: u16) -> u32 {
+    menu.slots()
+        .get(slot as usize)
+        .and_then(|item| item.as_present())
+        .map(|item| item.count.max(0) as u32)
+        .unwrap_or(0)
+}
+
+async fn place_one_in_crafting_grid(
+    bot: &Client,
+    handle: &ContainerHandle,
+    source_slot: u16,
+    grid_slot: u16,
+) -> Result<()> {
+    click_pickup(bot, handle, source_slot, false).await?;
+    click_pickup(bot, handle, grid_slot, true).await?;
+    click_pickup(bot, handle, source_slot, false).await?;
+    Ok(())
+}
+
+async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
+    let (source_predicate, grid_slots): (Box<dyn Fn(&str) -> bool + Send + Sync>, Vec<u16>) =
+        match recipe {
+            "planks" => (
+                Box::new(|name| name.ends_with("Log") || name.ends_with("Stem") || name == "BambooBlock"),
+                vec![1],
+            ),
+            "sticks" => (Box::new(|name| name.ends_with("Planks")), vec![1, 3]),
+            "crafting_table" => (Box::new(|name| name.ends_with("Planks")), vec![1, 2, 3, 4]),
+            _ => anyhow::bail!("unsupported basic recipe '{recipe}'"),
+        };
+
+    let handle = bot.open_inventory()
+        .ok_or_else(|| anyhow::anyhow!("close the currently open container before crafting"))?;
+    let menu = handle.menu()
+        .ok_or_else(|| anyhow::anyhow!("player inventory is not available"))?;
+    let source_slot = find_inventory_slot(&menu, |name| source_predicate(name))
+        .ok_or_else(|| anyhow::anyhow!("required ingredients are not in the player inventory"))?;
+    if inventory_slot_count(&menu, source_slot) < grid_slots.len() as u32 {
+        anyhow::bail!("not enough ingredients for '{recipe}'");
+    }
+    drop(menu);
+
+    for grid_slot in grid_slots {
+        place_one_in_crafting_grid(bot, &handle, source_slot, grid_slot).await?;
+    }
+
+    let mut ticks = bot.get_tick_broadcaster();
+    wait_ticks(&mut ticks, 4).await?;
+    let menu = handle.menu()
+        .ok_or_else(|| anyhow::anyhow!("player inventory closed during crafting"))?;
+    if menu.slots().first().is_none_or(|item| item.is_empty()) {
+        anyhow::bail!("the 2x2 crafting grid did not produce the requested recipe");
+    }
+    drop(menu);
+
+    click_quick_move(bot, &handle, 0).await?;
+    let menu = handle.menu()
+        .ok_or_else(|| anyhow::anyhow!("player inventory closed before collecting the result"))?;
+    if menu.slots().first().is_some_and(|item| !item.is_empty()) {
+        anyhow::bail!("inventory may be full; crafting result remains in the output slot");
     }
     Ok(())
 }
