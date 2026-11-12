@@ -2818,62 +2818,62 @@ async fn execute_smelt(
     count: u8,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
-) {
+) -> bool {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
-    if cancelled() { return; }
+    if cancelled() { return false; }
     if !(1..=64).contains(&count) {
         bot.chat("Batch smelting accepts 1 to 64 inputs per furnace operation.");
-        return;
+        return false;
     }
     let Some(result_name) = smelt_spec(&input) else {
         bot.chat("That input is not in the safe smelting allowlist.");
-        return;
+        return false;
     };
     let Ok(world) = bot.world() else {
         bot.chat("I can't read the loaded world to reach that furnace.");
-        return;
+        return false;
     };
     if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
         bot.chat("That furnace coordinate is not a loaded non-air block.");
-        return;
+        return false;
     }
     let chunk_storage = world.read().chunks.clone();
     if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
         if !cancelled() { bot.chat("Pathfinding to the furnace timed out or failed."); }
-        return;
+        return false;
     }
-    if cancelled() { return; }
+    if cancelled() { return false; }
     if !bot.exists() || !bot.is_goto_target_reached() {
         bot.chat("I couldn't reach the furnace without breaking blocks.");
-        return;
+        return false;
     }
-    let Ok(own_position) = bot.position() else { return; };
+    let Ok(own_position) = bot.position() else { return false; };
     let dx = own_position.x - (position.x as f64 + 0.5);
     let dy = own_position.y - (position.y as f64 + 0.5);
     let dz = own_position.z - (position.z as f64 + 0.5);
     if dx * dx + dy * dy + dz * dz > 20.25 {
         bot.chat("The furnace is still outside the 4.5-block interaction reach.");
-        return;
+        return false;
     }
     bot.look_at(position.center());
     bot.wait_updates(1).await;
-    if cancelled() { return; }
+    if cancelled() { return false; }
     match bot.hit_result() {
         Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
         _ => {
             bot.chat("I don't have a clear line of sight to that furnace.");
-            return;
+            return false;
         }
     }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
         bot.chat("I couldn't open a furnace interface. Close other menus and check that the target is a furnace, blast furnace, or smoker.");
-        return;
+        return false;
     };
-    if cancelled() { drop(container); return; }
+    if cancelled() { drop(container); return false; }
     let Some(menu) = container.menu().ok().flatten() else {
         bot.chat("The furnace interface closed before I could use it.");
-        return;
+        return false;
     };
     if !matches!(
         &menu,
@@ -2882,15 +2882,15 @@ async fn execute_smelt(
             | azalea_inventory::Menu::Smoker { .. }
     ) {
         bot.chat("That block opened an inventory, but it is not a furnace, blast furnace, or smoker.");
-        return;
+        return false;
     }
     let Some(slots) = container.slots() else {
         bot.chat("I couldn't read the furnace slots.");
-        return;
+        return false;
     };
     if slots.len() < 3 || !slots[0].is_empty() || !slots[1].is_empty() || !slots[2].is_empty() {
         bot.chat("The furnace input, fuel, or output slot is occupied. I won't mix with an existing smelting job.");
-        return;
+        return false;
     }
     let mut input_groups: Vec<(String, u16, Vec<(usize, u8)>)> = Vec::new();
     for slot in menu.player_slots_range() {
@@ -2913,7 +2913,7 @@ async fn execute_smelt(
         .filter(|(_, total, _)| *total >= u16::from(count))
         .min_by_key(|(_, total, _)| *total - u16::from(count)) else {
         bot.chat(format!("I need {count} matching {input} across one or more inventory stacks of the same item."));
-        return;
+        return false;
     };
 
     let mut remaining_input = count;
@@ -2922,7 +2922,7 @@ async fn execute_smelt(
         let amount = remaining_input.min(available);
         container.left_click(input_source);
         for _ in 0..amount {
-            if cancelled() { drop(container); return; }
+            if cancelled() { drop(container); return false; }
             container.right_click(0);
             bot.wait_ticks(1).await;
         }
@@ -2933,12 +2933,12 @@ async fn execute_smelt(
         container.shift_click(0);
         bot.wait_ticks(2).await;
         bot.chat("I couldn't assemble the complete input batch; I returned the accepted input.");
-        return;
+        return false;
     }
     let mut input_placed = false;
     for _ in 0..5 {
         bot.wait_ticks(1).await;
-        if cancelled() { drop(container); return; }
+        if cancelled() { drop(container); return false; }
         input_placed = container.slots()
             .and_then(|slots| slots.first().map(|item| {
                 !item.is_empty() && item.count() >= count
@@ -2947,19 +2947,19 @@ async fn execute_smelt(
             .unwrap_or(false);
         if input_placed { break; }
     }
-    if cancelled() { return; }
+    if cancelled() { return false; }
     if !input_placed {
         container.shift_click(0);
         bot.wait_ticks(2).await;
         bot.chat("The server did not confirm the furnace input; I returned anything it accepted and stopped.");
-        return;
+        return false;
     }
 
     let Some(inventory_slots) = container.slots() else {
         container.shift_click(0);
         bot.wait_ticks(2).await;
         bot.chat("I couldn't inspect inventory fuel stacks; I returned the furnace input.");
-        return;
+        return false;
     };
     // Group identical fuel items across inventory slots. A furnace accepts one
     // fuel type per batch, but the required amount may be assembled from
@@ -2992,7 +2992,7 @@ async fn execute_smelt(
         container.shift_click(0);
         bot.wait_ticks(2).await;
         bot.chat(format!("I need enough coal, charcoal, blaze rods, or lava buckets across one or more stacks of the same fuel type to smelt {count} items. I returned the input."));
-        return;
+        return false;
     };
     let mut remaining_fuel = required_fuel;
     for (fuel_source, available) in fuel_sources {
@@ -3000,7 +3000,7 @@ async fn execute_smelt(
         let amount = remaining_fuel.min(available);
         container.left_click(fuel_source);
         for _ in 0..amount {
-            if cancelled() { drop(container); return; }
+            if cancelled() { drop(container); return false; }
             container.right_click(1);
             bot.wait_ticks(1).await;
         }
@@ -3012,12 +3012,12 @@ async fn execute_smelt(
         container.shift_click(0);
         bot.wait_ticks(2).await;
         bot.chat("I couldn't assemble the complete fuel batch; I returned the accepted fuel and input.");
-        return;
+        return false;
     }
     let mut fuel_placed = false;
     for _ in 0..5 {
         bot.wait_ticks(1).await;
-        if cancelled() { drop(container); return; }
+        if cancelled() { drop(container); return false; }
         fuel_placed = container.slots()
             .and_then(|slots| slots.get(1).map(|item| {
                 !item.is_empty()
@@ -3032,7 +3032,7 @@ async fn execute_smelt(
         container.shift_click(0);
         bot.wait_ticks(2).await;
         bot.chat("The server did not accept the complete selected fuel stack; I returned any accepted fuel and the input.");
-        return;
+        return false;
     }
 
     bot.chat(format!("Started a batch of {count} {input}; waiting for {count} {result_name}."));
@@ -3040,11 +3040,11 @@ async fn execute_smelt(
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20 + u64::from(count) * 12);
     let mut output_ready = false;
     loop {
-        if cancelled() { return; }
-        if !bot.exists() { return; }
+        if cancelled() { return false; }
+        if !bot.exists() { return false; }
         if container.menu().ok().flatten().is_none() {
             bot.chat("The furnace menu closed before smelting finished; the input and fuel remain server-side.");
-            return;
+            return false;
         }
         output_ready = container.slots()
             .and_then(|slots| slots.get(2).map(|item| {
@@ -3059,16 +3059,16 @@ async fn execute_smelt(
             Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
                 tracing::debug!(username = %bot.username(), skipped, "smelting task missed tick notifications");
             }
-            Ok(Err(broadcast::error::RecvError::Closed)) => return,
+            Ok(Err(broadcast::error::RecvError::Closed)) => return false,
             Err(_) => break,
         }
     }
     if !output_ready {
         bot.chat(format!("The batch of {input} is still in the furnace or exceeded its wait limit. I left the furnace contents untouched; check it and collect {result_name} when ready."));
-        return;
+        return false;
     }
 
-    if cancelled() { return; }
+    if cancelled() { return false; }
     container.shift_click(2);
     let mut output_cleared = false;
     for _ in 0..10 {
@@ -3083,6 +3083,7 @@ async fn execute_smelt(
     } else {
         bot.chat(format!("The {result_name} is ready, but the furnace output slot did not clear. Check inventory capacity and the furnace."));
     }
+    output_cleared
 }
 
 fn required_smelt_fuel(input_count: u8, capacity_per_item: u8) -> Option<u8> {
