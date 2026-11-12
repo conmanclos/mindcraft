@@ -1507,7 +1507,7 @@ async fn execute_smelt(
     }
     let Some(input_source) = menu.player_slots_range().find(|slot| {
         slots.get(*slot).is_some_and(|item| {
-            !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &input)
+            !item.is_empty() && smelt_input_matches(&format!("{:?}", item.kind()), &input)
         })
     }) else {
         bot.chat(format!("I don't have {input} in my inventory."));
@@ -1523,7 +1523,7 @@ async fn execute_smelt(
         if cancelled() { drop(container); return; }
         input_placed = container.slots()
             .and_then(|slots| slots.first().map(|item| {
-                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &input)
+                !item.is_empty() && smelt_input_matches(&format!("{:?}", item.kind()), &input)
             }))
             .unwrap_or(false);
         if input_placed { break; }
@@ -1612,6 +1612,42 @@ async fn execute_smelt(
         bot.chat(format!("Smelted one {input} into {result_name} and confirmed the furnace output slot cleared."));
     } else {
         bot.chat(format!("The {result_name} is ready, but the furnace output slot did not clear. Check inventory capacity and the furnace."));
+    }
+}
+
+fn smelt_input_matches(debug_name: &str, selector: &str) -> bool {
+    let compact = |value: &str| -> String {
+        value.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let name = compact(debug_name);
+    match selector {
+        "iron_ore" => name == "ironore" || name == "deepslateironore",
+        "gold_ore" => name == "goldore" || name == "deepslategoldore",
+        "copper_ore" => name == "copperore" || name == "deepslatecopperore",
+        "sand" => name == "sand" || name == "redsand",
+        "log" => (name.ends_with("log") || name.ends_with("wood")) && !name.ends_with("stem"),
+        _ => name == compact(selector),
+    }
+}
+
+#[cfg(test)]
+mod smelt_input_tests {
+    use super::smelt_input_matches;
+
+    #[test]
+    fn smelt_inputs_do_not_confuse_raw_and_cooked_food_or_nether_stems() {
+        assert!(smelt_input_matches("Beef", "beef"));
+        assert!(!smelt_input_matches("CookedBeef", "beef"));
+        assert!(smelt_input_matches("Potato", "potato"));
+        assert!(!smelt_input_matches("BakedPotato", "potato"));
+        assert!(smelt_input_matches("OakLog", "log"));
+        assert!(smelt_input_matches("StrippedOakWood", "log"));
+        assert!(!smelt_input_matches("CrimsonStem", "log"));
+        assert!(smelt_input_matches("DeepslateIronOre", "iron_ore"));
+        assert!(smelt_input_matches("RedSand", "sand"));
     }
 }
 
