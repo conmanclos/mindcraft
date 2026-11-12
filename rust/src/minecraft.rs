@@ -8,12 +8,18 @@ use azalea::{
     swarm::{Swarm, SwarmBuilder, SwarmEvent},
 };
 use azalea::{
-    entity::{indexing::EntityUuidIndex, Position},
-    interact::HitResultComponent,
+    entity::{indexing::EntityUuidIndex, LookDirection, Position},
+    interact::{CurrentSequenceNumber, HitResultComponent},
     inventory::SetSelectedHotbarSlotEvent,
     movement::{StartWalkEvent, WalkDirection},
     world::MinecraftEntityId,
-    protocol::packets::game::serverbound_player_command_packet::{Action as PlayerCommandAction, ServerboundPlayerCommandPacket},
+    protocol::packets::game::{
+        serverbound_interact_packet::InteractionHand,
+        serverbound_player_action_packet::{Action as PlayerAction, ServerboundPlayerActionPacket},
+        serverbound_player_command_packet::{Action as PlayerCommandAction, ServerboundPlayerCommandPacket},
+        serverbound_use_item_packet::ServerboundUseItemPacket,
+    },
+    direction::Direction,
 };
 use azalea_inventory::{operations::{PickupClick, QuickMoveClick}, Menu};
 use std::{
