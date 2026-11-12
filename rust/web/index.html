@@ -156,7 +156,6 @@ $("claimTask").onclick=async()=>{
 $("planTask").onclick=()=>{
   if(!currentTask) return;
   $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". Use the live game state and choose one safe, supported next action.";
-  if(!$("botTarget").value.trim())$("botTarget").value=$("agentId").value.trim();
   $("message").focus();
   $("plan").click();
 };
