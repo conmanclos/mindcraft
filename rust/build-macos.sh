@@ -8,9 +8,18 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This script must run on macOS." >&2
   exit 1
 fi
-if ! command -v cargo-tauri >/dev/null 2>&1 && ! cargo tauri --help >/dev/null 2>&1; then
-  echo "Install the Tauri CLI first: cargo install tauri-cli --version '^2'." >&2
+if ! command -v rustup >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
+  echo "Install Rust with rustup first: https://rustup.rs" >&2
   exit 1
+fi
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "Install the Xcode Command Line Tools first: xcode-select --install" >&2
+  exit 1
+fi
+rustup toolchain install nightly --profile minimal
+if ! cargo tauri --help >/dev/null 2>&1; then
+  echo "Installing the Tauri v2 CLI..."
+  cargo install tauri-cli --version '^2'
 fi
 
 echo "Building the native Minecraft 26.1 Rust runtime..."
