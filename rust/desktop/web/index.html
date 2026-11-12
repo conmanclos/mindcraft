@@ -86,10 +86,12 @@ $("approvePlan").onclick=async()=>{try{if(!proposedAction)throw Error("Propose a
 async function refreshGoals(){
  const goals=await api("/api/goals");
  if(!goals.length){$("goalList").textContent="No saved goals yet.";return}
- const entries=await Promise.all(goals.map(async goal=>{
-  const tasks=await api("/api/goals/"+goal.id+"/tasks");
-  const lines=tasks.map(task=>"  ["+task.status+"] "+task.role+" · "+task.description);
-  return "Goal #"+goal.id+" · "+goal.status+"\n"+goal.description+"\n"+(lines.join("\n")||"  No tasks");
+ const entries=await Promise.all(goals.slice(0,20).map(async goal=>{
+  try{
+   const tasks=await api("/api/goals/"+goal.id+"/tasks");
+   const lines=tasks.map(task=>"  ["+task.status+"] "+task.role+" · "+task.description);
+   return "Goal #"+goal.id+" · "+goal.status+"\n"+goal.description+"\n"+(lines.join("\n")||"  No tasks");
+  }catch(e){return "Goal #"+goal.id+" · "+goal.status+"\n"+goal.description+"\n  Task load failed: "+String(e)}
  }));
  $("goalList").textContent=entries.join("\n\n");
 }
