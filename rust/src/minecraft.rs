@@ -416,7 +416,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         | BotCommand::Equip(_) | BotCommand::UseItem | BotCommand::Craft(_)
                         | BotCommand::Deposit(_, _, _) | BotCommand::Withdraw(_, _, _, _)
                 ) {
-                    tracing::debug!(username = %bot.username(), "blocked gameplay action while health is critical");
+                    tracing::debug!(username = %bot.username(), "blocked gameplay action while health is critical or item use is active");
                     continue;
                 }
 
