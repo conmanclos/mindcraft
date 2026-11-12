@@ -87,14 +87,15 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if !["assisted", "balanced", "autonomous"].contains(&setup.autonomy.as_str()) {
         return Err("Choose an autonomy level.".into());
     }
-    if setup.provider != "ollama" && setup.api_key.trim().is_empty() {
-        return Err("This AI provider requires an API key.".into());
-    }
-
     let data = app_data(&app)?;
     let entry = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key").map_err(|e| e.to_string())?;
     if setup.api_key.trim().is_empty() {
-        let _ = entry.delete_credential();
+        if setup.provider != "ollama" && entry.get_password().is_err() {
+            return Err("This AI provider requires an API key. Enter it once to store it in Keychain.".into());
+        }
+        if setup.provider == "ollama" {
+            let _ = entry.delete_credential();
+        }
     } else {
         entry.set_password(setup.api_key.trim()).map_err(|e| e.to_string())?;
     }
