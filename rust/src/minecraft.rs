@@ -23,6 +23,7 @@ pub enum BotCommand {
     Equip(u8),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>),
+    ContainerDeposit(i32, i32, i32),
     Craft(String, Option<(i32, i32, i32)>),
     Smelt(String, (i32, i32, i32), u8),
 }
@@ -1122,6 +1123,91 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
+                        });
+                    }
+                    BotCommand::ContainerDeposit(x, y, z) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let position = BlockPos::new(x, y, z);
+                            let Ok(world) = client.world() else { client.chat("I can't read the loaded world to reach that container."); return; };
+                            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                                client.chat("That container coordinate is not a loaded non-air block."); return;
+                            }
+                            let chunk_storage = world.read().chunks.clone();
+                            if !goto_cancellable(&client, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the container timed out or failed.");
+                                }
+                                return;
+                            }
+                            if !client.exists() || !client.is_goto_target_reached() {
+                                client.chat("I couldn't reach that container without breaking blocks."); return;
+                            }
+                            let Ok(own_position) = client.position() else { return; };
+                            let dx = own_position.x - (position.x as f64 + 0.5);
+                            let dy = own_position.y - (position.y as f64 + 0.5);
+                            let dz = own_position.z - (position.z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz > 20.25 {
+                                client.chat("That container is still outside the 4.5-block interaction reach."); return;
+                            }
+                            client.look_at(position.center());
+                            client.wait_updates(1).await;
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
+                            if !matches!(client.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+                                client.chat("I don't have a clear line of sight to that container."); return;
+                            }
+                            match client.open_container_at(position).await {
+                                Ok(Some(container)) => {
+                                    if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                        drop(container); return;
+                                    }
+                                    let Some(menu) = container.menu().ok().flatten() else {
+                                        client.chat("The container menu closed before I could inspect the inventory.");
+                                        drop(container); return;
+                                    };
+                                    // Deposit only the 27 main-inventory slots. The hotbar,
+                                    // armor, and offhand are deliberately preserved.
+                                    let slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
+                                    let mut moved_count = 0usize;
+                                    let mut skipped_count = 0usize;
+                                    for slot in slots {
+                                        if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                            drop(container); return;
+                                        }
+                                        let before = container.slots().and_then(|items| items.get(slot).cloned());
+                                        let Some(item_before) = before.filter(|item| !item.is_empty()) else { continue; };
+                                        let before_count = item_before.count();
+                                        let before_kind = item_before.kind();
+                                        container.shift_click(slot);
+                                        let mut moved = false;
+                                        for _ in 0..10 {
+                                            client.wait_ticks(1).await;
+                                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                                drop(container); return;
+                                            }
+                                            moved = container.slots()
+                                                .and_then(|items| items.get(slot).map(|item| {
+                                                    item.is_empty() || item.count() < before_count || item.kind() != before_kind
+                                                }))
+                                                .unwrap_or(false);
+                                            if moved { break; }
+                                        }
+                                        if moved { moved_count += 1; } else { skipped_count += 1; }
+                                    }
+                                    client.chat(format!("Deposit finished: {moved_count} main-inventory slot(s) moved; {skipped_count} non-empty slot(s) stayed because the container may be full."));
+                                    drop(container);
+                                }
+                                Ok(None) => client.chat("I could not open that block as a container."),
+                                Err(error) => tracing::warn!(username = %client.username(), %error, "container deposit failed to open container"),
+                            }
                         });
                     }
                     BotCommand::ContainerTransfer(x, y, z, slot_range) => {
