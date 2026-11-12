@@ -298,11 +298,11 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             if parts.next().is_some() {
                 return Err((StatusCode::BAD_REQUEST, "craft target accepts at most one @x,y,z crafting-table coordinate".into()));
             }
-            let supported = ["sticks", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "furnace", "chest"];
+            let supported = ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "furnace", "chest", "bread", "ladder"];
             if !supported.contains(&recipe.as_str()) {
-                return Err((StatusCode::NOT_IMPLEMENTED, "supported recipes: sticks, crafting_table, wooden/stone tools, furnace, chest".into()));
+                return Err((StatusCode::NOT_IMPLEMENTED, "supported recipes: planks, sticks, torch, crafting_table, wooden/stone tools, furnace, chest, bread, ladder".into()));
             }
-            let requires_table = !["sticks", "crafting_table"].contains(&recipe.as_str());
+            let requires_table = !["planks", "sticks", "torch", "crafting_table"].contains(&recipe.as_str());
             if requires_table && table.is_none() {
                 return Err((StatusCode::BAD_REQUEST, "this recipe requires a crafting table; append @x,y,z to the recipe name".into()));
             }
