@@ -298,7 +298,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                                 PendingBlockActionKind::Mine => {
                                     let mut mining_bot = bot.clone();
                                     let position = pending.position;
-                                    tokio::task::spawn_local(async move {
+                                    tokio::spawn(async move {
                                         mining_bot.mine(position).await;
                                     });
                                 }
@@ -541,7 +541,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         let prompt = format!(
                             "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action. Message: {content}"
                         );
-                        tokio::task::spawn_local(async move {
+                        tokio::spawn(async move {
                             match brain.reply(&prompt).await {
                                 Ok(reply) => {
                                     let safe_reply: String = reply.chars().take(240).collect();
