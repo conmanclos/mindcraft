@@ -141,7 +141,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
-        minecraft_target: "26.1",
+        minecraft_target: "1.21.1",
         minecraft_connected: state.status.minecraft_connected.load(std::sync::atomic::Ordering::Relaxed),
         connected_agents: state.status.connected_agents.load(std::sync::atomic::Ordering::Relaxed),
         autonomy: state.config.mode.clone(),
@@ -229,21 +229,13 @@ fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode,
         }
         "stop" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
-        "sneak" => {
-            let enabled = action.target.ok_or((StatusCode::BAD_REQUEST, "sneak target must be true or false".into()))?;
-            match enabled.to_lowercase().as_str() {
-                "true" | "on" => Ok(BotCommand::Sneak(true)),
-                "false" | "off" => Ok(BotCommand::Sneak(false)),
-                _ => Err((StatusCode::BAD_REQUEST, "sneak target must be true/on or false/off".into())),
-            }
-        }
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
-            if !target.eq_ignore_ascii_case("crosshair") {
-                return Err((StatusCode::BAD_REQUEST, "attack target must be 'crosshair'; aim at a visible entity first".into()));
+            if !(3..=16).contains(&target.len()) || !target.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return Err((StatusCode::BAD_REQUEST, "attack target must be an online Minecraft username".into()));
             }
-            Ok(BotCommand::AttackCrosshair)
+            Ok(BotCommand::AttackPlayer(target))
         }
         "follow" => {
             let username = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a Minecraft username".into()))?;
