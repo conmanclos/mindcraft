@@ -172,8 +172,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Tick => {
             let mut critical_health = false;
             if bot.exists() {
-                let health = bot.health();
-                let hunger = bot.hunger();
+                let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) else { return Ok(()); };
                 critical_health = health.is_finite() && health <= 6.0;
                 if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
@@ -184,24 +183,25 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else { false }
                     } else { false };
                     if should_snapshot {
-                        let position = bot.position();
-                        let inventory = bot.menu().slots().iter().enumerate()
-                            .filter(|(_, item)| !item.is_empty())
-                            .map(|(slot, item)| {
-                                let description: String = format!("{item:?}").chars().take(80).collect();
-                                format!("{slot}: {description}")
-                            })
-                            .collect::<Vec<_>>();
-                        let snapshot = crate::api::WorldSnapshot {
-                            agent: bot.username(),
-                            position: [position.x as f64, position.y as f64, position.z as f64],
-                            health,
-                            food: hunger.food,
-                            saturation: hunger.saturation,
-                            inventory,
-                        };
-                        status.agents.lock().await.insert(snapshot.agent.clone(), snapshot.clone());
-                        if state.is_primary { *status.world.lock().await = Some(snapshot); }
+                        if let (Ok(position), Ok(menu)) = (bot.position(), bot.menu()) {
+                            let inventory = menu.slots().iter().enumerate()
+                                .filter(|(_, item)| !item.is_empty())
+                                .map(|(slot, item)| {
+                                    let description: String = format!("{item:?}").chars().take(80).collect();
+                                    format!("{slot}: {description}")
+                                })
+                                .collect::<Vec<_>>();
+                            let snapshot = crate::api::WorldSnapshot {
+                                agent: bot.username(),
+                                position: [position.x as f64, position.y as f64, position.z as f64],
+                                health,
+                                food: hunger.food,
+                                saturation: hunger.saturation,
+                                inventory,
+                            };
+                            status.agents.lock().await.insert(snapshot.agent.clone(), snapshot.clone());
+                            if state.is_primary { *status.world.lock().await = Some(snapshot); }
+                        }
                     }
                 }
                 // Autonomous survival may eat only recognized food already in the hotbar.
@@ -218,18 +218,19 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else { false }
                     } else { false };
                     if should_eat {
-                        let menu = bot.menu();
-                        if let Some((slot, _)) = best_safe_food_slot(&menu) {
-                            let hotbar = menu.hotbar_slots_range();
-                            if hotbar.contains(&slot) {
-                                let hotbar_index = (slot - *hotbar.start()) as u8;
-                                bot.set_selected_hotbar_slot(hotbar_index);
-                                // Azalea applies hotbar selection on the next ECS Update.
-                                // Wait for that update so the right-click cannot consume
-                                // whatever item happened to be selected previously.
-                                bot.wait_updates(1).await;
-                                bot.start_use_item();
-                                tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
+                        if let Ok(menu) = bot.menu() {
+                            if let Some((slot, _)) = best_safe_food_slot(&menu) {
+                                let hotbar = menu.hotbar_slots_range();
+                                if hotbar.contains(&slot) {
+                                    let hotbar_index = (slot - *hotbar.start()) as u8;
+                                    bot.set_selected_hotbar_slot(hotbar_index);
+                                    // Azalea applies hotbar selection on the next ECS Update.
+                                    // Wait for that update so the right-click cannot consume
+                                    // whatever item happened to be selected previously.
+                                    bot.wait_updates(1).await;
+                                    bot.start_use_item();
+                                    tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
+                                }
                             }
                         }
                     }
@@ -290,13 +291,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false }
                 } else { false };
                 if should_repath {
-                    let goal = bot.player_uuid_by_username(&username)
+                    let goal = bot.player_uuid_by_username(&username).ok().flatten()
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
-                        .map(|entity| entity.position())
-                        .map(|target| {
+                        .and_then(|entity| entity.position().ok())
+                        .and_then(|target| bot.position().ok().map(|own| {
                             // Stand one block away on the side facing our current position.
-                            // A fixed +X offset makes every follower crowd the same side.
-                            let own = bot.position();
                             let dx = own.x - target.x;
                             let dz = own.z - target.z;
                             let (offset_x, offset_z) = if dx.abs() >= dz.abs() {
@@ -309,7 +308,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 target.y.floor() as i32,
                                 target.z.floor() as i32 + offset_z,
                             )
-                        });
+                        }));
                     if let Some(goal) = goal {
                         bot.start_goto(BlockPosGoal(goal));
                         if let Some(following) = &state.is_following { following.store(true, Ordering::Relaxed); }
@@ -334,10 +333,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let radius = base_radius + ((step / 8) % 3) as i32 * 8;
                     let offsets = [(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1),(0,-1),(1,-1)];
                     let (dx,dz) = offsets[step % offsets.len()];
-                    let position = bot.position();
-                    let destination = BlockPos::new(position.x.floor() as i32 + dx * radius, position.y.floor() as i32, position.z.floor() as i32 + dz * radius);
-                    bot.start_goto(BlockPosGoal(destination));
-                    tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
+                    if let Ok(position) = bot.position() {
+                        let destination = BlockPos::new(position.x.floor() as i32 + dx * radius, position.y.floor() as i32, position.z.floor() as i32 + dz * radius);
+                        bot.start_goto(BlockPosGoal(destination));
+                        tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
+                    }
                 }
             }
             for command in queued {
@@ -348,18 +348,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::AttackCrosshair => {
                         if !bot.has_attack_cooldown() {
-                            if let HitResult::Entity(hit) = bot.hit_result() {
+                            if let Ok(HitResult::Entity(hit)) = bot.hit_result() {
                                 let target = bot.entity_ref_for(hit.entity);
-                                let target_position = target.position();
-                                let own_position = bot.position();
-                                let dx = target_position.x - own_position.x;
-                                let dy = target_position.y - own_position.y;
-                                let dz = target_position.z - own_position.z;
-                                if dx * dx + dy * dy + dz * dz <= 12.25 {
-                                    bot.look_at(target_position);
-                                    bot.attack(hit.entity);
+                                if let (Ok(target_position), Ok(own_position)) = (target.position(), bot.position()) {
+                                    let dx = target_position.x - own_position.x;
+                                    let dy = target_position.y - own_position.y;
+                                    let dz = target_position.z - own_position.z;
+                                    if dx * dx + dy * dy + dz * dz <= 12.25 {
+                                        bot.look_at(target_position);
+                                        bot.attack(hit.entity);
+                                    } else {
+                                        bot.chat("Target is outside safe melee range.");
+                                    }
                                 } else {
-                                    bot.chat("Target is outside safe melee range.");
+                                    bot.chat("I could not read the target position.");
                                 }
                             } else {
                                 bot.chat("No visible entity is in my crosshair.");
@@ -404,7 +406,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         let position = BlockPos::new(x, y, z);
                         match bot.hit_result() {
-                            HitResult::Block(hit) if !hit.miss && hit.block_pos == position => bot.block_interact(position),
+                            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => bot.block_interact(position),
                             _ => bot.chat("I can only place against a block that is currently in my crosshair."),
                         }
                     }
