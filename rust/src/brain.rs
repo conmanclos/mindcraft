@@ -108,6 +108,10 @@ impl Brain {
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
+        let risk = action.risk.to_ascii_lowercase();
+        if !["low", "medium", "high"].contains(&risk.as_str()) {
+            bail!("planner risk must be low, medium, or high");
+        }
         Ok(())
     }
 
@@ -272,6 +276,17 @@ mod tests {
         let action = PlannedAction { action: "container_transfer".into(), target: Some("1,64,1,27".into()), reason: String::new(), risk: "low".into() };
         assert!(brain("autonomous").authorize_action(&action, false).is_err());
         assert!(brain("autonomous").authorize_action(&action, true).is_ok());
+    }
+
+    #[test]
+    fn invalid_risk_labels_are_rejected_instead_of_treated_as_low() {
+        let action = PlannedAction {
+            action: "explore".into(),
+            target: Some("32".into()),
+            reason: String::new(),
+            risk: "unknown".into(),
+        };
+        assert!(brain("balanced").authorize_action(&action, false).is_err());
     }
 
     #[test]
