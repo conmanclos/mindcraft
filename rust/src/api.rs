@@ -171,7 +171,7 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     }
     state.store.append_message("user", &request.message)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let context = state.store.recent_context(12, 12_000)
+    let context = state.store.recent_context(12, 6_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let world = state.status.world.lock().await.clone();
     let world_context = world.map(|w| format!("\nCurrent bot state: position {:?}, health {}/20, food {}/20, saturation {}, inventory: {:?}.", w.position, w.health, w.food, w.saturation, w.inventory)).unwrap_or_default();
