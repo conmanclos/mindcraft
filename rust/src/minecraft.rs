@@ -813,10 +813,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let own_username = bot.username();
             let from_self = sender.as_deref() == Some(own_username.as_str());
             let addressed_to_bot = sender.is_some() && content.to_lowercase().contains("mindcraft");
-            let trusted_chat_sender = sender.as_deref().is_some_and(|name| {
-                state.trusted_chat_players.as_ref()
-                    .is_some_and(|trusted| trusted.contains(&name.to_ascii_lowercase()))
-            });
+            let trusted_chat_sender = state.trusted_chat_players.as_ref()
+                .is_some_and(|trusted| is_trusted_chat_sender(trusted, sender.as_deref()));
             if state.is_primary && !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
                     let mut last = cooldown.lock().await;
@@ -933,6 +931,26 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         _ => {}
     }
     Ok(())
+}
+
+fn is_trusted_chat_sender(trusted: &HashSet<String>, sender: Option<&str>) -> bool {
+    sender.is_some_and(|name| trusted.contains(&name.to_ascii_lowercase()))
+}
+
+#[cfg(test)]
+mod chat_policy_tests {
+    use super::is_trusted_chat_sender;
+    use std::collections::HashSet;
+
+    #[test]
+    fn autonomous_chat_requires_an_exact_case_insensitive_allowlist_match() {
+        let trusted = HashSet::from(["owner".to_owned(), "friend_2".to_owned()]);
+        assert!(is_trusted_chat_sender(&trusted, Some("Owner")));
+        assert!(is_trusted_chat_sender(&trusted, Some("FRIEND_2")));
+        assert!(!is_trusted_chat_sender(&trusted, Some("stranger")));
+        assert!(!is_trusted_chat_sender(&trusted, None));
+        assert!(!is_trusted_chat_sender(&HashSet::new(), Some("Owner")));
+    }
 }
 
 /// Pathfind without allowing block destruction, while remaining cancellable by newer commands.
