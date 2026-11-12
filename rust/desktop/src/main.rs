@@ -77,6 +77,9 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.username.trim().is_empty() {
         return Err("Enter the Minecraft bot username.".into());
     }
+    if setup.auth == "offline" && (!(3..=16).contains(&setup.username.trim().len()) || !setup.username.trim().chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+        return Err("Offline-mode usernames must be 3-16 letters, numbers, or underscores.".into());
+    }
     if !["offline", "microsoft"].contains(&setup.auth.as_str()) {
         return Err("Choose a supported Minecraft sign-in method.".into());
     }
