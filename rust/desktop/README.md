@@ -5,7 +5,7 @@ Mindcraft Desktop is a Tauri 2 cross-platform application shell around the nativ
 ## User experience
 
 1. Open the Mindcraft app.
-2. Enter the Minecraft server and choose Microsoft authentication or **Cracked / Offline Mode**. Offline mode lets the bot join without a second paid Minecraft account, but only on servers whose owners have explicitly enabled offline/cracked connections (`online-mode=false`). It does not bypass authentication on online-mode servers. Offline mode supports a comma-separated team of up to eight unique bot usernames; Microsoft sign-in currently supports one account.
+2. Enter the Minecraft server and choose Microsoft authentication or **Cracked / Offline Mode**. Offline mode lets the bot join without a second paid Minecraft account, but only on servers whose owners have explicitly enabled offline/cracked connections (`online-mode=false`). It does not bypass authentication on online-mode servers. Offline mode supports a comma-separated team of up to eight unique bot usernames; Microsoft sign-in supports up to eight accounts, with one email per configured bot username and an isolated token cache for each.
 3. Select an AI provider, model, and API key (the key is stored in macOS Keychain). Optionally list trusted Minecraft chat usernames; only those players may trigger autonomous game actions through server chat, while all other players can still receive conversational replies.
 4. Choose Assisted, Balanced, or Autonomous mode.
 5. Save setup and click **Run Mindcraft**.
