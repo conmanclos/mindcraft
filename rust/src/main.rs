@@ -2,6 +2,7 @@ mod api;
 mod brain;
 mod config;
 mod minecraft;
+mod reflex;
 mod store;
 
 use anyhow::Result;
