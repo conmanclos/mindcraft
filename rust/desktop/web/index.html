@@ -10,7 +10,7 @@ main{max-width:900px;margin:0 auto;padding:42px 28px 60px}.brand{display:flex;al
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:22px;margin:16px 0}.panel h2{font-size:18px;margin:0 0 5px}.panel p{margin:0 0 18px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}input,select{width:100%;background:#11151b;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--text);font:inherit}input:focus,select:focus{outline:2px solid #52799e;border-color:transparent}.field{margin-bottom:14px}.wide{grid-column:1/-1}
 .actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:18px}button{border:1px solid #52799e;background:#29465f;color:white;padding:11px 18px;border-radius:9px;font:600 14px inherit;cursor:pointer}button.secondary{background:#252c36;border-color:var(--line)}button:disabled{opacity:.5;cursor:not-allowed}
-.status{margin-top:16px;padding:13px;border-radius:9px;background:#11151b;color:var(--muted);white-space:pre-wrap}.status.ok{color:var(--green)}.hidden{display:none}
+.status{margin-top:16px;padding:13px;border-radius:9px;background:#11151b;color:var(--muted);white-space:pre-wrap}.status.ok{color:var(--green)}.hidden{display:none}.field-note{font-size:12px;color:var(--muted);margin:-5px 0 12px}
 .steps{display:flex;gap:8px;margin:20px 0 28px}.step{height:4px;flex:1;background:#343b47;border-radius:4px}.step.active{background:var(--accent)}
 @media(max-width:650px){main{padding:24px 16px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}}
 </style>
@@ -22,7 +22,7 @@ main{max-width:900px;margin:0 auto;padding:42px 28px 60px}.brand{display:flex;al
 <section class="panel"><h2>1. Minecraft connection</h2><p>Tell Mindcraft which Java server to join.</p><div class="grid">
 <div class="field wide"><label for="server">Server address</label><input id="server" placeholder="play.example.com:25565" autocomplete="off"></div>
 <div class="field"><label for="username">Bot username</label><input id="username" value="Mindcraft" autocomplete="off"></div>
-<div class="field"><label for="auth">Sign-in method</label><select id="auth"><option value="microsoft">Microsoft account (online-mode)</option><option value="offline">Offline-mode server</option></select></div>
+<div class="field"><label for="auth">Sign-in method</label><select id="auth"><option value="microsoft">Microsoft account (online-mode)</option><option value="offline">Cracked / Offline Mode (no paid bot account)</option></select><div class="field-note">Use this for servers that explicitly allow cracked/offline players (online-mode=false). No Microsoft or Minecraft account is needed for the bot. This does not bypass authentication on online-mode servers.</div></div>
 <div class="field wide" id="emailField"><label for="email">Microsoft account email</label><input id="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
 </div></section>
 <section class="panel"><h2>2. AI teammate</h2><p>Choose the model that makes decisions. API keys are stored in macOS Keychain, not in the config file.</p><div class="grid">
