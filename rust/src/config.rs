@@ -61,6 +61,10 @@ impl Config {
                 }
             }
         }
+        let model = env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into());
+        if model.trim().is_empty() {
+            bail!("MINDCRAFT_MODEL must not be empty");
+        }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
         let default_base_url = if provider == "ollama" { "http://127.0.0.1:11434/v1" } else { "https://api.openai.com/v1" };
         let base_url = env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| default_base_url.into());
@@ -87,7 +91,7 @@ impl Config {
             api_token_was_generated,
             mode,
             provider,
-            model: env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into()),
+            model,
             api_key,
             base_url,
             minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
