@@ -2156,7 +2156,7 @@ fn is_plantable_seed(debug_name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds"]
+    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato"]
         .contains(&compact.as_str())
 }
 
@@ -2193,7 +2193,7 @@ async fn plant_crop_at(
             !item.is_empty() && is_plantable_seed(&format!("{:?}", item.kind()))
         })
     }) else {
-        bot.chat("I need wheat, beetroot, pumpkin, or melon seeds in the hotbar to plant.");
+        bot.chat("I need wheat, beetroot, pumpkin, or melon seeds, or carrots or potatoes, in the hotbar to plant.");
         return false;
     };
     let hotbar_start = *menu.hotbar_slots_range().start();
