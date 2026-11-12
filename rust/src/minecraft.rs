@@ -73,7 +73,7 @@ struct BotState {
     last_reflex: Option<Arc<Mutex<Instant>>>,
     follow_target: Option<Arc<Mutex<Option<String>>>>,
     is_following: Option<Arc<AtomicBool>>,
-    is_eating: Option<Arc<AtomicBool>>,
+    is_using_item: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     pending_block_action: Option<Arc<Mutex<Option<PendingBlockAction>>>>,
@@ -104,7 +104,7 @@ impl SwarmRuntimeState {
             last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
             follow_target: self.follow_target.clone(),
             is_following: Some(Arc::new(AtomicBool::new(false))),
-            is_eating: Some(Arc::new(AtomicBool::new(false))),
+            is_using_item: Some(Arc::new(AtomicBool::new(false))),
             last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
             last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
             pending_block_action: self.pending_block_action.clone(),
@@ -369,10 +369,10 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             } else {
                 None
             };
-            let eating = state.is_eating.as_ref()
+            let using_item = state.is_using_item.as_ref()
                 .is_some_and(|flag| flag.load(Ordering::Relaxed));
 
-            if critical_health || eating {
+            if critical_health || using_item {
                 bot.stop_pathfinding();
                 stop_walking(&bot);
             } else if let Some(username) = follow_target {
@@ -407,7 +407,7 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
             }
 
             for command in queued {
-                let eating_now = state.is_eating.as_ref()
+                let eating_now = state.is_using_item.as_ref()
                     .is_some_and(|flag| flag.load(Ordering::Relaxed));
                 if (critical_health || eating_now) && matches!(
                     &command,
@@ -553,23 +553,31 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                         if let Some(hit) = bot.get_component::<HitResultComponent>() {
                             if !hit.miss {
                                 bot.block_interact(hit.block_pos);
-                            } else {
+                            } else if let Some(use_flag) = state.is_using_item.clone() {
+                                if !use_flag.swap(true, Ordering::Relaxed) {
+                                    let mut using_bot = bot.clone();
+                                    tokio::spawn(async move {
+                                        let result = use_held_item_for_duration(&mut using_bot, 32).await;
+                                        use_flag.store(false, Ordering::Relaxed);
+                                        if let Err(error) = result {
+                                            tracing::warn!(%error, "held-item use failed");
+                                            using_bot.chat("I couldn't use the held item.");
+                                        }
+                                    });
+                                }
+                            }
+                        } else if let Some(use_flag) = state.is_using_item.clone() {
+                            if !use_flag.swap(true, Ordering::Relaxed) {
                                 let mut using_bot = bot.clone();
                                 tokio::spawn(async move {
-                                    if let Err(error) = use_held_item_for_duration(&mut using_bot, 32).await {
+                                    let result = use_held_item_for_duration(&mut using_bot, 32).await;
+                                    use_flag.store(false, Ordering::Relaxed);
+                                    if let Err(error) = result {
                                         tracing::warn!(%error, "held-item use failed");
                                         using_bot.chat("I couldn't use the held item.");
                                     }
                                 });
                             }
-                        } else {
-                            let mut using_bot = bot.clone();
-                            tokio::spawn(async move {
-                                if let Err(error) = use_held_item_for_duration(&mut using_bot, 32).await {
-                                    tracing::warn!(%error, "held-item use failed");
-                                    using_bot.chat("I couldn't use the held item.");
-                                }
-                            });
                         }
                     }
                     BotCommand::Craft(recipe) => {
@@ -686,7 +694,7 @@ fn schedule_auto_eat(bot: &Client, state: &BotState) {
     if state.mode != "autonomous" {
         return;
     }
-    let Some(eating_flag) = state.is_eating.clone() else {
+    let Some(eating_flag) = state.is_using_item.clone() else {
         return;
     };
     if eating_flag.swap(true, Ordering::Relaxed) {
