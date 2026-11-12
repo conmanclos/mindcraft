@@ -818,16 +818,16 @@ async fn craft_basic(bot: &mut Client, recipe: &str) -> Result<()> {
 
     let handle = bot.open_inventory()
         .ok_or_else(|| anyhow::anyhow!("close the currently open container before crafting"))?;
-    let menu = handle.menu()
-        .ok_or_else(|| anyhow::anyhow!("player inventory is not available"))?;
-    let source_slot = find_inventory_slot(&menu, |name| source_predicate(name))
-        .ok_or_else(|| anyhow::anyhow!("required ingredients are not in the player inventory"))?;
-    if inventory_slot_count(&menu, source_slot) < grid_slots.len() as u32 {
-        anyhow::bail!("not enough ingredients for '{recipe}'");
+    if handle.menu().is_none() {
+        anyhow::bail!("player inventory is not available");
     }
-    drop(menu);
 
     for &grid_slot in &grid_slots {
+        let menu = handle.menu()
+            .ok_or_else(|| anyhow::anyhow!("player inventory closed during crafting"))?;
+        let source_slot = find_inventory_slot(&menu, |name| source_predicate(name))
+            .ok_or_else(|| anyhow::anyhow!("not enough matching ingredients for '{recipe}'"))?;
+        drop(menu);
         place_one_in_crafting_grid(bot, &handle, source_slot, grid_slot).await?;
     }
 
