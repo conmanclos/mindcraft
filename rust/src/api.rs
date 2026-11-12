@@ -1012,8 +1012,26 @@ mod tests {
         assert!(parse_build_targets("1,64,1;1,64,1").is_err());
         assert!(parse_build_targets("1,321,1").is_err());
         assert!(parse_build_targets("1,64").is_err());
-        let too_many = (0..33).map(|x| format!("{x},64,1")).collect::<Vec<_>>().join(";");
+        let too_many = (0..65).map(|x| format!("{x},64,1")).collect::<Vec<_>>().join(";");
         assert!(parse_build_targets(&too_many).is_err());
+    }
+
+    #[test]
+    fn built_in_blueprints_expand_to_bounded_bottom_up_coordinates() {
+        let (material, platform) = parse_build_spec("blueprint:platform_5x5@10,64,-5").unwrap();
+        assert!(material.is_none());
+        assert_eq!(platform.len(), 25);
+        assert_eq!(platform.first(), Some(&(10, 64, -5)));
+        assert_eq!(platform.last(), Some(&(14, 64, -1)));
+
+        let (material, hut) = parse_build_spec("oak_planks@blueprint:starter_hut@0,70,0").unwrap();
+        assert_eq!(material.as_deref(), Some("oak_planks"));
+        assert_eq!(hut.len(), 23);
+        assert!(hut.iter().all(|(_, y, _)| *y >= 70 && *y <= 72));
+
+        assert_eq!(parse_build_spec("blueprint:wall_7x3@0,64,0").unwrap().1.len(), 21);
+        assert!(parse_build_spec("blueprint:unknown@0,64,0").is_err());
+        assert!(parse_build_spec("blueprint:starter_hut@0,321,0").is_err());
     }
 
     #[test]
