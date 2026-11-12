@@ -23,7 +23,7 @@ cargo install tauri-cli --version '^2'
 bash build-macos.sh
 ```
 
-The script builds the runtime from the correct `rust/` Cargo project, stages the binary into the Tauri resources directory, and builds the `.app` and `.dmg` bundles.
+The script runs the Rust unit tests, builds the runtime from the correct `rust/` Cargo project, stages the binary into the Tauri resources directory, and builds the `.app` and `.dmg` bundles.
 
 The resulting app bundles the native runtime as a resource. Apple Silicon and Intel distribution should be built separately unless a verified universal2 runtime is produced. Sign and notarize the app before public distribution.
 
