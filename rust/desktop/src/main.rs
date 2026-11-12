@@ -57,6 +57,23 @@ fn dotenv_value(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('\"', "\\\"").replace('\n', ""))
 }
 
+fn validate_offline_accounts(raw: &str, fallback: &str) -> Result<String, String> {
+    let source = if raw.trim().is_empty() { fallback.trim() } else { raw.trim() };
+    let parsed = source.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>();
+    if parsed.is_empty() || parsed.len() > 8 {
+        return Err("Enter between 1 and 8 offline bot usernames.".into());
+    }
+    let mut unique = std::collections::HashSet::new();
+    for name in &parsed {
+        if !(3..=16).contains(&name.len())
+            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || !unique.insert(name.to_ascii_lowercase()) {
+            return Err("Offline bot usernames must be unique, 3-16 letters, numbers, or underscores.".into());
+        }
+    }
+    Ok(parsed.join(","))
+}
+
 #[tauri::command]
 fn load_setup(app: AppHandle) -> Result<Option<SavedSetup>, String> {
     let data = app_data(&app)?;
@@ -96,20 +113,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         return Err("Enter the Microsoft account email.".into());
     }
     let accounts = if setup.auth == "offline" {
-        let raw = if setup.accounts.trim().is_empty() { setup.username.trim() } else { setup.accounts.trim() };
-        let parsed = raw.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>();
-        if parsed.is_empty() || parsed.len() > 8 {
-            return Err("Enter between 1 and 8 offline bot usernames.".into());
-        }
-        let mut unique = std::collections::HashSet::new();
-        for name in &parsed {
-            if !(3..=16).contains(&name.len())
-                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                || !unique.insert(name.to_ascii_lowercase()) {
-                return Err("Offline bot usernames must be unique, 3-16 letters, numbers, or underscores.".into());
-            }
-        }
-        parsed.join(",")
+        validate_offline_accounts(&setup.accounts, &setup.username)?
     } else {
         setup.username.trim().to_owned()
     };
@@ -272,4 +276,19 @@ fn main() {
                 }
             }
         });
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::validate_offline_accounts;
+
+    #[test]
+    fn offline_team_accepts_one_to_eight_unique_valid_names() {
+        assert_eq!(validate_offline_accounts("Mindcraft, Scout_2, Builder", "fallback").unwrap(), "Mindcraft,Scout_2,Builder");
+        assert_eq!(validate_offline_accounts("", "Mindcraft").unwrap(), "Mindcraft");
+        assert!(validate_offline_accounts("Mindcraft,mindcraft", "fallback").is_err());
+        assert!(validate_offline_accounts("ab", "fallback").is_err());
+        assert!(validate_offline_accounts("Mindcraft, Scout, Builder, Crafter, Guardian, One, Two, Three, Four", "fallback").is_err());
+    }
 }
