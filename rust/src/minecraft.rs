@@ -692,10 +692,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         .and_then(|slots| slots.get(slot as usize).cloned());
                                     if let Some(item_before) = slot_before.filter(|item| !item.is_empty()) {
                                         let before_count = item_before.count();
+                                        let before_kind = item_before.kind();
                                         container.shift_click(slot as usize);
                                         client.wait_ticks(2).await;
                                         let moved = container.slots()
-                                            .and_then(|slots| slots.get(slot as usize).map(|item| item.is_empty() || item.count() < before_count))
+                                            .and_then(|slots| slots.get(slot as usize).map(|item| {
+                                                item.is_empty() || item.count() < before_count || item.kind() != before_kind
+                                            }))
                                             .unwrap_or(false);
                                         if moved {
                                             tracing::info!(username = %client.username(), slot, ?position, "container slot transfer observed");
