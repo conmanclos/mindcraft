@@ -230,6 +230,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/memory/:memory_id", axum::routing::delete(memory_delete))
         .route("/api/goals", get(list_goals).post(create_goal))
         .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
+        .route("/api/goals/:goal_id/cancel", post(cancel_goal))
         .route("/api/agents/:agent_id/credential", post(issue_agent_credential).delete(revoke_agent_credential))
         .route("/api/tasks/review", get(list_review_tasks))
         .route("/api/tasks/claim", post(claim_task))
@@ -897,6 +898,23 @@ async fn list_goals(State(state): State<ApiState>, headers: HeaderMap) -> Result
     authorize(&state, &headers)?;
     let goals = state.store.list_goals().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(goals))
+}
+
+async fn cancel_goal(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(goal_id): Path<i64>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if goal_id <= 0 {
+        return Err((StatusCode::BAD_REQUEST, "goal ID must be positive".into()));
+    }
+    let cancelled = state.store.cancel_goal(goal_id)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !cancelled {
+        return Err((StatusCode::CONFLICT, "goal does not exist or is no longer active".into()));
+    }
+    Ok(Json(serde_json::json!({"goal_id":goal_id,"cancelled":true})))
 }
 
 async fn list_goal_tasks(State(state): State<ApiState>, headers: HeaderMap, Path(goal_id): Path<i64>) -> Result<Json<Vec<AgentTask>>, (StatusCode, String)> {
