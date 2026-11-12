@@ -575,7 +575,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             if slot > 8 { return Err((StatusCode::BAD_REQUEST, "hotbar slot must be between 0 and 8".into())); }
             Ok(BotCommand::Equip(slot))
         }
-        "look" | "goto" | "mine" | "place" | "plant" => {
+        "look" | "goto" | "mine" | "place" | "plant" | "harvest" => {
             let coordinates = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z".into()))?;
@@ -588,6 +588,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 "goto" => Ok(BotCommand::Goto(x, y, z)),
                 "place" => Ok(BotCommand::Place(x, y, z)),
                 "plant" => Ok(BotCommand::Plant(x, y, z)),
+                "harvest" => Ok(BotCommand::Harvest(x, y, z)),
                 _ => Ok(BotCommand::Mine(x, y, z)),
             }
         }
