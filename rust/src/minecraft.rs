@@ -376,24 +376,30 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 } else { false };
 
                 if allowed {
-                    if let Some(brain) = &state.brain {
+                    if let Some(brain) = state.brain.clone() {
+                        let bot = bot.clone();
                         let prompt = format!(
                             "A Minecraft player addressed you in server chat. Respond as a concise teammate. Do not claim to have performed any in-game action. Message: {content}"
                         );
-                        match brain.reply(&prompt).await {
-                            Ok(reply) => {
-                                let safe_reply: String = reply.chars().take(240).collect();
-                                if !safe_reply.trim().is_empty()
-                                    && !safe_reply.trim_start().starts_with('/')
-                                    && !safe_reply.chars().any(|c| c.is_control()) {
-                                    bot.chat(safe_reply);
+                        tokio::spawn(async move {
+                            match brain.reply(&prompt).await {
+                                Ok(reply) => {
+                                    let safe_reply: String = reply.chars().take(240).collect();
+                                    if bot.exists()
+                                        && !safe_reply.trim().is_empty()
+                                        && !safe_reply.trim_start().starts_with('/')
+                                        && !safe_reply.chars().any(|c| c.is_control()) {
+                                        bot.chat(safe_reply);
+                                    }
+                                }
+                                Err(error) => {
+                                    tracing::error!(%error, "AI chat response failed");
+                                    if bot.exists() {
+                                        bot.chat("I couldn't reach my AI provider just now.");
+                                    }
                                 }
                             }
-                            Err(error) => {
-                                tracing::error!(%error, "AI chat response failed");
-                                bot.chat("I couldn't reach my AI provider just now.");
-                            }
-                        }
+                        });
                     }
                 }
             }
