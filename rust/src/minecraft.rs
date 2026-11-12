@@ -2090,7 +2090,7 @@ fn recipe_output_count(recipe: &str) -> u8 {
         "trapdoor" => 2,
         "glass_pane" => 16,
         "cookie" => 8,
-        "rail" => 16,
+        "rail" | "iron_bars" => 16,
         "powered_rail" | "detector_rail" | "activator_rail" => 6,
         "iron_nuggets" | "gold_nuggets" | "wheat_from_hay" => 9,
         "fire_charge" => 3,
