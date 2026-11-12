@@ -217,7 +217,7 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
     Ok(Json(ExecuteResponse { accepted: true, message: "command queued for the Minecraft runtime" }))
 }
 
-fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
+pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
     match action.action.to_lowercase().as_str() {
         "say" => {
             let text = action.target.unwrap_or(action.reason);
