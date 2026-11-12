@@ -129,6 +129,7 @@ $("claimTask").onclick=async()=>{
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
   }catch(e){$("taskResult").textContent="Claim failed: "+e.message}
 };
+setInterval(()=>{if(token)connect().catch(()=>{})},5000);
 $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
