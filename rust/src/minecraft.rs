@@ -369,7 +369,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let inventory = menu.slots().iter().enumerate()
                                 .filter(|(_, item)| !item.is_empty())
                                 .map(|(slot, item)| {
-                                    let description: String = format!("{item:?}").chars().take(80).collect();
+                                    let description: String = format!("{:?} x{}", item.kind(), item.count()).chars().take(80).collect();
                                     format!("{slot}: {description}")
                                 })
                                 .collect::<Vec<_>>();
