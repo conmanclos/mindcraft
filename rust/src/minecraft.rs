@@ -1052,4 +1052,14 @@ mod tests {
         assert_eq!(normalize_item_name("CrimsonStem"), "crimson_stem");
         assert_eq!(normalize_item_name("CraftingTable"), "crafting_table");
     }
+
+    #[test]
+    fn automatic_food_selection_excludes_rare_or_harmful_items() {
+        assert!(is_safe_food_item("cooked_beef"));
+        assert!(is_safe_food_item("golden_carrot"));
+        assert!(!is_safe_food_item("golden_apple"));
+        assert!(!is_safe_food_item("rotten_flesh"));
+        assert!(!is_safe_food_item("chorus_fruit"));
+        assert!(food_priority("cooked_beef") > food_priority("dried_kelp"));
+    }
 }
