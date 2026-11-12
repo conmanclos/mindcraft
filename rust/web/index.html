@@ -28,11 +28,11 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 </div></section>
 <section class="panel"><h2>Teammate chat</h2><div id="log" aria-live="polite">Connect to the local runtime to begin.</div>
 <label for="message">Message</label><textarea id="message" placeholder="Ask Mindcraft a question or mention Mindcraft in Minecraft chat..."></textarea>
-<div class="row"><button id="send">Send message</button><button id="plan" class="secondary">Propose game action</button><span class="muted" id="hint">Plans are policy-checked but not executed by this build.</span></div>
+<div class="row"><button id="send">Send message</button><button id="plan" class="secondary">Propose game action</button><button id="execute" class="secondary" disabled>Approve & execute</button><span class="muted" id="hint">Review a proposal before approving it.</span></div>
 <div id="proposal"></div></section>
 </main>
 <script>
-const $=id=>document.getElementById(id);let token="";
+const $=id=>document.getElementById(id);let token="";let lastPlan=null;
 function log(s){$("log").textContent += "\n"+s;$("log").scrollTop=$("log").scrollHeight}
 async function api(path,body){const r=await fetch(path,{method:body?"POST":"GET",headers:{"Authorization":"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||data.message||("HTTP "+r.status));return data}
 async function connect(){token=$("token").value.trim();if(!token)throw Error("Enter the API token printed in the terminal.");const s=await api("/api/status");$("mc").textContent=s.minecraft_connected?"Connected":"Not connected";$("mode").textContent=s.autonomy;$("provider").textContent=s.provider;$("model").textContent=s.model;$("connection").textContent="Connected to local runtime"}
