@@ -320,6 +320,15 @@ mod tests {
     use super::validate_offline_accounts;
 
     #[test]
+    fn provider_base_urls_require_safe_http_endpoints() {
+        assert!(super::valid_http_base_url("http://127.0.0.1:11434/v1"));
+        assert!(super::valid_http_base_url("https://api.example.com/v1"));
+        for invalid in ["http://", "ftp://example.com", "https://user:pass@example.com", "https://example.com/?key=secret", "https://example.com/#fragment"] {
+            assert!(!super::valid_http_base_url(invalid), "accepted {invalid}");
+        }
+    }
+
+    #[test]
     fn dotenv_values_cannot_inject_additional_environment_lines() {
         assert_eq!(super::dotenv_value("safe\r\nMINDCRAFT_MODE=autonomous"), "\"safeMINDCRAFT_MODE=autonomous\"");
         assert_eq!(super::dotenv_value("quoted\"value"), "\"quoted\\\"value\"");
