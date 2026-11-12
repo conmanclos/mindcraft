@@ -871,3 +871,16 @@ fn find_player(bot: &Client, username: &str) -> Option<(azalea::Vec3, MinecraftE
     let entity_id = ecs.get::<MinecraftEntityId>(entity).copied()?;
     Some((*position, entity_id))
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn item_debug_names_normalize_to_minecraft_ids() {
+        assert_eq!(normalize_item_name("OakLog"), "oak_log");
+        assert_eq!(normalize_item_name("CrimsonStem"), "crimson_stem");
+        assert_eq!(normalize_item_name("CraftingTable"), "crafting_table");
+    }
+}
