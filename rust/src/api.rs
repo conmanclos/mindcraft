@@ -984,7 +984,15 @@ async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(req
     }
     let memory_context = state.store.relevant_memory_context(&request.description, 3_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let planning_context = format!("{}\n{memory_context}", request.description);
+    let connected_agents = state.status.agents.lock().await.values()
+        .map(|agent| format!("{} ({})", agent.agent, agent.role))
+        .collect::<Vec<_>>();
+    let team_context = format!(
+        "Connected Minecraft team ({}): {}.",
+        connected_agents.len(),
+        if connected_agents.is_empty() { "none".to_owned() } else { connected_agents.join(", ") }
+    );
+    let planning_context = format!("{}\n{team_context}\n{memory_context}", request.description);
     let drafts = tokio::time::timeout(Duration::from_secs(50), state.brain.decompose_goal(&planning_context))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "strategic planner timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
