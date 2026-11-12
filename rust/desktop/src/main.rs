@@ -4,7 +4,6 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io,
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
