@@ -154,9 +154,66 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::Tick => {
             if bot.exists() {
-                let health = bot.health();
-                let hunger = bot.hunger();
-                if state.is_primary {
+                if let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) {
+                    if state.is_primary {
+                        if let Some(status) = &state.status {
+                            let should_snapshot = if let Some(last) = &state.last_snapshot {
+                                let mut last = last.lock().await;
+                                if last.elapsed() >= Duration::from_secs(1) {
+                                    *last = Instant::now();
+                                    true
+                                } else { false }
+                            } else { false };
+                            if should_snapshot {
+                                let position = bot.position();
+                                let inventory = bot.menu().map(|menu| {
+                                    menu.slots().iter().enumerate()
+                                        .filter(|(_, item)| !item.is_empty())
+                                        .map(|(slot, item)| {
+                                            let description: String = format!("{item:?}").chars().take(80).collect();
+                                            format!("{slot}: {description}")
+                                        })
+                                        .collect::<Vec<_>>()
+                                }).unwrap_or_default();
+                                *status.world.lock().await = Some(crate::api::WorldSnapshot {
+                                    agent: bot.username(),
+                                    position: [position.x as f64, position.y as f64, position.z as f64],
+                                    health,
+                                    food: hunger.food,
+                                    saturation: hunger.saturation,
+                                    inventory,
+                                });
+                            }
+                        }
+                    }
+                    if let Some(reflex_action) = crate::reflex::evaluate(health, hunger.food) {
+                        let should_warn = if let Some(cooldown) = &state.last_reflex {
+                            let mut last = cooldown.lock().await;
+                            if last.elapsed() >= Duration::from_secs(15) {
+                                *last = Instant::now();
+                                true
+                            } else { false }
+                        } else { false };
+                        match reflex_action {
+                            crate::reflex::ReflexAction::StopAndWarn => {
+                                bot.stop_pathfinding();
+                                bot.walk(WalkDirection::None);
+                                if should_warn {
+                                    bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
+                                    tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
+                                }
+                            }
+                            crate::reflex::ReflexAction::WarnLowFood => {
+                                if should_warn {
+                                    bot.chat("Reflex safety: food is low. Find food before continuing.");
+                                    tracing::warn!(username = %bot.username(), food = hunger.food, "low-food reflex activated");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if state.is_primary {
                     if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
                         let mut last = last.lock().await;
@@ -218,13 +275,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let pending = pending_lock.lock().await.take();
                     if let Some(mut pending) = pending {
                         match bot.hit_result() {
-                            HitResult::Block(hit) if !hit.miss && hit.block_pos == pending.position => {
+                            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == pending.position => {
                                 match pending.kind {
                                     PendingBlockActionKind::Mine => bot.start_mining(pending.position),
                                     PendingBlockActionKind::Place => bot.block_interact(pending.position),
                                 }
                             }
-                            _ => {
+                            Ok(_) | Err(_) => {
                                 pending.attempts = pending.attempts.saturating_add(1);
                                 if pending.attempts >= 20 {
                                     bot.chat("I couldn't get a clear line of sight to that block. The action was cancelled.");
@@ -256,9 +313,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false }
                 } else { false };
                 if should_repath {
-                    let goal = bot.player_uuid_by_username(&username)
+                    let goal = bot.player_uuid_by_username(&username).ok().flatten()
                         .and_then(|uuid| bot.entity_by_uuid(uuid))
-                        .map(|entity| entity.position())
+                        .and_then(|entity| entity.position().ok())
                         .map(|position| BlockPos::new(position.x.floor() as i32 + 1, position.y.floor() as i32, position.z.floor() as i32));
                     if let Some(goal) = goal {
                         bot.start_goto(BlockPosGoal(goal));
