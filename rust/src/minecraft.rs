@@ -64,6 +64,7 @@ pub async fn connect(
         *status.command_tx.lock().await = Some(command_tx);
         let shared_receiver = Arc::new(Mutex::new(command_rx));
         let shared_reply_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
+        let shared_reflex_cooldown = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)));
         let shared_follow_target = Arc::new(Mutex::new(None));
 
         let mut builder = SwarmBuilder::new().set_handler(handle);
@@ -72,7 +73,7 @@ pub async fn connect(
             let command_receiver = if is_primary { Some(shared_receiver.clone()) } else { None };
             let state = make_state(
                 brain.clone(), status.clone(), command_receiver, shared_reply_cooldown.clone(),
-                shared_follow_target.clone(), is_primary,
+                shared_follow_target.clone(), shared_reflex_cooldown.clone(), is_primary,
             );
             builder = builder.add_account_with_state(account, state);
         }
@@ -93,6 +94,7 @@ fn make_state(
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     last_reply: Arc<Mutex<Instant>>,
     follow_target: Arc<Mutex<Option<String>>>,
+    last_reflex: Arc<Mutex<Instant>>,
     is_primary: bool,
 ) -> BotState {
     BotState {
@@ -101,7 +103,7 @@ fn make_state(
         last_reply: Some(last_reply),
         commands,
         connected: Some(Arc::new(AtomicBool::new(false))),
-        last_reflex: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
+        last_reflex: Some(last_reflex),
         follow_target: Some(follow_target),
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
@@ -176,15 +178,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             true
                         } else { false }
                     } else { false };
-                    if should_warn {
-                        match reflex_action {
-                            crate::reflex::ReflexAction::StopAndWarn => {
-                                bot.stop_pathfinding();
-                                bot.walk(WalkDirection::None);
+                    match reflex_action {
+                        crate::reflex::ReflexAction::StopAndWarn => {
+                            bot.stop_pathfinding();
+                            bot.walk(WalkDirection::None);
+                            if should_warn {
                                 bot.chat("Reflex safety: health is critical. I stopped moving; recover before continuing.");
                                 tracing::warn!(username = %bot.username(), health, "critical-health reflex activated");
                             }
-                            crate::reflex::ReflexAction::WarnLowFood => {
+                        }
+                        crate::reflex::ReflexAction::WarnLowFood => {
+                            if should_warn {
                                 bot.chat("Reflex safety: food is low. Find food before continuing.");
                                 tracing::warn!(username = %bot.username(), food = hunger.food, "low-food reflex activated");
                             }
