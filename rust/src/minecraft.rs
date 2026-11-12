@@ -18,7 +18,6 @@ pub enum BotCommand {
 struct BotState {
     brain: Option<Arc<Brain>>,
     status: Option<Arc<RuntimeStatus>>,
-    bot_name: Option<String>,
     last_reply: Option<Arc<Mutex<Instant>>>,
     commands: Option<Arc<Mutex<mpsc::Receiver<BotCommand>>>>,
     connected: Option<Arc<AtomicBool>>,
@@ -44,14 +43,13 @@ pub async fn connect(
         tracing::info!("starting Azalea Microsoft device-code authentication");
         let account = Account::microsoft(email.as_str()).await?;
         let state = make_state(
-            accounts.first().cloned().unwrap_or_else(|| "Mindcraft".into()),
             brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(),
         );
         builder = builder.add_account_with_state(account, state);
     } else {
         for username in accounts {
             let state = make_state(
-                username.clone(), brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(),
+                brain.clone(), status.clone(), shared_receiver.clone(), shared_reply_cooldown.clone(),
             );
             builder = builder.add_account_with_state(Account::offline(username), state);
         }
@@ -66,7 +64,6 @@ pub async fn connect(
 }
 
 fn make_state(
-    username: String,
     brain: Arc<Brain>,
     status: Arc<RuntimeStatus>,
     commands: Arc<Mutex<mpsc::Receiver<BotCommand>>>,
@@ -75,7 +72,6 @@ fn make_state(
     BotState {
         brain: Some(brain),
         status: Some(status),
-        bot_name: Some(username),
         last_reply: Some(last_reply),
         commands: Some(commands),
         connected: Some(Arc::new(AtomicBool::new(false))),
@@ -110,6 +106,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if let Some(status) = &state.status {
                 if let (Ok(position), Ok(health)) = (bot.position(), bot.health()) {
                     *status.world.lock().await = Some(crate::api::WorldSnapshot {
+                        agent: bot.username(),
                         position: [position.x as f64, position.y as f64, position.z as f64],
                         health,
                     });
@@ -142,7 +139,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let content = message.content();
             tracing::info!(bot = %bot.username(), sender = ?sender, %content, "Minecraft chat");
 
-            let from_self = sender.as_deref() == state.bot_name.as_deref();
+            let own_username = bot.username();
+            let from_self = sender.as_deref() == Some(own_username.as_str());
             let addressed_to_bot = sender.is_some() && content.to_lowercase().contains("mindcraft");
             if !from_self && addressed_to_bot && !content.trim().is_empty() {
                 let allowed = if let Some(cooldown) = &state.last_reply {
