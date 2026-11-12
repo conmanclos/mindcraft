@@ -145,9 +145,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             bot.exit();
         }
         Event::Tick => {
+            let mut critical_health = false;
             if bot.exists() {
                 let health = bot.health();
                 let hunger = bot.hunger();
+                critical_health = health.is_finite() && health <= 6.0;
                 if state.is_primary {
                     if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
@@ -208,7 +210,6 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let mut receiver = receiver.lock().await;
                 while let Ok(command) = receiver.try_recv() { queued.push(command); }
             }
-            let critical_health = health.is_finite() && health <= 6.0;
             if critical_health {
                 if let Some(target) = &state.follow_target { *target.lock().await = None; }
                 if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
