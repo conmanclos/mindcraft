@@ -86,6 +86,20 @@ fn validate_trusted_players(raw: &str) -> Result<String, String> {
     Ok(names.join(","))
 }
 
+fn valid_minecraft_server(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_whitespace)
+        || value.chars().any(|character| character.is_control() || matches!(character, '/' | '\\' | '?' | '#' | '@')) {
+        return false;
+    }
+    let host = match value.rsplit_once(':') {
+        Some((host, port)) if host.contains(':') || !port.parse::<u16>().is_ok_and(|port| port > 0) => return false,
+        Some((host, _)) => host,
+        None => value,
+    };
+    !host.is_empty() && host.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_'))
+}
+
 fn dotenv_value(value: &str) -> String {
     let safe = value.chars().filter(|character| !character.is_control()).collect::<String>();
     format!("\"{}\"", safe.replace('\\', "\\\\").replace('\"', "\\\""))
@@ -132,8 +146,8 @@ fn load_setup(app: AppHandle) -> Result<Option<SavedSetup>, String> {
 
 #[tauri::command]
 fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
-    if setup.server.trim().is_empty() {
-        return Err("Enter your Minecraft server address.".into());
+    if !valid_minecraft_server(&setup.server) {
+        return Err("Enter a valid Minecraft host name or host:port without a URL scheme, path, or whitespace. IPv6 literals are not supported by the current Azalea parser.".into());
     }
     if setup.username.trim().is_empty() {
         return Err("Enter the Minecraft bot username.".into());
@@ -342,6 +356,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::validate_offline_accounts;
+
+    #[test]
+    fn minecraft_server_addresses_are_validated_before_saving() {
+        assert!(super::valid_minecraft_server("localhost"));
+        assert!(super::valid_minecraft_server("play.example.net:25565"));
+        assert!(super::valid_minecraft_server("192.168.1.20:25566"));
+        for invalid in ["", "https://example.com", "example.com/path", "host:0", "host:65536", "host:nope", "host name:25565", "::1:25565"] {
+            assert!(!super::valid_minecraft_server(invalid), "accepted {invalid}");
+        }
+    }
 
     #[test]
     fn provider_base_urls_require_safe_http_endpoints() {
