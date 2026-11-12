@@ -1,6 +1,26 @@
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::Serialize;
 use std::{path::Path, sync::Mutex};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Goal {
+    pub id: i64,
+    pub description: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentTask {
+    pub id: i64,
+    pub goal_id: i64,
+    pub role: String,
+    pub description: String,
+    pub priority: i32,
+    pub status: String,
+    pub assigned_agent: Option<String>,
+}
 
 pub struct Store {
     connection: Mutex<Connection>,
@@ -21,7 +41,25 @@ impl Store {
                content TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
-             CREATE INDEX IF NOT EXISTS conversation_created_idx ON conversation(created_at);"
+             CREATE INDEX IF NOT EXISTS conversation_created_idx ON conversation(created_at);
+             CREATE TABLE IF NOT EXISTS goals (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               description TEXT NOT NULL,
+               status TEXT NOT NULL DEFAULT 'active',
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TABLE IF NOT EXISTS agent_tasks (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               goal_id INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+               role TEXT NOT NULL,
+               description TEXT NOT NULL,
+               priority INTEGER NOT NULL DEFAULT 0,
+               status TEXT NOT NULL DEFAULT 'pending',
+               assigned_agent TEXT,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE INDEX IF NOT EXISTS agent_tasks_queue_idx ON agent_tasks(status, role, priority DESC, id);"
         )?;
         Ok(Self { connection: Mutex::new(connection) })
     }
@@ -34,12 +72,87 @@ impl Store {
 
     pub fn recent_messages(&self, limit: usize) -> Result<Vec<(String, String)>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        let mut statement = connection.prepare(
-            "SELECT role, content FROM conversation ORDER BY id DESC LIMIT ?1"
-        )?;
+        let mut statement = connection.prepare("SELECT role, content FROM conversation ORDER BY id DESC LIMIT ?1")?;
         let rows = statement.query_map([limit.min(100) as i64], |row| Ok((row.get(0)?, row.get(1)?)))?;
         let mut messages = rows.collect::<rusqlite::Result<Vec<_>>>()?;
         messages.reverse();
         Ok(messages)
+    }
+
+    pub fn create_goal(&self, description: &str) -> Result<i64> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        connection.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
+        Ok(connection.last_insert_rowid())
+    }
+
+    pub fn add_task(&self, goal_id: i64, role: &str, description: &str, priority: i32) -> Result<i64> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        connection.execute(
+            "INSERT INTO agent_tasks(goal_id, role, description, priority) VALUES (?1, ?2, ?3, ?4)",
+            params![goal_id, role, description, priority.clamp(0, 100)],
+        )?;
+        Ok(connection.last_insert_rowid())
+    }
+
+    pub fn list_goals(&self) -> Result<Vec<Goal>> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let mut statement = connection.prepare(
+            "SELECT id, description, status, created_at FROM goals ORDER BY id DESC LIMIT 100"
+        )?;
+        let rows = statement.query_map([], |row| Ok(Goal {
+            id: row.get(0)?, description: row.get(1)?, status: row.get(2)?, created_at: row.get(3)?
+        }))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn list_tasks(&self, goal_id: i64) -> Result<Vec<AgentTask>> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let mut statement = connection.prepare(
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent FROM agent_tasks WHERE goal_id=?1 ORDER BY priority DESC, id"
+        )?;
+        let rows = statement.query_map([goal_id], |row| Ok(AgentTask {
+            id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?
+        }))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction()?;
+        let task = tx.query_row(
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent
+             FROM agent_tasks WHERE status='pending' AND role=?1
+             ORDER BY priority DESC, id ASC LIMIT 1",
+            [role],
+            |row| Ok(AgentTask {
+                id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
+                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?
+            }),
+        ).optional()?;
+
+        if let Some(mut task) = task {
+            tx.execute(
+                "UPDATE agent_tasks SET status='claimed', assigned_agent=?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND status='pending'",
+                params![agent_id, task.id],
+            )?;
+            task.status = "claimed".into();
+            task.assigned_agent = Some(agent_id.to_owned());
+            tx.commit()?;
+            Ok(Some(task))
+        } else {
+            tx.commit()?;
+            Ok(None)
+        }
+    }
+
+    pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
+        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let changed = connection.execute(
+            "UPDATE agent_tasks SET status='complete', updated_at=CURRENT_TIMESTAMP
+             WHERE id=?1 AND assigned_agent=?2 AND status='claimed'",
+            params![task_id, agent_id],
+        )?;
+        Ok(changed == 1)
     }
 }
