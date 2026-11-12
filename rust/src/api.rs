@@ -264,8 +264,9 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
     match action.action.to_lowercase().as_str() {
         "say" => {
             let text = action.target.unwrap_or(action.reason);
-            if text.trim().is_empty() || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
-                return Err((StatusCode::BAD_REQUEST, "say accepts plain chat text only; slash commands and control characters are blocked".into()));
+            if text.trim().is_empty() || text.chars().count() > 256
+                || text.trim_start().starts_with('/') || text.chars().any(|c| c.is_control()) {
+                return Err((StatusCode::BAD_REQUEST, "say accepts 1-256 characters of plain chat text; slash commands and control characters are blocked".into()));
             }
             Ok(BotCommand::Say(text))
         }
@@ -311,8 +312,8 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z,slot".into()))?;
             if parsed.len() != 4 || parsed[1] < -64 || parsed[1] > 320
                 || parsed[..3].iter().any(|v| v.unsigned_abs() > 30_000_000)
-                || !(0..=100).contains(&parsed[3]) {
-                return Err((StatusCode::BAD_REQUEST, "container transfer requires valid world coordinates and a slot from 0 to 100".into()));
+                || !(0..=89).contains(&parsed[3]) {
+                return Err((StatusCode::BAD_REQUEST, "container transfer requires valid world coordinates and a slot from 0 to 89".into()));
             }
             Ok(BotCommand::ContainerTransfer(parsed[0], parsed[1], parsed[2], parsed[3] as u16))
         }
@@ -457,6 +458,19 @@ mod tests {
         assert!(command_from_action(action("say", Some("/op player"))).is_err());
         assert!(command_from_action(action("say", Some("hello\n/op player"))).is_err());
         assert!(command_from_action(action("say", Some("   "))).is_err());
+    }
+
+    #[test]
+    fn chat_length_is_bounded_to_minecraft_message_limit() {
+        assert!(command_from_action(action("say", Some(&"a".repeat(256)))).is_ok());
+        assert!(command_from_action(action("say", Some(&"a".repeat(257)))).is_err());
+    }
+
+    #[test]
+    fn container_transfer_rejects_slots_outside_standard_menu_bounds() {
+        assert!(command_from_action(action("container_transfer", Some("0,64,0,89"))).is_ok());
+        assert!(command_from_action(action("container_transfer", Some("0,64,0,90"))).is_err());
+        assert!(command_from_action(action("container_transfer", Some("0,64,0,-1"))).is_err());
     }
 
     #[test]
