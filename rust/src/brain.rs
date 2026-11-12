@@ -170,6 +170,7 @@ mod tests {
             mode: mode.into(), provider: "ollama".into(), model: "test".into(),
             api_key: String::new(), base_url: "http://localhost:11434/v1".into(),
             minecraft_server: None, minecraft_username: "test".into(),
+            minecraft_auth: "offline".into(), microsoft_email: None,
             database: PathBuf::from(":memory:")
         }))
     }
