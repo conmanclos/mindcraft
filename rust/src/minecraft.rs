@@ -615,6 +615,7 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
     }
 
     let player_slots = menu.player_slots_range();
+    let mut placed_slots = Vec::new();
     for (grid_slot, selector) in ingredients {
         let slots = match container.slots() {
             Some(slots) => slots,
@@ -624,7 +625,9 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
             }
         };
         if slots.get(*grid_slot).is_some_and(|item| !item.is_empty()) {
-            bot.chat("The crafting grid is not empty. Clear it first; I won't overwrite existing ingredients.");
+            for slot in &placed_slots { container.shift_click(*slot); }
+            bot.wait_ticks(2).await;
+            bot.chat("The crafting grid is not empty. I returned only the ingredients I placed and left existing items untouched.");
             return;
         }
         let source_slot = player_slots.clone().find(|slot| {
@@ -634,19 +637,16 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         });
         let Some(source_slot) = source_slot else {
             // Return any ingredients already placed into the grid before failing.
-            for slot in 1..=grid_size {
-                if container.slots().and_then(|items| items.get(slot).map(|item| !item.is_empty())).unwrap_or(false) {
-                    container.shift_click(slot);
-                }
-            }
+            for slot in &placed_slots { container.shift_click(*slot); }
             bot.wait_ticks(2).await;
-            bot.chat("I'm missing one or more ingredients for that recipe; any placed ingredients were returned.");
+            bot.chat("I'm missing one or more ingredients for that recipe; any ingredients I placed were returned.");
             return;
         };
         // Pick up the stack, place exactly one ingredient, then return the remainder.
         container.left_click(source_slot);
         container.right_click(*grid_slot);
         container.left_click(source_slot);
+        placed_slots.push(*grid_slot);
         bot.wait_ticks(1).await;
     }
 
@@ -655,13 +655,9 @@ async fn execute_craft(bot: Client, recipe: String, table: Option<(i32, i32, i32
         .and_then(|slots| slots.first().map(|item| !item.is_empty()))
         .unwrap_or(false);
     if !output_ready {
-        for slot in 1..=grid_size {
-            if container.slots().and_then(|items| items.get(slot).map(|item| !item.is_empty())).unwrap_or(false) {
-                container.shift_click(slot);
-            }
-        }
+        for slot in &placed_slots { container.shift_click(*slot); }
         bot.wait_ticks(2).await;
-        bot.chat("The server did not produce that recipe. I returned the remaining crafting-grid items.");
+        bot.chat("The server did not produce that recipe. I returned the remaining ingredients I placed.");
         return;
     }
 
