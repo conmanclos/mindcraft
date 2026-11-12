@@ -172,6 +172,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 critical_health = health.is_finite() && health <= 6.0;
                 if critical_health {
                     if let Some(pending) = &state.pending_block_action { *pending.lock().await = None; }
+                    if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                    if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                 }
                 if state.is_primary {
                     if let Some(status) = &state.status {
