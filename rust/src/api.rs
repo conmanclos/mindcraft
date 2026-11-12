@@ -424,7 +424,7 @@ mod action_tests {
             command_from_action(action("attack", Some("Notch"))),
             Ok(BotCommand::AttackPlayer(_))
         ));
-        assert!(command_from_action(action("attack", Some("crosshair"))).is_err());
+        assert!(command_from_action(action("attack", Some("bad name"))).is_err());
     }
 
     #[test]
