@@ -47,7 +47,7 @@ impl Brain {
 
         let _permit = self.llm_slots.acquire().await.map_err(|_| anyhow!("AI concurrency limiter is closed"))?;
         let system = format!(
-            "You are Mindcraft, a cautious Minecraft Java 1.21.1 teammate. Autonomy profile: {}. You may advise or propose actions, but never claim that an in-game action occurred unless the runtime confirms it. Prioritize player safety, server rules, and explicit user intent. Keep responses concise and operational.",
+            "You are Mindcraft, a cautious Minecraft Java 26.1 teammate. Autonomy profile: {}. You may advise or propose actions, but never claim that an in-game action occurred unless the runtime confirms it. Prioritize player safety, server rules, and explicit user intent. Keep responses concise and operational.",
             self.config.mode
         );
         match self.config.provider.as_str() {
@@ -60,7 +60,7 @@ impl Brain {
 
     pub async fn plan(&self, request: &str) -> Result<PlannedAction> {
         let prompt = format!(
-            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions: look, follow, stop, say, status, inspect, goto, mine, place, equip, craft, use_item, attack, drop.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
+            "Convert this Minecraft request into exactly one JSON object with fields action, target, reason, risk.              Allowed actions with active Rust executors: look, follow, stop, say, goto, mine, place, equip, attack. Use only these actions. Attack target must be exactly crosshair.              risk must be low, medium, or high. Do not use markdown fences. User request: {request}"
         );
         let raw = self.reply(&prompt).await?;
         let start = raw.find('{').ok_or_else(|| anyhow!("planner did not return a JSON object"))?;
@@ -100,7 +100,7 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "status", "inspect", "goto", "mine", "place", "equip", "craft", "use_item", "attack", "drop"];
+        let supported = ["look", "follow", "stop", "say", "goto", "mine", "place", "equip", "attack"];
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
@@ -110,16 +110,16 @@ impl Brain {
     pub fn authorize_action(&self, action: &PlannedAction, explicit_approval: bool) -> Result<()> {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
-        let safe = ["look", "follow", "stop", "say", "status", "inspect", "goto"];
-        let destructive = ["attack", "mine", "place", "drop", "equip", "craft", "use_item"];
+        let safe = ["look", "follow", "stop", "say", "goto"];
+        let destructive = ["attack", "mine", "place", "equip"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
         if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) && !explicit_approval {
             bail!("assisted mode requires explicit approval for '{}'", action.action);
         }
-        if action_name == "drop" || action_name == "attack" {
-            bail!("'{}' is disabled until a target-aware execution adapter is active", action.action);
+        if action_name == "attack" && !explicit_approval {
+            bail!("attack always requires explicit user approval, including in autonomous mode");
         }
         if self.config.mode != "autonomous" && action.risk.eq_ignore_ascii_case("high") && !explicit_approval {
             bail!("high-risk action requires explicit approval in {} mode", self.config.mode);
