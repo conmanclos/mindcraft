@@ -138,7 +138,7 @@ impl Store {
         let task = tx.query_row(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
              FROM agent_tasks
-             WHERE role=?1 AND (status='pending' OR (status='claimed' AND lease_until IS NOT NULL AND lease_until < CURRENT_TIMESTAMP))
+             WHERE role=?1 AND (status='pending' OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
              ORDER BY priority DESC, id ASC LIMIT 1",
             [role],
             |row| Ok(AgentTask {
