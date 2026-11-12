@@ -886,7 +886,7 @@ fn cancel_active_mining(client: &Client) {
 /// Recipes intentionally use a small, explicit allowlist. Ingredient placement is
 /// performed through Azalea's real inventory click events; no local inventory
 /// mutation is treated as a successful craft.
-fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
+pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
     match recipe {
         "planks" => Some((false, "planks", &[(1, "log")])),
         "sticks" => Some((false, "stick", &[(1, "planks"), (3, "planks")])),
