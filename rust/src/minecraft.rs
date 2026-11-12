@@ -2267,7 +2267,7 @@ mod recipe_tests {
 
 #[cfg(test)]
 mod food_tests {
-    use super::{best_golden_apple_slot, safe_food_priority};
+    use super::{best_golden_apple_slot, item_name_matches_exact, safe_food_priority};
 
     #[test]
     fn emergency_golden_apple_lookup_is_player_inventory_only() {
@@ -2278,6 +2278,14 @@ mod food_tests {
             player: azalea_inventory::SlotList::default(),
         };
         assert!(best_golden_apple_slot(&chest).is_none());
+    }
+
+    #[test]
+    fn exact_build_material_matching_does_not_accept_suffix_collisions() {
+        assert!(item_name_matches_exact("OakPlanks", "oak_planks"));
+        assert!(item_name_matches_exact("Cobblestone", "cobblestone"));
+        assert!(!item_name_matches_exact("Redstone", "stone"));
+        assert!(!item_name_matches_exact("OakPlanks", "planks"));
     }
 
     #[test]
