@@ -12,6 +12,14 @@ pub struct Brain {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskDraft {
+    pub role: String,
+    pub description: String,
+    #[serde(default)]
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannedAction {
     pub action: String,
     #[serde(default)]
@@ -53,6 +61,34 @@ impl Brain {
         let action: PlannedAction = serde_json::from_str(&raw[start..=end])?;
         self.validate_action(&action)?;
         Ok(action)
+    }
+
+    pub async fn decompose_goal(&self, goal: &str) -> Result<Vec<TaskDraft>> {
+        if goal.trim().is_empty() || goal.len() > 4_000 {
+            bail!("goal must contain 1-4000 bytes");
+        }
+        let prompt = format!(
+            "Decompose this Minecraft objective into 1 to 12 independently actionable tasks for a cooperative team. Return ONLY a JSON array. Each object must have role, description, priority. Allowed roles: planner, scout, gatherer, builder, crafter, guardian. Priority is an integer 0-100. Do not include code fences or prose. Objective: {goal}"
+        );
+        let raw = self.reply(&prompt).await?;
+        let start = raw.find('[').ok_or_else(|| anyhow!("strategic planner did not return a JSON array"))?;
+        let end = raw.rfind(']').ok_or_else(|| anyhow!("strategic planner returned incomplete JSON"))?;
+        let mut tasks: Vec<TaskDraft> = serde_json::from_str(&raw[start..=end])?;
+        if tasks.is_empty() || tasks.len() > 12 {
+            bail!("strategic planner must return between 1 and 12 tasks");
+        }
+        let allowed = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
+        for task in &mut tasks {
+            task.role = task.role.to_lowercase();
+            if !allowed.contains(&task.role.as_str()) {
+                bail!("unsupported agent role '{}'", task.role);
+            }
+            if task.description.trim().is_empty() || task.description.len() > 500 {
+                bail!("agent task descriptions must contain 1-500 bytes");
+            }
+            task.priority = task.priority.clamp(0, 100);
+        }
+        Ok(tasks)
     }
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
