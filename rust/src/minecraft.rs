@@ -1399,7 +1399,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "bow" => Some((true, "bow", &[(2, "stick"), (3, "string"), (4, "stick"), (6, "string"), (8, "stick"), (9, "string")])),
         "fishing_rod" => Some((true, "fishing_rod", &[(3, "stick"), (5, "stick"), (6, "string"), (7, "stick"), (9, "string")])),
         "arrow" => Some((true, "arrow", &[(1, "flint"), (4, "stick"), (7, "feather")])),
-        "paper" => Some((false, "paper", &[(1, "sugar_cane"), (2, "sugar_cane"), (3, "sugar_cane")])),
+        "paper" => Some((true, "paper", &[(1, "sugar_cane"), (2, "sugar_cane"), (3, "sugar_cane")])),
         "glass_pane" => Some((true, "glass_pane", &[(1, "glass"), (2, "glass"), (3, "glass"), (4, "glass"), (5, "glass"), (6, "glass")])),
         "door" => Some((true, "door", &[(1, "planks"), (2, "planks"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         "trapdoor" => Some((true, "trapdoor", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "planks"), (5, "planks"), (6, "planks")])),
