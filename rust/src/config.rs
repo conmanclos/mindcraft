@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn trusted_chat_allowlist_is_empty_by_default_and_validates_usernames() {
         assert!(parse_trusted_chat_players("").unwrap().is_empty());
-        assert_eq!(parse_trusted_chat_players("Owner, Friend_2").unwrap(), vec!["Owner", "Friend_2"]);
+        assert_eq!(parse_trusted_chat_players("Owner, Friend_2").unwrap(), vec!["Owner".to_owned(), "Friend_2".to_owned()]);
         assert!(parse_trusted_chat_players("Owner,owner").is_err());
         assert!(parse_trusted_chat_players("bad-name").is_err());
         let too_many = (0..33).map(|index| format!("Player{index:02}")).collect::<Vec<_>>().join(",");
