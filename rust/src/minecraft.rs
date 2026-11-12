@@ -122,6 +122,33 @@ pub async fn connect(
     }
 }
 
+fn exploration_offset(max_radius: i32, step: usize) -> (i32, i32) {
+    // Golden-angle spiral: expand outward, then continue rotating around the
+    // configured boundary instead of repeating the same 24 compass waypoints.
+    let max_radius = max_radius.clamp(8, 128) as f64;
+    let radius = (8.0 + step as f64 * 1.5).min(max_radius);
+    let angle = step as f64 * 2.399_963_229_728_653;
+    ((radius * angle.cos()).round() as i32, (radius * angle.sin()).round() as i32)
+}
+
+#[cfg(test)]
+mod exploration_tests {
+    use super::exploration_offset;
+
+    #[test]
+    fn exploration_spiral_stays_inside_radius_and_moves_between_waypoints() {
+        let mut previous = None;
+        for step in 0..256 {
+            let (x, z) = exploration_offset(64, step);
+            assert!((x * x + z * z) as f64 <= 64.0 * 64.0 + 1.0);
+            assert_ne!(Some((x, z)), previous);
+            previous = Some((x, z));
+        }
+        assert!(exploration_offset(8, 500).0.abs() <= 8);
+        assert!(exploration_offset(8, 500).1.abs() <= 8);
+    }
+}
+
 fn role_for_agent_index(index: usize) -> &'static str {
     const ROLES: [&str; 6] = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
     ROLES[index % ROLES.len()]
@@ -482,11 +509,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 if should_repath {
                     let step = state.explore_step.as_ref().map(|value| value.fetch_add(1, Ordering::Relaxed)).unwrap_or(0);
                     let base_radius = state.explore_radius.as_ref().map(|value| value.load(Ordering::Relaxed)).unwrap_or(32).clamp(8, 128) as i32;
-                    let radius = (base_radius + ((step / 8) % 3) as i32 * 8).min(128);
-                    let offsets = [(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1),(0,-1),(1,-1)];
-                    let (dx,dz) = offsets[step % offsets.len()];
+                    let (dx, dz) = exploration_offset(base_radius, step);
                     if let Ok(position) = bot.position() {
-                        let destination = BlockPos::new(position.x.floor() as i32 + dx * radius, position.y.floor() as i32, position.z.floor() as i32 + dz * radius);
+                        let destination = BlockPos::new(position.x.floor() as i32 + dx, position.y.floor() as i32, position.z.floor() as i32 + dz);
                         let waypoint_loaded = bot.world().ok()
                             .is_some_and(|world| world.read().get_block_state(destination).is_some());
                         if waypoint_loaded {
