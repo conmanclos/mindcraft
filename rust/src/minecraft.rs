@@ -1990,8 +1990,9 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
 fn recipe_output_count(recipe: &str) -> u8 {
     match recipe {
         "planks" | "sticks" | "torch" | "bowl" => 4,
-        "paper" => 3,
+        "paper" | "glass_bottle" => 3,
         "arrow" => 4,
+        "stone_bricks" | "polished_andesite" | "polished_diorite" | "polished_granite" | "polished_deepslate" => 4,
         "slab" => 6,
         "stairs" => 4,
         "fence" | "sign" | "door" | "ladder" => 3,
