@@ -586,7 +586,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             // its lifecycle without blocking the ECS tick handler.
                             let mut mining_ticks = client.get_tick_broadcaster();
                             client.start_mining(position);
-                            for _ in 0..600 {
+                            let mining_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+                            loop {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                     cancel_active_mining(&client);
                                     client.chat("Mining was cancelled by a newer command.");
@@ -607,7 +608,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     }
                                     return;
                                 }
-                                if mining_ticks.recv().await.is_err() { return; }
+                                match tokio::time::timeout_at(mining_deadline, mining_ticks.recv()).await {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
+                                        tracing::debug!(username = %client.username(), skipped, "mining task missed tick notifications; resuming from current state");
+                                    }
+                                    Ok(Err(broadcast::error::RecvError::Closed)) => return,
+                                    Err(_) => break,
+                                }
                             }
                             cancel_active_mining(&client);
                             client.wait_ticks(2).await;
