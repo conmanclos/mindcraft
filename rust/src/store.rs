@@ -343,6 +343,14 @@ impl Store {
              FROM agent_tasks
              WHERE EXISTS (SELECT 1 FROM goals g WHERE g.id=agent_tasks.goal_id AND g.status='active')
                AND ((status='pending' AND attempts < 5 AND available_at <= CURRENT_TIMESTAMP) OR (status='claimed' AND attempts < 5 AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
+               -- Goal plans are ordered workflows: a task is claimable only after
+               -- every earlier task in that goal has been verified complete.
+               AND NOT EXISTS (
+                 SELECT 1 FROM agent_tasks prerequisite
+                 WHERE prerequisite.goal_id=agent_tasks.goal_id
+                   AND prerequisite.id < agent_tasks.id
+                   AND prerequisite.status != 'complete'
+               )
                AND (
                  role=?1
                  OR NOT EXISTS (
@@ -351,6 +359,12 @@ impl Store {
                      AND EXISTS (SELECT 1 FROM goals pg WHERE pg.id=preferred.goal_id AND pg.status='active')
                      AND ((preferred.status='pending' AND preferred.attempts < 5 AND preferred.available_at <= CURRENT_TIMESTAMP)
                        OR (preferred.status='claimed' AND preferred.attempts < 5 AND (preferred.lease_until IS NULL OR preferred.lease_until < CURRENT_TIMESTAMP)))
+                     AND NOT EXISTS (
+                       SELECT 1 FROM agent_tasks prerequisite
+                       WHERE prerequisite.goal_id=preferred.goal_id
+                         AND prerequisite.id < preferred.id
+                         AND prerequisite.status != 'complete'
+                     )
                  )
                )
              ORDER BY CASE WHEN role=?1 THEN 0 ELSE 1 END, priority DESC, id ASC LIMIT 1",
