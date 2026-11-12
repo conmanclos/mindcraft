@@ -1,6 +1,6 @@
 # Mindcraft Native (Rust)
 
-This is a Rust-native runtime added alongside the original JavaScript/Mineflayer project. It targets **Minecraft Java 1.21.1** and pins **Azalea 0.10.3+mc1.21.1** rather than silently tracking the current Azalea release.
+This is a Rust-native runtime being developed alongside the original JavaScript/Mineflayer project. Its target is **Minecraft Java Edition 26.1**, pinned to **Azalea 0.16.0+mc26.1**. The native runtime does not use Mineflayer or a JavaScript gameplay bridge.
 
 ## Current implementation
 
@@ -12,13 +12,17 @@ This is a Rust-native runtime added alongside the original JavaScript/Mineflayer
 - Deterministic reflex safety layer stops movement and warns when health reaches 6/20, and warns when food reaches 6/20; it does not consume items or depend on an LLM.
 - Tactical single-action planner and strategic goal decomposition are separate provider-backed paths.
 - Explicit Assisted / Balanced / Autonomous policy gate. The dashboard's Approve & Execute action is the explicit approval path; Autonomous automatically dispatches supported plans without a click. Drop remains blocked; attack is restricted to a visible crosshair target within 3.5 blocks and always requires explicit approval.
-- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/hunger/inventory telemetry, and AI chat replies when players mention `Mindcraft`. Because the pinned 1.21.1 Azalea release predates the newer built-in reconnect behavior, a disconnect exits and restarts the whole swarm after a five-second delay.
+- Azalea multi-client swarm with offline or single-account Microsoft device-code authentication, per-agent spawn/disconnect accounting, live position/health/hunger/inventory telemetry, and AI chat replies when players mention `Mindcraft`.
 - A bounded in-process command queue. `say`, `stop`, `follow <player>`, `look x,y,z`, `goto x,y,z`, `mine x,y,z`, `place x,y,z` (right-click only when that exact block is visibly in the crosshair, using the selected item), `attack crosshair` (visible entity within 3.5 blocks; always requires explicit approval), and `equip 0-8` are dispatched on Minecraft ticks. Assisted/Balanced dispatch requires user approval; Autonomous dispatches supported plans automatically. Coordinates are range-checked; unimplemented actions fail closed.
 - No CI or GitHub Actions workflows are added.
 
+## Minecraft 26.1 migration
+
+Azalea 0.16.0 is the version-specific dependency for Minecraft 26.1. This is a major protocol and API jump from the former 1.21.1 implementation: Azalea's changelog records breaking API changes including `Instance` to `World`, client/entity reference changes, and an ECS lock change. The dependency pin and target declarations have been moved to 26.1, but the gameplay integration must be migrated against the 0.16 API and compiled before this branch can be considered buildable. Do not downgrade the target or silently substitute another protocol version to avoid migration work.
+
 ## Build
 
-Install Rust nightly (required by the Azalea crate's toolchain) and a C toolchain required by bundled SQLite. The checked-in `rust-toolchain.toml` selects nightly automatically, then:
+Install Rust nightly (required by the Azalea crate's toolchain) and a C toolchain required by bundled SQLite. The checked-in `rust-toolchain.toml` selects nightly automatically:
 
 ```sh
 cd rust
@@ -26,7 +30,7 @@ cp .env.example .env
 cargo build --release
 ```
 
-Do not update Azalea to a different Minecraft protocol version as a workaround.
+A successful build has not yet been verified after the 26.1 dependency migration. Treat the runtime as in development until the 26.1 API migration compiles and it joins a live 26.1 server.
 
 ## Configure
 
@@ -86,8 +90,6 @@ Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guar
 
 ## Important scope boundary
 
-This is an early native runtime slice, not feature parity with the original Mineflayer agent. Implemented live actions are plain chat, stop, follow a named player, look at coordinates, pathfind to coordinates, mine a target block, right-click a visible target block with the selected item, attack a visible crosshair entity within 3.5 blocks (explicit approval required), and select a hotbar slot. The runtime exposes position, health, food, saturation, and inventory snapshots.
+The existing action layer was written against the previous Azalea API and must be migrated and compile-verified against Azalea 0.16.0 before its listed actions can be claimed as working on 26.1. The intended action surface includes chat, stop, follow, look, pathfinding, mining, block interaction, attacking, and hotbar selection; this list describes existing implementation intent, not verified 26.1 functionality.
 
-The Azalea swarm supports up to eight offline-mode clients or one Microsoft-authenticated client. The first client is the deterministic command/telemetry primary; all clients can follow the shared target. The durable specialist task queue supports role-based claims, two-minute leases, heartbeats, and completion, but task claims are not yet automatically tied to in-game execution.
-
-Remaining work includes recipe-based crafting, inventory transfers/container management, automatic eating/healing, advanced multi-step construction, autonomous exploration strategy, automated execution/completion of strategic tasks, per-agent role assignment, and full remote API hardening (TLS termination, rate limits, and per-agent authorization). The dashboard and provider adapters are present in source, but this branch has not been compiled or run against a live server in this environment. Do not treat it as gameplay-ready until a local build and live-server verification succeed.
+The durable specialist task queue supports role-based claims, two-minute leases, heartbeats, and completion, but task claims are not yet automatically tied to in-game execution. Remaining work includes recipe-based crafting, inventory transfers/container management, automatic eating/healing, advanced multi-step construction, autonomous exploration strategy, automated execution/completion of strategic tasks, per-agent role assignment, and full remote API hardening (TLS termination, rate limits, and per-agent authorization). Do not treat this branch as gameplay-ready until a local build and live 26.1 server verification succeed.
