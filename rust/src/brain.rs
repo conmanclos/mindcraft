@@ -119,8 +119,8 @@ impl Brain {
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
-        if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) && !explicit_approval {
-            bail!("assisted mode requires explicit approval for '{}'", action.action);
+        if self.config.mode == "assisted" && !explicit_approval {
+            bail!("assisted mode requires explicit approval for every action ('{}')", action.action);
         }
         if ["attack", "use_item"].contains(&action_name.as_str()) && !explicit_approval {
             bail!("attack and generic item use always require explicit user approval, including in autonomous mode");
@@ -199,6 +199,15 @@ mod tests {
             minecraft_auth: "offline".into(), microsoft_email: None,
             database: PathBuf::from(":memory:")
         }))
+    }
+
+    #[test]
+    fn assisted_mode_requires_approval_for_every_action() {
+        for name in ["say", "look", "follow", "stop", "goto", "jump", "equip", "mine", "place", "attack", "use_item"] {
+            let action = PlannedAction { action: name.into(), target: None, reason: "test".into(), risk: "low".into() };
+            assert!(brain("assisted").authorize_action(&action, false).is_err(), "{name} must require approval in assisted mode");
+            assert!(brain("assisted").authorize_action(&action, true).is_ok(), "{name} should be allowed after explicit approval");
+        }
     }
 
     #[test]
