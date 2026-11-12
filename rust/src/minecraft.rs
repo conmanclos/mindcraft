@@ -1190,7 +1190,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let world = world.read();
                             let block = world.get_block_state(position)?;
                             let name = format!("{block:?}").to_ascii_lowercase();
-                            if is_mature_crop(&name) || is_pumpkin_or_melon_fruit(&name) {
+                            if is_mature_crop(&name) || is_pumpkin_or_melon_fruit(&name) || is_harvestable_mushroom(&name) {
                                 return Some(position);
                             }
                             if is_column_crop(&name) {
@@ -1234,7 +1234,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 }
                             }
                         } else {
-                            bot.chat("Harvest targets mature wheat, carrots, potatoes, beetroot, nether wart, or a pumpkin/melon fruit beside a mature stem. Nothing was mined.");
+                            bot.chat("Harvest targets mature wheat, carrots, potatoes, beetroot, nether wart, a mushroom block, or a pumpkin/melon fruit beside a mature stem. Nothing was mined.");
                         }
                     }
                     BotCommand::Plant(x, y, z) => {
@@ -2415,6 +2415,14 @@ fn is_mature_pumpkin_or_melon_stem(debug_name: &str) -> bool {
 fn is_column_crop(name: &str) -> bool {
     let compact: String = name.chars().filter(|character| character.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect();
     compact == "sugarcane" || compact == "cactus" || compact == "bamboo"
+}
+
+fn is_harvestable_mushroom(debug_name: &str) -> bool {
+    let compact: String = debug_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    compact == "redmushroom" || compact == "brownmushroom"
 }
 
 fn is_mature_crop(debug_name: &str) -> bool {
