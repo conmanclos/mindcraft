@@ -62,20 +62,9 @@ impl Config {
                 }
             }
         }
-        let trusted_chat_players = env::var("MINDCRAFT_TRUSTED_PLAYERS").unwrap_or_default()
-            .split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned)
-            .collect::<Vec<_>>();
-        if trusted_chat_players.len() > 32 {
-            bail!("MINDCRAFT_TRUSTED_PLAYERS is limited to 32 usernames");
-        }
-        let mut trusted_names = std::collections::HashSet::new();
-        for name in &trusted_chat_players {
-            if !(3..=16).contains(&name.len())
-                || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
-                || !trusted_names.insert(name.to_ascii_lowercase()) {
-                bail!("trusted chat players must be unique Minecraft usernames (3-16 letters, digits, or underscores)");
-            }
-        }
+        let trusted_chat_players = parse_trusted_chat_players(
+            &env::var("MINDCRAFT_TRUSTED_PLAYERS").unwrap_or_default()
+        )?;
         let model = env::var("MINDCRAFT_MODEL").unwrap_or_else(|_| "llama3.1".into()).trim().to_owned();
         if model.trim().is_empty() {
             bail!("MINDCRAFT_MODEL must not be empty");
@@ -120,6 +109,23 @@ impl Config {
 }
 
 
+fn parse_trusted_chat_players(raw: &str) -> Result<Vec<String>> {
+    let names = raw.split(',').map(str::trim).filter(|name| !name.is_empty())
+        .map(str::to_owned).collect::<Vec<_>>();
+    if names.len() > 32 {
+        bail!("MINDCRAFT_TRUSTED_PLAYERS is limited to 32 usernames");
+    }
+    let mut unique = std::collections::HashSet::new();
+    for name in &names {
+        if !(3..=16).contains(&name.len())
+            || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
+            || !unique.insert(name.to_ascii_lowercase()) {
+            bail!("trusted chat players must be unique Minecraft usernames (3-16 letters, digits, or underscores)");
+        }
+    }
+    Ok(names)
+}
+
 fn validate_provider_base_url(value: &str) -> Result<()> {
     let parsed = reqwest::Url::parse(value)
         .map_err(|_| anyhow::anyhow!("MINDCRAFT_BASE_URL must be a valid http:// or https:// base URL"))?;
@@ -149,7 +155,7 @@ fn validate_api_token(token: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_api_token, validate_provider_base_url};
+    use super::{parse_trusted_chat_players, validate_api_token, validate_provider_base_url};
 
     #[test]
     fn provider_urls_require_https_for_remote_hosts_and_reject_credentials() {
@@ -159,6 +165,16 @@ mod tests {
         for invalid in ["http://api.example.com/v1", "http://", "ftp://example.com", "https://user:pass@example.com", "https://example.com/?key=x", "https://example.com/#fragment"] {
             assert!(validate_provider_base_url(invalid).is_err(), "accepted {invalid}");
         }
+    }
+
+    #[test]
+    fn trusted_chat_allowlist_is_empty_by_default_and_validates_usernames() {
+        assert!(parse_trusted_chat_players("").unwrap().is_empty());
+        assert_eq!(parse_trusted_chat_players("Owner, Friend_2").unwrap(), vec!["Owner", "Friend_2"]);
+        assert!(parse_trusted_chat_players("Owner,owner").is_err());
+        assert!(parse_trusted_chat_players("bad-name").is_err());
+        let too_many = (0..33).map(|index| format!("Player{index:02}")).collect::<Vec<_>>().join(",");
+        assert!(parse_trusted_chat_players(&too_many).is_err());
     }
 
     #[test]
