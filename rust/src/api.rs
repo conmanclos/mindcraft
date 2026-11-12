@@ -658,7 +658,7 @@ async fn release_task(State(state): State<ApiState>, headers: HeaderMap, Path(ta
     let released = state.store.release_task(task_id, &request.agent_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if !released {
-        return Err((StatusCode::CONFLICT, "task is not actively leased by this agent".into()));
+        return Err((StatusCode::CONFLICT, "task is not owned by this agent or is no longer releasable".into()));
     }
     Ok(Json(serde_json::json!({"released":true})))
 }
@@ -672,7 +672,7 @@ async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(t
     let completed = state.store.complete_task(task_id, &request.agent_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if !completed {
-        return Err((StatusCode::CONFLICT, "task is not claimed by this agent or is already complete".into()));
+        return Err((StatusCode::CONFLICT, "task is not owned by this agent or is already complete".into()));
     }
     Ok(Json(CompleteResponse { completed }))
 }
