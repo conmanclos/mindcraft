@@ -104,6 +104,12 @@ impl Brain {
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
+        if !["low", "medium", "high"].contains(&action.risk.to_lowercase().as_str()) {
+            bail!("risk must be low, medium, or high");
+        }
+        if action.target.as_ref().is_some_and(|target| target.len() > 256 || target.chars().any(char::is_control)) {
+            bail!("action target must be at most 256 characters and contain no control characters");
+        }
         Ok(())
     }
 
@@ -118,8 +124,11 @@ impl Brain {
         if self.config.mode == "assisted" && destructive.contains(&action_name.as_str()) && !explicit_approval {
             bail!("assisted mode requires explicit approval for '{}'", action.action);
         }
-        if action_name == "drop" || action_name == "attack" {
-            bail!("'{}' is disabled until a target-aware execution adapter is active", action.action);
+        if action_name == "attack" && !explicit_approval {
+            bail!("attack always requires explicit approval, including in autonomous mode");
+        }
+        if action_name == "drop" {
+            bail!("drop is disabled until a safe inventory-item selection adapter is active");
         }
         if self.config.mode != "autonomous" && action.risk.eq_ignore_ascii_case("high") && !explicit_approval {
             bail!("high-risk action requires explicit approval in {} mode", self.config.mode);
