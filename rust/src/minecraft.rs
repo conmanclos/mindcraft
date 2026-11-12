@@ -16,6 +16,7 @@ pub enum BotCommand {
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
     Place(i32, i32, i32),
+    Build(Vec<(i32, i32, i32)>),
     Equip(u8),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, u16),
@@ -771,6 +772,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                         });
                     }
+                    BotCommand::Build(positions) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_build(client, positions, generation_state, generation).await;
+                        });
+                    }
                     BotCommand::Place(x, y, z) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
@@ -1490,6 +1505,80 @@ async fn execute_craft(
         bot.chat(format!("Collected the {result_name} crafting output. Check inventory before marking the task complete."));
     } else {
         bot.chat(format!("The {result_name} output is still in the crafting result slot; inventory may be full or the server rejected the transfer."));
+    }
+}
+
+async fn execute_build(
+    bot: Client,
+    positions: Vec<(i32, i32, i32)>,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if positions.is_empty() || positions.len() > 32 {
+        bot.chat("A build plan must contain between 1 and 32 block positions.");
+        return;
+    }
+    for (index, (x, y, z)) in positions.iter().copied().enumerate() {
+        if cancelled() || !bot.exists() { return; }
+        let target = BlockPos::new(x, y, z);
+        let support = target.down(1);
+        let Ok(world) = bot.world() else {
+            bot.chat("I can't read the loaded world to continue this build.");
+            return;
+        };
+        if !world.read().get_block_state(target).is_some_and(|block| block.is_air()) {
+            bot.chat(format!("Build stopped at block {}: target {}, {}, {} is not loaded air.", index + 1, x, y, z));
+            return;
+        }
+        if !world.read().get_block_state(support).is_some_and(|block| block.is_collision_shape_full()) {
+            bot.chat(format!("Build stopped at block {}: target {}, {}, {} needs a full-collision support block below it.", index + 1, x, y, z));
+            return;
+        }
+        let chunk_storage = world.read().chunks.clone();
+        if !goto_cancellable(
+            &bot,
+            ReachBlockPosGoal::new(support, chunk_storage),
+            &generation_state,
+            generation,
+        ).await {
+            if !cancelled() { bot.chat(format!("Build stopped at block {} because navigation failed.", index + 1)); }
+            return;
+        }
+        if cancelled() { return; }
+        if !bot.exists() || !bot.is_goto_target_reached() {
+            bot.chat(format!("Build stopped at block {} because the support position was not reached.", index + 1));
+            return;
+        }
+        bot.look_at(support.center().up(0.49));
+        bot.wait_updates(1).await;
+        if cancelled() { return; }
+        match bot.hit_result() {
+            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == Direction::Up => {
+                bot.block_interact(support);
+                let mut placed = false;
+                for _ in 0..10 {
+                    if cancelled() { return; }
+                    if world.read().get_block_state(target).is_some_and(|block| !block.is_air()) {
+                        placed = true;
+                        break;
+                    }
+                    bot.wait_ticks(1).await;
+                }
+                if !placed {
+                    bot.chat(format!("Build stopped at block {}: the server did not confirm placement. Check the selected block stack.", index + 1));
+                    return;
+                }
+            }
+            _ => {
+                bot.chat(format!("Build stopped at block {}: no clear view of the support block's top face.", index + 1));
+                return;
+            }
+        }
+    }
+    if !cancelled() {
+        bot.chat(format!("Build placement confirmed for all {} requested blocks.", positions.len()));
     }
 }
 
