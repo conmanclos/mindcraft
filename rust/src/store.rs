@@ -186,8 +186,17 @@ impl Store {
         let task = tx.query_row(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until
              FROM agent_tasks
-             WHERE role=?1 AND (status='pending' OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
-             ORDER BY priority DESC, id ASC LIMIT 1",
+             WHERE (status='pending' OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
+               AND (
+                 role=?1
+                 OR NOT EXISTS (
+                   SELECT 1 FROM agent_tasks preferred
+                   WHERE preferred.role=?1
+                     AND (preferred.status='pending'
+                       OR (preferred.status='claimed' AND (preferred.lease_until IS NULL OR preferred.lease_until < CURRENT_TIMESTAMP)))
+                 )
+               )
+             ORDER BY CASE WHEN role=?1 THEN 0 ELSE 1 END, priority DESC, id ASC LIMIT 1",
             [role],
             |row| Ok(AgentTask {
                 id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
@@ -351,6 +360,23 @@ mod tests {
         assert_eq!(stored[0].role, "scout");
         assert_eq!(stored[1].role, "gatherer");
         assert!(stored.iter().all(|task| task.status == "pending"));
+    }
+
+    #[test]
+    fn worker_falls_back_to_other_specialist_roles_when_its_queue_is_empty() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Prepare a safe camp").unwrap();
+        let scout_id = store.add_task(goal, "scout", "Find a safe location", 90).unwrap();
+        let gatherer_id = store.add_task(goal, "gatherer", "Collect wood", 70).unwrap();
+
+        let first = store.claim_task("SoloBot", "planner").unwrap().unwrap();
+        assert_eq!(first.id, scout_id);
+        assert_eq!(first.role, "scout");
+        assert!(store.release_task(first.id, "SoloBot").unwrap());
+
+        let second = store.claim_task("SoloBot", "planner").unwrap().unwrap();
+        assert_eq!(second.id, scout_id);
+        assert_ne!(second.id, gatherer_id);
     }
 
     #[test]
