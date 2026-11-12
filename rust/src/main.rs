@@ -45,8 +45,9 @@ async fn main() -> Result<()> {
             if let Some(server) = config.minecraft_server.clone() {
                 let bot_brain = brain.clone();
                 let bot_status = status.clone();
+                let bot_username = config.minecraft_username.clone();
                 tokio::spawn(async move {
-                    if let Err(error) = minecraft::connect(server, config.minecraft_username.clone(), bot_brain, bot_status).await {
+                    if let Err(error) = minecraft::connect(server, bot_username, bot_brain, bot_status).await {
                         tracing::error!(%error, "Minecraft runtime stopped");
                     }
                 });
