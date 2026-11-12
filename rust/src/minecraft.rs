@@ -347,7 +347,6 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                                 clear_mining_stop_marker(&bot);
                                 match pending.kind {
                                     PendingBlockActionKind::Mine => {
-                                        bot.start_mining(pending.position);
                                         let mut mining_bot = bot.clone();
                                         let position = pending.position;
                                         tokio::spawn(async move {
