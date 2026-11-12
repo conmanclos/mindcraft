@@ -265,6 +265,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             if slot > 8 { return Err((StatusCode::BAD_REQUEST, "hotbar slot must be between 0 and 8".into())); }
             Ok(BotCommand::Equip(slot))
         }
+        "explore" => {
+            let radius = action.target.unwrap_or_else(|| "32".into()).parse::<u16>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "explore radius must be an integer from 8 to 128".into()))?;
+            if !(8..=128).contains(&radius) {
+                return Err((StatusCode::BAD_REQUEST, "explore radius must be from 8 to 128 blocks".into()));
+            }
+            Ok(BotCommand::Explore(radius))
+        }
         "withdraw" => {
             let target = action.target.unwrap_or_default();
             let parts = target.splitn(4, ',').map(str::trim).collect::<Vec<_>>();
