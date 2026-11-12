@@ -13,6 +13,7 @@ pub struct Config {
     pub base_url: String,
     pub minecraft_server: Option<String>,
     pub minecraft_username: String,
+    pub minecraft_accounts: Vec<String>,
     pub minecraft_auth: String,
     pub microsoft_email: Option<String>,
     pub database: PathBuf,
@@ -39,6 +40,14 @@ impl Config {
         if minecraft_auth == "microsoft" && microsoft_email.is_none() {
             bail!("MINDCRAFT_MICROSOFT_EMAIL is required when MINDCRAFT_MC_AUTH=microsoft");
         }
+        let minecraft_username = env::var("MINDCRAFT_MC_USERNAME").unwrap_or_else(|_| "Mindcraft".into());
+        let minecraft_accounts = env::var("MINDCRAFT_MC_ACCOUNTS").ok()
+            .map(|value| value.split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_owned).collect::<Vec<_>>())
+            .filter(|accounts| !accounts.is_empty())
+            .unwrap_or_else(|| vec![minecraft_username.clone()]);
+        if minecraft_auth == "microsoft" && minecraft_accounts.len() != 1 {
+            bail!("Microsoft auth currently supports one account; use MINDCRAFT_MC_ACCOUNTS for multiple offline accounts");
+        }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
         if provider == "openai" && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required when MINDCRAFT_PROVIDER=openai");
@@ -63,7 +72,8 @@ impl Config {
             api_key,
             base_url: env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".into()),
             minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
-            minecraft_username: env::var("MINDCRAFT_MC_USERNAME").unwrap_or_else(|_| "Mindcraft".into()),
+            minecraft_username,
+            minecraft_accounts,
             minecraft_auth,
             microsoft_email,
             database: PathBuf::from(env::var("MINDCRAFT_DATABASE").unwrap_or_else(|_| "./mindcraft.sqlite3".into())),
