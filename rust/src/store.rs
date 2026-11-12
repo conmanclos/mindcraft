@@ -94,6 +94,25 @@ impl Store {
         Ok(messages)
     }
 
+    /// Format recent conversation history within a character budget, keeping the newest messages.
+    pub fn recent_context(&self, limit: usize, max_chars: usize) -> Result<String> {
+        let history = self.recent_messages(limit)?;
+        let mut selected = Vec::new();
+        let mut remaining = max_chars;
+        for (role, content) in history.into_iter().rev() {
+            if remaining == 0 { break; }
+            let prefix = format!("{role}: ");
+            let prefix_len = prefix.chars().count();
+            if remaining <= prefix_len { break; }
+            let body = content.chars().take(remaining - prefix_len).collect::<String>();
+            let line = format!("{prefix}{body}");
+            remaining = remaining.saturating_sub(line.chars().count() + 1);
+            selected.push(line);
+        }
+        selected.reverse();
+        Ok(selected.join("\n"))
+    }
+
     pub fn create_goal(&self, description: &str) -> Result<i64> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
