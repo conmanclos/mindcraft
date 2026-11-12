@@ -62,8 +62,12 @@ impl Config {
             }
         }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default();
+        let configured_base_url = env::var("MINDCRAFT_BASE_URL").ok().filter(|value| !value.trim().is_empty());
+        if provider == "openai-compatible" && configured_base_url.is_none() {
+            bail!("MINDCRAFT_BASE_URL is required when MINDCRAFT_PROVIDER=openai-compatible");
+        }
         let default_base_url = if provider == "ollama" { "http://127.0.0.1:11434/v1" } else { "https://api.openai.com/v1" };
-        let base_url = env::var("MINDCRAFT_BASE_URL").unwrap_or_else(|_| default_base_url.into());
+        let base_url = configured_base_url.unwrap_or_else(|| default_base_url.into());
         if ["openai", "anthropic", "google"].contains(&provider.as_str()) && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required for the selected hosted provider");
         }
