@@ -90,7 +90,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     let data = app_data(&app)?;
     let entry = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key").map_err(|e| e.to_string())?;
     if setup.api_key.trim().is_empty() {
-        if setup.provider != "ollama" && entry.get_password().is_err() {
+        if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) && entry.get_password().is_err() {
             return Err("This AI provider requires an API key. Enter it once to store it in Keychain.".into());
         }
         if setup.provider == "ollama" {
