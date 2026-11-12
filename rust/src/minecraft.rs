@@ -1,7 +1,7 @@
 use crate::{api::RuntimeStatus, brain::Brain};
 use anyhow::Result;
 use azalea::{account::microsoft::MicrosoftAccountOpts, pathfinder::{PathfinderClientExt, goals::BlockPosGoal}, prelude::*, swarm::SwarmBuilder};
-use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
+use std::{sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,7 @@ pub enum BotCommand {
     Mine(i32, i32, i32),
     Place(i32, i32, i32),
     Equip(u8),
+    Explore(u16),
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,10 @@ struct BotState {
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
+    is_exploring: Option<Arc<AtomicBool>>,
+    explore_radius: Option<Arc<AtomicUsize>>,
+    explore_step: Option<Arc<AtomicUsize>>,
+    last_explore_repath: Option<Arc<Mutex<Instant>>>,
     is_primary: bool,
 }
 
@@ -124,6 +129,10 @@ fn make_state(
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)))),
         last_snapshot: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(2)))),
+        is_exploring: Some(Arc::new(AtomicBool::new(false))),
+        explore_radius: Some(Arc::new(AtomicUsize::new(32))),
+        explore_step: Some(Arc::new(AtomicUsize::new(0))),
+        last_explore_repath: Some(Arc::new(Mutex::new(Instant::now() - Duration::from_secs(20)))),
         is_primary,
     }
 }
@@ -261,6 +270,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if critical_health {
                 if let Some(target) = &state.follow_target { *target.lock().await = None; }
                 if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                 // A low-health reflex has priority over stale movement/combat/build commands.
                 queued.retain(|command| matches!(command, BotCommand::Stop | BotCommand::Say(_)));
             }
@@ -309,6 +319,23 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     bot.walk(WalkDirection::None);
                 }
             }
+            if state.is_exploring.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) && !critical_health {
+                let should_repath = if let Some(last) = &state.last_explore_repath {
+                    let mut last = last.lock().await;
+                    if last.elapsed() >= Duration::from_secs(15) { *last = Instant::now(); true } else { false }
+                } else { false };
+                if should_repath {
+                    let step = state.explore_step.as_ref().map(|value| value.fetch_add(1, Ordering::Relaxed)).unwrap_or(0);
+                    let base_radius = state.explore_radius.as_ref().map(|value| value.load(Ordering::Relaxed)).unwrap_or(32).clamp(8, 128) as i32;
+                    let radius = base_radius + ((step / 8) % 3) as i32 * 8;
+                    let offsets = [(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1),(0,-1),(1,-1)];
+                    let (dx,dz) = offsets[step % offsets.len()];
+                    let position = bot.position();
+                    let destination = BlockPos::new(position.x.floor() as i32 + dx * radius, position.y.floor() as i32, position.z.floor() as i32 + dz * radius);
+                    bot.start_goto(BlockPosGoal(destination));
+                    tracing::info!(username = %bot.username(), ?destination, "exploration waypoint selected");
+                }
+            }
             for command in queued {
                 match command {
                     BotCommand::Say(text) => {
@@ -337,31 +364,37 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                     BotCommand::Stop => {
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                     }
                     BotCommand::Follow(username) => {
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = Some(username); }
                     }
                     BotCommand::Look(x, y, z) => {
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.look_at(BlockPos::new(x, y, z).center());
                     }
                     BotCommand::Goto(x, y, z) => {
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.start_goto(BlockPosGoal(BlockPos::new(x, y, z)));
                     }
                     BotCommand::Mine(x, y, z) => {
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.start_mining(BlockPos::new(x, y, z));
                     }
                     BotCommand::Place(x, y, z) => {
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
@@ -374,6 +407,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::Jump => bot.jump(),
                     BotCommand::UseItem => bot.start_use_item(),
                     BotCommand::Equip(slot) => bot.set_selected_hotbar_slot(slot),
+                    BotCommand::Explore(radius) => {
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(radius_state) = &state.explore_radius { radius_state.store(radius as usize, Ordering::Relaxed); }
+                        if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
+                        if let Some(last) = &state.last_explore_repath { *last.lock().await = Instant::now() - Duration::from_secs(20); }
+                    }
                 }
             }
         }
