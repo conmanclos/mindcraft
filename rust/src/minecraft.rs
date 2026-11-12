@@ -1805,8 +1805,9 @@ fn cancel_active_mining(client: &Client) {
 pub(crate) fn smelt_spec(input: &str) -> Option<&'static str> {
     Some(match input {
         "raw_iron" | "iron_ore" | "deepslate_iron_ore" => "iron_ingot",
-        "raw_gold" | "gold_ore" | "deepslate_gold_ore" => "gold_ingot",
+        "raw_gold" | "gold_ore" | "deepslate_gold_ore" | "nether_gold_ore" => "gold_ingot",
         "raw_copper" | "copper_ore" | "deepslate_copper_ore" => "copper_ingot",
+        "nether_quartz_ore" => "quartz",
         "sand" | "red_sand" => "glass",
         "cobblestone" => "stone",
         "stone" => "smooth_stone",
