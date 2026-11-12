@@ -174,3 +174,26 @@ impl Store {
         Ok(true)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn specialist_tasks_are_claimed_once_and_complete_the_goal() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let goal = store.create_goal("Build a safe starter base").unwrap();
+        let task = store.add_task(goal, "builder", "Build a small shelter", 80).unwrap();
+
+        assert!(store.claim_task("scout-1", "scout").unwrap().is_none());
+        let claimed = store.claim_task("builder-1", "builder").unwrap().unwrap();
+        assert_eq!(claimed.id, task);
+        assert_eq!(claimed.assigned_agent.as_deref(), Some("builder-1"));
+        assert!(store.claim_task("builder-2", "builder").unwrap().is_none());
+
+        assert!(!store.complete_task(task, "builder-2").unwrap());
+        assert!(store.complete_task(task, "builder-1").unwrap());
+        assert_eq!(store.list_goals().unwrap()[0].status, "complete");
+    }
+}
