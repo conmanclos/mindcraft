@@ -787,6 +787,16 @@ mod tests {
     }
 
     #[test]
+    fn build_action_creates_a_bottom_up_bounded_command() {
+        let command = command_from_action(action("build", Some("1,66,1;1,64,1;1,65,1"))).unwrap();
+        assert!(matches!(
+            command,
+            BotCommand::Build(positions)
+                if positions == vec![(1, 64, 1), (1, 65, 1), (1, 66, 1)]
+        ));
+    }
+
+    #[test]
     fn multi_block_build_targets_are_bounded_unique_and_world_validated() {
         assert_eq!(
             parse_build_targets("1,64,1;2,64,1").unwrap(),
