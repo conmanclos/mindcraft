@@ -413,6 +413,12 @@ impl Store {
         let goal_id: i64 = tx.query_row("SELECT goal_id FROM agent_tasks WHERE id=?1", [task_id], |row| row.get(0))?;
         if terminal {
             tx.execute("UPDATE goals SET status='failed' WHERE id=?1 AND status='active'", [goal_id])?;
+            tx.execute(
+                "UPDATE agent_tasks SET status='cancelled', assigned_agent=NULL, lease_until=NULL,
+                 updated_at=CURRENT_TIMESTAMP
+                 WHERE goal_id=?1 AND id!=?2 AND status IN ('pending','claimed')",
+                params![goal_id, task_id],
+            )?;
         }
         tx.commit()?;
         Ok(Some(if terminal { "failed".into() } else { "retry_scheduled".into() }))
