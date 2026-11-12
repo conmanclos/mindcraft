@@ -2519,6 +2519,63 @@ async fn execute_build(
 }
 
 
+async fn execute_armor_upgrade(bot: Client) {
+    let Ok(menu) = bot.menu() else {
+        bot.chat("I couldn't inspect your inventory for an armor upgrade.");
+        return;
+    };
+    if menu.try_as_player().is_none() {
+        bot.chat("Close the open container before optimizing armor.");
+        return;
+    }
+    let Some((source_slot, target_slot, rank, needs_swap)) = best_armor_upgrade(&menu) else {
+        bot.chat("No recognized higher-tier armor upgrade is available; worn gear was left unchanged.");
+        return;
+    };
+    let Ok(inventory) = bot.get_inventory() else {
+        bot.chat("I couldn't open the player inventory to equip the armor upgrade.");
+        return;
+    };
+    if needs_swap {
+        inventory.left_click(source_slot);
+        bot.wait_updates(1).await;
+        inventory.left_click(target_slot);
+        bot.wait_updates(1).await;
+        inventory.left_click(source_slot);
+        bot.wait_updates(2).await;
+    } else {
+        inventory.shift_click(source_slot);
+        bot.wait_updates(2).await;
+    }
+    let equipped_rank = bot.menu().ok()
+        .and_then(|menu| menu.slot(target_slot).map(|item| {
+            if item.is_empty() { None } else {
+                armor_item_target(&format!("{:?}", item.kind()))
+                    .filter(|(slot, _)| *slot == target_slot)
+                    .map(|(_, rank)| rank)
+            }
+        }))
+        .flatten();
+    if equipped_rank.is_some_and(|actual| actual >= rank) {
+        bot.chat(if needs_swap {
+            "Armor upgrade confirmed. The weaker piece was returned to its original inventory slot."
+        } else {
+            "Armor upgrade confirmed in the empty armor slot."
+        });
+    } else {
+        if needs_swap {
+            let source_empty = bot.menu().ok()
+                .and_then(|menu| menu.slot(source_slot).map(|item| item.is_empty()))
+                .unwrap_or(false);
+            if source_empty {
+                inventory.left_click(source_slot);
+                bot.wait_updates(1).await;
+            }
+        }
+        bot.chat("The server did not confirm the armor upgrade. Check the inventory before trying again.");
+    }
+}
+
 async fn execute_build_mixed(
     bot: Client,
     blocks: Vec<BuildBlock>,
