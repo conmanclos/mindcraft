@@ -428,6 +428,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 &generation_state,
                                 generation,
                             ).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the block timed out or failed.");
+                                }
                                 return;
                             }
                             if !client.exists() || !client.is_goto_target_reached() {
@@ -501,6 +504,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 &generation_state,
                                 generation,
                             ).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the placement support block timed out or failed.");
+                                }
                                 return;
                             }
                             if !client.exists() || !client.is_goto_target_reached() {
@@ -586,6 +592,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 &generation_state,
                                 generation,
                             ).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the container timed out or failed.");
+                                }
                                 return;
                             }
                             if !client.exists() || !client.is_goto_target_reached() {
@@ -844,6 +853,9 @@ async fn execute_craft(
             }
             let chunk_storage = world.read().chunks.clone();
             if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+                if !cancelled() {
+                    bot.chat("Pathfinding to the crafting table timed out or failed.");
+                }
                 return;
             }
             if cancelled() { return; }
