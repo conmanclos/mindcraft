@@ -744,10 +744,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if let Err(error) = store.append_message("user", &content) {
                                 tracing::warn!(%error, "could not persist addressed Minecraft chat message");
                             }
-                            store.recent_messages(12).map(|history| {
-                                history.into_iter().map(|(role, text)| format!("{role}: {text}"))
-                                    .collect::<Vec<_>>().join("\n")
-                            }).unwrap_or_default()
+                            store.recent_context(12, 12_000).unwrap_or_default()
                         } else {
                             String::new()
                         };
