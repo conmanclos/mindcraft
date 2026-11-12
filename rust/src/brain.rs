@@ -41,6 +41,10 @@ impl Brain {
         }
     }
 
+    pub fn is_autonomous(&self) -> bool {
+        self.config.mode == "autonomous"
+    }
+
     pub async fn reply(&self, prompt: &str) -> Result<String> {
         if prompt.trim().is_empty() { bail!("prompt cannot be empty"); }
         if prompt.len() > 12_000 { bail!("prompt exceeds 12,000 bytes"); }
