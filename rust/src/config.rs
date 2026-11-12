@@ -62,6 +62,11 @@ impl Config {
                 }
             }
         }
+        let minecraft_server = env::var("MINDCRAFT_MC_SERVER").ok()
+            .map(|server| server.trim().to_owned()).filter(|server| !server.is_empty());
+        if let Some(server) = &minecraft_server {
+            validate_minecraft_server(server)?;
+        }
         let trusted_chat_players = parse_trusted_chat_players(
             &env::var("MINDCRAFT_TRUSTED_PLAYERS").unwrap_or_default()
         )?;
@@ -97,7 +102,7 @@ impl Config {
             model,
             api_key,
             base_url,
-            minecraft_server: env::var("MINDCRAFT_MC_SERVER").ok().filter(|s| !s.trim().is_empty()),
+            minecraft_server,
             minecraft_username,
             minecraft_accounts,
             minecraft_auth,
@@ -108,6 +113,27 @@ impl Config {
     }
 }
 
+
+fn validate_minecraft_server(value: &str) -> Result<()> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_whitespace)
+        || value.chars().any(|character| character.is_control() || matches!(character, '/' | '\\' | '?' | '#' | '@')) {
+        bail!("MINDCRAFT_MC_SERVER must be a host name or host:port without a URL scheme, path, or whitespace");
+    }
+    let (host, port) = match value.rsplit_once(':') {
+        Some((host, port)) => {
+            if host.contains(':') || port.parse::<u16>().is_err() || port == "0" {
+                bail!("MINDCRAFT_MC_SERVER must use a valid host:port (IPv6 literals are not supported by the pinned Azalea address parser)");
+            }
+            (host, port)
+        }
+        None => (value, "25565"),
+    };
+    if host.is_empty() || !host.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')) {
+        bail!("MINDCRAFT_MC_SERVER contains an invalid host name");
+    }
+    Ok(())
+}
 
 fn parse_trusted_chat_players(raw: &str) -> Result<Vec<String>> {
     let names = raw.split(',').map(str::trim).filter(|name| !name.is_empty())
@@ -155,7 +181,7 @@ fn validate_api_token(token: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_trusted_chat_players, validate_api_token, validate_provider_base_url};
+    use super::{parse_trusted_chat_players, validate_api_token, validate_minecraft_server, validate_provider_base_url};
 
     #[test]
     fn provider_urls_require_https_for_remote_hosts_and_reject_credentials() {
@@ -164,6 +190,16 @@ mod tests {
         assert!(validate_provider_base_url("https://api.example.com/v1").is_ok());
         for invalid in ["http://api.example.com/v1", "http://", "ftp://example.com", "https://user:pass@example.com", "https://example.com/?key=x", "https://example.com/#fragment"] {
             assert!(validate_provider_base_url(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn minecraft_server_address_requires_a_valid_host_and_port() {
+        assert!(validate_minecraft_server("localhost").is_ok());
+        assert!(validate_minecraft_server("play.example.net:25565").is_ok());
+        assert!(validate_minecraft_server("192.168.1.20:25566").is_ok());
+        for invalid in ["", "https://example.com", "example.com/path", "host:0", "host:65536", "host:nope", "host name:25565", "::1:25565"] {
+            assert!(validate_minecraft_server(invalid).is_err(), "accepted {invalid}");
         }
     }
 
