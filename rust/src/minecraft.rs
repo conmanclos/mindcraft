@@ -188,10 +188,16 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
     else if name.contains("gold_ore") { Some("gold ore") }
     else if name.contains("iron_ore") { Some("iron ore") }
     else if name.contains("copper_ore") { Some("copper ore") }
+    else if name.contains("lapis_ore") { Some("lapis ore") }
+    else if name.contains("redstone_ore") { Some("redstone ore") }
+    else if name.contains("nether_quartz_ore") { Some("nether quartz ore") }
+    else if name.contains("nether_gold_ore") { Some("nether gold ore") }
     else if name.contains("coal_ore") { Some("coal ore") }
+    else if name.contains("amethyst_cluster") { Some("amethyst cluster") }
     else if name.contains("chest") || name.contains("barrel") || name.contains("shulker_box") { Some("storage") }
     else if name.contains("crafting_table") || name.contains("furnace") || name.contains("smoker") || name.contains("blast_furnace") { Some("workstation") }
-    else if name.contains("bell") || name.contains("loom") || name.contains("cartography_table") || name.contains("smithing_table") { Some("village workstation") }
+    else if name.contains("anvil") || name.contains("enchanting_table") || name.contains("brewing_stand") || name.contains("grindstone") || name.contains("stonecutter") { Some("utility workstation") }
+    else if name.contains("bell") || name.contains("loom") || name.contains("cartography_table") || name.contains("smithing_table") || name.contains("fletching_table") { Some("village workstation") }
     else { None }
 }
 
