@@ -187,7 +187,14 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
             BotCommand::Say(text)
         },
         "stop" => BotCommand::Stop,
-        "goto" | "mine" => {
+        "use_item" => BotCommand::UseItem,
+        "equip" => {
+            let slot = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?
+                .parse::<u8>().map_err(|_| (StatusCode::BAD_REQUEST, "target must be a hotbar slot from 0 to 8".into()))?;
+            if slot > 8 { return Err((StatusCode::BAD_REQUEST, "hotbar slot must be between 0 and 8".into())); }
+            BotCommand::Equip(slot)
+        },
+        "look" | "goto" | "mine" => {
             let coordinates = request.action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z".into()))?;
             let parsed = coordinates.split(',').map(str::trim).map(str::parse::<i32>).collect::<Result<Vec<_>, _>>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "target must be integer coordinates x,y,z".into()))?;
@@ -195,8 +202,11 @@ async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request
                 return Err((StatusCode::BAD_REQUEST, "coordinates outside supported world bounds".into()));
             }
             let pos = (parsed[0], parsed[1], parsed[2]);
-            if request.action.action.eq_ignore_ascii_case("goto") { BotCommand::Goto(pos.0, pos.1, pos.2) }
-            else { BotCommand::Mine(pos.0, pos.1, pos.2) }
+            match request.action.action.to_lowercase().as_str() {
+                "look" => BotCommand::Look(pos.0, pos.1, pos.2),
+                "goto" => BotCommand::Goto(pos.0, pos.1, pos.2),
+                _ => BotCommand::Mine(pos.0, pos.1, pos.2),
+            }
         }
         other => return Err((StatusCode::NOT_IMPLEMENTED, format!("executor for '{other}' is not available yet"))),
     };
