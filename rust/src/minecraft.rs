@@ -3209,12 +3209,18 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
         name.ends_with("log") || name.ends_with("stem") || name.ends_with("wood") || name.ends_with("hyphae")
     } else if selector == "door" {
         name.ends_with("door") && !name.ends_with("trapdoor")
-    } else if selector == "wooden_slab" {
+    } else if selector == "planks" {
+        name.ends_with("planks")
+    } else if selector == "slab" {
+        name.ends_with("slab")
+    } else if selector == "wool" {
+        name.ends_with("wool")
+    } else if selector == "woodenslab" {
         ["oakslab", "spruceslab", "birchslab", "jungleslab", "acaciaslab", "darkoakslab",
-         "mangroveslab", "cherryslab", "bambooslab", "crimsonslab", "warpedslab", "paleoakslab"]
-            .contains(&name.as_str())
+         "mangroveslab", "cherryslab", "bambooslab", "bamboomosaicslab", "crimsonslab",
+         "warpedslab", "paleoakslab"].contains(&name.as_str())
     } else {
-        name.ends_with(&selector)
+        name == selector
     }
 }
 
