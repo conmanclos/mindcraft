@@ -443,6 +443,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             client.start_mining(position);
                             for _ in 0..200 {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    cancel_active_mining(&client);
                                     client.chat("Mining was cancelled by a newer command.");
                                     return;
                                 }
@@ -669,6 +670,15 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         _ => {}
     }
     Ok(())
+}
+
+/// Abort the current server-side block-destroy action when a newer command supersedes mining.
+fn cancel_active_mining(client: &Client) {
+    if client.is_mining() {
+        client.ecs.write().write_message(azalea::mining::StopMiningBlockEvent {
+            entity: client.entity,
+        });
+    }
 }
 
 /// Recipes intentionally use a small, explicit allowlist. Ingredient placement is
