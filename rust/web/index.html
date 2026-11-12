@@ -56,7 +56,7 @@ function startTaskHeartbeat(){
   taskHeartbeat=setInterval(async()=>{
     if(!currentTask)return;
     try{await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgentId});}
-    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;currentTaskAgentId=null;$("completeTask").disabled=true;$("planTask").disabled=true;}
+    catch(e){stopTaskHeartbeat();$("taskResult").textContent="Task lease renewal failed: "+e.message+". Claim the task again if it is still available.";currentTask=null;currentTaskAgentId=null;$("completeTask").disabled=true;$("planTask").disabled=true;$("claimTask").disabled=false;}
   },45000);
 }
 function log(s){$("log").textContent+="\n"+s;$("log").scrollTop=$("log").scrollHeight}
@@ -144,6 +144,7 @@ $("claimTask").onclick=async()=>{
     if(currentTask)startTaskHeartbeat();else stopTaskHeartbeat();
     $("completeTask").disabled=!currentTask;
     $("planTask").disabled=!currentTask;
+    $("claimTask").disabled=!!currentTask;
     $("taskResult").textContent=currentTask?JSON.stringify(currentTask,null,2):"No pending task for role "+role;
   }catch(e){$("taskResult").textContent="Claim failed: "+e.message}
 };
@@ -164,6 +165,7 @@ $("completeTask").onclick=async()=>{
     stopTaskHeartbeat();
     $("completeTask").disabled=true;
     $("planTask").disabled=true;
+    $("claimTask").disabled=false;
   }catch(e){$("taskResult").textContent="Completion failed: "+e.message}
 };
 </script></body></html>
