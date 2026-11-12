@@ -212,6 +212,10 @@ async fn handle(mut bot: Client, event: Event, state: BotState) -> anyhow::Resul
                 if let Some(pending) = &state.pending_block_action {
                     *pending.lock().await = None;
                 }
+                if let Some(receiver) = &state.commands {
+                    let mut receiver = receiver.lock().await;
+                    while receiver.try_recv().is_ok() {}
+                }
             }
             tracing::warn!(username = %bot.username(), ?reason, "Minecraft agent disconnected");
         }
