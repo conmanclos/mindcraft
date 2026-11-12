@@ -2,12 +2,13 @@ use crate::{brain::{Brain, PlannedAction}, config::Config, minecraft::{recipe_sp
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
-    response::Html,
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Json, Request, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashMap, HashSet}, sync::{atomic::AtomicBool, Arc}};
+use std::{collections::{hash_map::DefaultHasher, HashMap, HashSet}, hash::{Hash, Hasher}, sync::{atomic::AtomicBool, Arc}, time::Instant};
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -50,6 +51,41 @@ struct ApiState {
     brain: Arc<Brain>,
     store: Arc<Store>,
     status: Arc<RuntimeStatus>,
+    rate_limits: Arc<Mutex<HashMap<String, RateWindow>>>,
+}
+
+#[derive(Clone, Copy)]
+struct RateWindow {
+    started: Instant,
+    requests: u32,
+}
+
+const API_RATE_LIMIT: u32 = 180;
+const API_RATE_WINDOW: Duration = Duration::from_secs(60);
+
+async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next) -> Response {
+    let credential = request.headers().get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok()).unwrap_or("anonymous");
+    let mut hasher = DefaultHasher::new();
+    credential.hash(&mut hasher);
+    let key = format!("{:016x}", hasher.finish());
+    let now = Instant::now();
+    let mut windows = state.rate_limits.lock().await;
+    windows.retain(|_, window| now.duration_since(window.started) < API_RATE_WINDOW * 2);
+    let window = windows.entry(key).or_insert(RateWindow { started: now, requests: 0 });
+    if now.duration_since(window.started) >= API_RATE_WINDOW {
+        window.started = now;
+        window.requests = 0;
+    }
+    if window.requests >= API_RATE_LIMIT {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error":"API request rate limit exceeded; retry after the current 60-second window"})),
+        ).into_response();
+    }
+    window.requests += 1;
+    drop(windows);
+    next.run(request).await
 }
 
 #[derive(Deserialize)]
@@ -111,7 +147,13 @@ struct StatusResponse {
 }
 
 pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, status: Arc<RuntimeStatus>) -> anyhow::Result<()> {
-    let state = ApiState { config: config.clone(), brain, store, status };
+    let state = ApiState {
+        config: config.clone(),
+        brain,
+        store,
+        status,
+        rate_limits: Arc::new(Mutex::new(HashMap::new())),
+    };
     let app = Router::new()
         .route("/", get(dashboard))
         .route("/api/health", get(health))
@@ -124,7 +166,8 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/tasks/claim", post(claim_task))
         .route("/api/tasks/:task_id/complete", post(complete_task))
         .route("/api/tasks/:task_id/heartbeat", post(heartbeat_task))
-        .with_state(state)
+        .with_state(state.clone())
+        .layer(middleware::from_fn_with_state(state, rate_limit))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(CorsLayer::new()
             .allow_origin([HeaderValue::from_static("tauri://localhost"), HeaderValue::from_static("http://tauri.localhost")])
@@ -516,6 +559,24 @@ mod tests {
             reason: "test".into(),
             risk: "low".into(),
         }
+    }
+
+    #[test]
+    fn api_rate_window_resets_after_sixty_seconds() {
+        let now = Instant::now();
+        let mut window = RateWindow { started: now, requests: API_RATE_LIMIT };
+        assert!(now.duration_since(window.started) < API_RATE_WINDOW);
+        if now.duration_since(window.started) >= API_RATE_WINDOW {
+            window.started = now;
+            window.requests = 0;
+        }
+        assert_eq!(window.requests, API_RATE_LIMIT);
+        let later = now + API_RATE_WINDOW;
+        if later.duration_since(window.started) >= API_RATE_WINDOW {
+            window.started = later;
+            window.requests = 0;
+        }
+        assert_eq!(window.requests, 0);
     }
 
     #[test]
