@@ -40,7 +40,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <label for="goal">Long-term objective</label><textarea id="goal" placeholder="Example: establish a safe starter base near spawn and gather food and wood."></textarea>
 <div class="row"><button id="createGoal">Decompose goal into tasks</button><span class="muted">Tasks are saved in SQLite and claimed by specialist worker IDs.</span></div>
 <div id="goalResult" class="muted" style="white-space:pre-wrap;margin-top:12px"></div>
-<div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Agent ID</label><input id="agentId" value="scout-1"></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
+<div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Agent ID</label><input id="agentId" value="Scout"></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
 <div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="planTask" class="secondary" disabled>Plan claimed task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button></div>
 <div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
 </section>
@@ -156,6 +156,7 @@ $("claimTask").onclick=async()=>{
 $("planTask").onclick=()=>{
   if(!currentTask) return;
   $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". Use the live game state and choose one safe, supported next action.";
+  if(!$("botTarget").value.trim())$("botTarget").value=$("agentId").value.trim();
   $("message").focus();
   $("plan").click();
 };
