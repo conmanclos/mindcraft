@@ -18,6 +18,7 @@ pub enum BotCommand {
     Place(i32, i32, i32),
     Equip(u8),
     Explore(u16),
+    ContainerTransfer(i32, i32, i32, u16),
 }
 
 #[derive(Debug, Clone)]
@@ -414,6 +415,28 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
                         if let Some(last) = &state.last_explore_repath { *last.lock().await = Instant::now() - Duration::from_secs(20); }
+                    }
+                    BotCommand::ContainerTransfer(x, y, z, slot) => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let position = BlockPos::new(x, y, z);
+                            match client.open_container_at(position).await {
+                                Ok(Some(container)) => {
+                                    let valid_slot = container.menu().ok().flatten()
+                                        .is_some_and(|menu| (slot as usize) < menu.slots().len());
+                                    if valid_slot {
+                                        container.shift_click(slot as usize);
+                                        client.wait_ticks(2).await;
+                                        tracing::info!(username = %client.username(), slot, ?position, "container inventory transfer requested");
+                                    } else {
+                                        client.chat("That inventory slot is not available in the opened container.");
+                                    }
+                                    drop(container);
+                                }
+                                Ok(None) => client.chat("I could not open that container. Move within reach and check the block coordinates."),
+                                Err(error) => tracing::warn!(username = %client.username(), %error, "container transfer failed to open container"),
+                            }
+                        });
                     }
                 }
             }
