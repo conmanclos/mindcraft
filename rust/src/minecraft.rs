@@ -1528,6 +1528,7 @@ async fn execute_smelt(
             .unwrap_or(false);
         if input_placed { break; }
     }
+    if cancelled() { return; }
     if !input_placed {
         container.shift_click(0);
         bot.wait_ticks(2).await;
@@ -1606,6 +1607,7 @@ async fn execute_smelt(
         return;
     }
 
+    if cancelled() { return; }
     container.shift_click(2);
     let mut output_cleared = false;
     for _ in 0..10 {
