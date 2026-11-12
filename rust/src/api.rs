@@ -365,6 +365,24 @@ fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, S
     Ok(positions)
 }
 
+fn parse_build_spec(raw: &str) -> Result<(Option<String>, Vec<(i32, i32, i32)>), (StatusCode, String)> {
+    let (material, coordinates) = match raw.split_once('@') {
+        Some((material, coordinates)) => {
+            if coordinates.contains('@') {
+                return Err((StatusCode::BAD_REQUEST, "build accepts at most one material@ prefix".into()));
+            }
+            let material = material.trim().to_ascii_lowercase();
+            if material.is_empty() || material.len() > 32
+                || !material.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
+                return Err((StatusCode::BAD_REQUEST, "build material must be an exact item name using letters, numbers, and underscores".into()));
+            }
+            (Some(material), coordinates)
+        }
+        None => (None, raw),
+    };
+    Ok((material, parse_build_targets(coordinates)?))
+}
+
 pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (StatusCode, String)> {
     match action.action.to_lowercase().as_str() {
         "say" => {
@@ -386,8 +404,9 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::Explore(radius))
         }
         "build" => {
-            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be semicolon-separated x,y,z positions for a multi-block build".into()))?;
-            Ok(BotCommand::Build(parse_build_targets(&raw)?))
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be semicolon-separated x,y,z positions, optionally prefixed with exact_hotbar_item@".into()))?;
+            let (material, positions) = parse_build_spec(&raw)?;
+            Ok(BotCommand::Build(material, positions))
         }
         "craft" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a recipe name, optionally followed by @x,y,z for a crafting table".into()))?;
@@ -820,9 +839,17 @@ mod tests {
         let command = command_from_action(action("build", Some("1,66,1;1,64,1;1,65,1"))).unwrap();
         assert!(matches!(
             command,
-            BotCommand::Build(positions)
+            BotCommand::Build(None, positions)
                 if positions == vec![(1, 64, 1), (1, 65, 1), (1, 66, 1)]
         ));
+        assert!(matches!(
+            command_from_action(action("build", Some("cobblestone@1,64,1;2,64,1"))).unwrap(),
+            BotCommand::Build(Some(material), positions)
+                if material == "cobblestone" && positions.len() == 2
+        ));
+        assert!(command_from_action(action("build", Some("redstone@1,64,1"))).is_ok());
+        assert!(command_from_action(action("build", Some("bad material@1,64,1"))).is_err());
+        assert!(command_from_action(action("build", Some("stone@1,64,1@2,64,1"))).is_err());
     }
 
     #[test]
