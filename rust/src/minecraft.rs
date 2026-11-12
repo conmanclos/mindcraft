@@ -2493,7 +2493,7 @@ fn is_plantable_seed(debug_name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart", "sugarcan", "cactus", "bamboo"]
+    ["wheatseeds", "beetrootseeds", "pumpkinseeds", "melonseeds", "carrot", "potato", "netherwart", "sugarcane", "cactus", "bamboo"]
         .contains(&compact.as_str())
 }
 
@@ -2536,7 +2536,6 @@ async fn plant_crop_at(
     let sugar_cane = compact_seed == "sugarcane";
     let cactus = compact_seed == "cactus";
     let bamboo = compact_seed == "bamboo";
-    let ordinary_crop = !nether_wart && !sugar_cane && !cactus && !bamboo;
     let horizontal = [farmland.north(), farmland.south(), farmland.east(), farmland.west()];
     let water_adjacent = horizontal.iter().any(|position| {
         world.read().get_block_state(*position).is_some_and(|block| {
@@ -2552,7 +2551,7 @@ async fn plant_crop_at(
         (soil_name.contains("dirt") || soil_name.contains("grass_block") || soil_name.contains("sand") || soil_name.contains("mud"))
             && water_adjacent
     } else if cactus {
-        (soil_name.contains("sand")) && cactus_clear
+        (soil_name.contains("sand") && !soil_name.contains("sandstone")) && cactus_clear
     } else if bamboo {
         soil_name.contains("dirt") || soil_name.contains("grass_block") || soil_name.contains("sand")
             || soil_name.contains("gravel") || soil_name.contains("podzol") || soil_name.contains("mud")
