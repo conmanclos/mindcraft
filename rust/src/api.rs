@@ -351,6 +351,9 @@ fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, S
         }
         positions.push(position);
     }
+    // Place lower layers first so a block in this plan can support a later
+    // block above it. The executor still refuses unsupported side placements.
+    positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
     Ok(positions)
 }
 
@@ -787,6 +790,10 @@ mod tests {
         assert_eq!(
             parse_build_targets("1,64,1;2,64,1").unwrap(),
             vec![(1, 64, 1), (2, 64, 1)]
+        );
+        assert_eq!(
+            parse_build_targets("1,66,1;1,64,1;1,65,1").unwrap(),
+            vec![(1, 64, 1), (1, 65, 1), (1, 66, 1)]
         );
         assert!(parse_build_targets("").is_err());
         assert!(parse_build_targets("1,64,1;1,64,1").is_err());
