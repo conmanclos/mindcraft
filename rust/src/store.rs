@@ -312,17 +312,41 @@ impl Store {
     pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // A worker that repeatedly disappears must not keep an expired lease
+        // alive forever. Exhausted leases become terminal before new claims.
+        tx.execute(
+            "UPDATE agent_tasks SET status='failed', assigned_agent=NULL, lease_until=NULL,
+             last_error=COALESCE(last_error, 'worker lease expired after five claims'),
+             updated_at=CURRENT_TIMESTAMP
+             WHERE status='claimed' AND attempts >= 5
+               AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)",
+            [],
+        )?;
+        tx.execute(
+            "UPDATE goals SET status='failed' WHERE status='active'
+             AND EXISTS (SELECT 1 FROM agent_tasks t WHERE t.goal_id=goals.id AND t.status='failed')",
+            [],
+        )?;
+        tx.execute(
+            "UPDATE agent_tasks SET status='cancelled', assigned_agent=NULL, lease_until=NULL,
+             updated_at=CURRENT_TIMESTAMP
+             WHERE status IN ('pending','claimed')
+               AND goal_id IN (SELECT id FROM goals WHERE status='failed')",
+            [],
+        )?;
         let task = tx.query_row(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at
              FROM agent_tasks
-             WHERE ((status='pending' AND available_at <= CURRENT_TIMESTAMP) OR (status='claimed' AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
+             WHERE EXISTS (SELECT 1 FROM goals g WHERE g.id=agent_tasks.goal_id AND g.status='active')
+               AND ((status='pending' AND available_at <= CURRENT_TIMESTAMP) OR (status='claimed' AND attempts < 5 AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
                AND (
                  role=?1
                  OR NOT EXISTS (
                    SELECT 1 FROM agent_tasks preferred
                    WHERE preferred.role=?1
+                     AND EXISTS (SELECT 1 FROM goals pg WHERE pg.id=preferred.goal_id AND pg.status='active')
                      AND ((preferred.status='pending' AND preferred.available_at <= CURRENT_TIMESTAMP)
-                       OR (preferred.status='claimed' AND (preferred.lease_until IS NULL OR preferred.lease_until < CURRENT_TIMESTAMP)))
+                       OR (preferred.status='claimed' AND preferred.attempts < 5 AND (preferred.lease_until IS NULL OR preferred.lease_until < CURRENT_TIMESTAMP)))
                  )
                )
              ORDER BY CASE WHEN role=?1 THEN 0 ELSE 1 END, priority DESC, id ASC LIMIT 1",
