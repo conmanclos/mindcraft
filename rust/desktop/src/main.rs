@@ -132,7 +132,8 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         return Err("Choose an autonomy level.".into());
     }
     let data = app_data(&app)?;
-    let entry = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key").map_err(|e| e.to_string())?;
+    let key_account = format!("ai-provider-api-key-{}", setup.provider);
+    let entry = Entry::new("com.mindcraft.minecraft", &key_account).map_err(|e| e.to_string())?;
     if setup.api_key.trim().is_empty() {
         if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) && entry.get_password().is_err() {
             return Err("This AI provider requires an API key. Enter it once to store it in Keychain.".into());
@@ -203,20 +204,25 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
     let api_port = port_probe.local_addr().map_err(|e| e.to_string())?.port();
     drop(port_probe);
 
-    let mut command = Command::new(runtime);
-    command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
-    command.env("MINDCRAFT_BIND", format!("127.0.0.1:{api_port}"));
-    command.env("MINDCRAFT_AZALEA_AUTH_CACHE", data.join("azalea-auth.json"));
-    if let Ok(entry) = Entry::new("com.mindcraft.minecraft", "ai-provider-api-key") {
-        if let Ok(key) = entry.get_password() {
-            command.env("MINDCRAFT_API_KEY", key);
-        }
-    }
     let env_file = fs::read_to_string(data.join(".env")).map_err(|e| e.to_string())?;
+    let provider = env_file.lines()
+        .find_map(|line| line.strip_prefix("MINDCRAFT_PROVIDER=\"").and_then(|v| v.strip_suffix('\"')))
+        .ok_or("App setup is incomplete; save setup again.")?;
     let token = env_file.lines()
         .find_map(|line| line.strip_prefix("MINDCRAFT_API_TOKEN=\"").and_then(|v| v.strip_suffix('\"')))
         .ok_or("App setup is incomplete; save setup again.")?
         .to_owned();
+
+    let mut command = Command::new(runtime);
+    command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
+    command.env("MINDCRAFT_BIND", format!("127.0.0.1:{api_port}"));
+    command.env("MINDCRAFT_AZALEA_AUTH_CACHE", data.join("azalea-auth.json"));
+    let key_account = format!("ai-provider-api-key-{provider}");
+    if let Ok(entry) = Entry::new("com.mindcraft.minecraft", &key_account) {
+        if let Ok(key) = entry.get_password() {
+            command.env("MINDCRAFT_API_KEY", key);
+        }
+    }
 
     let spawned = command.spawn().map_err(|e| format!("Could not start the Rust runtime: {e}"))?;
     *child = Some(spawned);
