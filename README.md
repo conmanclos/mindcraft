@@ -17,6 +17,12 @@
 > [!Caution]
 Do not connect this bot to public servers with coding enabled. This project allows an LLM to write/execute code on your computer. The code is sandboxed, but still vulnerable to injection attacks. Code writing is disabled by default, you can enable it by setting `allow_insecure_coding` to `true` in `settings.js`. Ye be warned.
 
+# Native Rust Runtime
+
+A separate Rust-native implementation is being developed alongside this original Mineflayer application. It targets Minecraft Java 1.21.1 and uses Azalea 0.10.3+mc1.21.1. It includes a multi-client bot runtime, local dashboard/API, provider adapters, SQLite memory, specialist task coordination, and a growing set of executable gameplay actions.
+
+See [RUST_NATIVE.md](RUST_NATIVE.md) and [rust/README.md](rust/README.md) for setup and the exact current implementation boundary. The Rust runtime is still under active development and has not yet been build-verified or live-server tested; the original JavaScript instructions below remain unchanged.
+
 # Getting Started
 ## Requirements
 
