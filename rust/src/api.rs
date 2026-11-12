@@ -118,6 +118,23 @@ pub struct ChatRequest { pub message: String }
 struct GoalRequest { description: String }
 
 #[derive(Deserialize)]
+struct MemoryRequest {
+    kind: String,
+    subject: String,
+    content: String,
+    #[serde(default = "default_memory_confidence")]
+    confidence: f64,
+    #[serde(default = "default_memory_importance")]
+    importance: i32,
+    #[serde(default = "default_memory_source")]
+    source: String,
+}
+
+fn default_memory_confidence() -> f64 { 1.0 }
+fn default_memory_importance() -> i32 { 50 }
+fn default_memory_source() -> String { "user".into() }
+
+#[derive(Deserialize)]
 struct AgentClaimRequest { agent_id: String, role: String }
 
 #[derive(Deserialize)]
@@ -191,6 +208,8 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/chat", post(chat))
         .route("/api/plan", post(plan))
         .route("/api/execute", post(execute))
+        .route("/api/memory", get(memory_list).post(memory_upsert))
+        .route("/api/memory/:memory_id", axum::routing::delete(memory_delete))
         .route("/api/goals", get(list_goals).post(create_goal))
         .route("/api/goals/:goal_id/tasks", get(list_goal_tasks))
         .route("/api/agents/:agent_id/credential", post(issue_agent_credential).delete(revoke_agent_credential))
@@ -252,7 +271,9 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let world = state.status.world.lock().await.clone();
     let world_context = world.map(|w| format!("\nCurrent bot state: position {:?}, health {}/20, food {}/20, saturation {}, inventory: {:?}.", w.position, w.health, w.food, w.saturation, w.inventory)).unwrap_or_default();
-    let prompt = format!("Recent conversation:\n{context}{world_context}\n\nRespond to the latest user message.");
+    let memory_context = state.store.memory_context(4_000)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let prompt = format!("Recent conversation:\n{context}{world_context}\n{memory_context}\n\nRespond to the latest user message.");
     let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
@@ -514,6 +535,61 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         other => Err((StatusCode::NOT_IMPLEMENTED, format!("executor for '{other}' is not available yet"))),
     }
+}
+
+async fn memory_list(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::store::MemoryRecord>>, StatusCode> {
+    authorize(&state, &headers)?;
+    let memories = state.store.list_memories(None, 200)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(memories))
+}
+
+async fn memory_upsert(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<MemoryRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    let kind = request.kind.trim().to_ascii_lowercase();
+    if !["semantic", "episodic", "preference", "world"].contains(&kind.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "memory kind must be semantic, episodic, preference, or world".into()));
+    }
+    let subject = request.subject.trim();
+    let content = request.content.trim();
+    let source = request.source.trim();
+    if subject.is_empty() || subject.len() > 120 || content.is_empty() || content.len() > 2_000
+        || source.is_empty() || source.len() > 80
+        || subject.chars().any(char::is_control) || source.chars().any(char::is_control) {
+        return Err((StatusCode::BAD_REQUEST, "memory subject/source must be 1-120/1-80 safe characters and content must be 1-2000 bytes".into()));
+    }
+    if !request.confidence.is_finite() || !(0.0..=1.0).contains(&request.confidence)
+        || !(0..=100).contains(&request.importance) {
+        return Err((StatusCode::BAD_REQUEST, "memory confidence must be 0.0-1.0 and importance must be 0-100".into()));
+    }
+    let id = state.store.upsert_memory(
+        &kind, subject, content, request.confidence, request.importance, source,
+    ).map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    Ok(Json(serde_json::json!({"id":id,"saved":true})))
+}
+
+async fn memory_delete(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(memory_id): Path<i64>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    if memory_id <= 0 {
+        return Err((StatusCode::BAD_REQUEST, "memory ID must be positive".into()));
+    }
+    let deleted = state.store.delete_memory(memory_id)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !deleted {
+        return Err((StatusCode::NOT_FOUND, "memory record was not found".into()));
+    }
+    Ok(Json(serde_json::json!({"deleted":true})))
 }
 
 async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<GoalRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
