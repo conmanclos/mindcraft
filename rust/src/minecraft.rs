@@ -429,7 +429,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                                 };
                                                 if let Some(sender) = sender {
                                                     match sender.send(AgentCommand { target: None, command }) {
-                                                        Ok(()) => {
+                                                        Ok(_) => {
                                                             if bot.exists() && !action.action.eq_ignore_ascii_case("say") {
                                                                 bot.chat("On it.");
                                                             }
