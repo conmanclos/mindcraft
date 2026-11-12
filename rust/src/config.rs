@@ -72,21 +72,7 @@ impl Config {
         if ["openai", "anthropic", "google"].contains(&provider.as_str()) && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required for the selected hosted AI provider");
         }
-        let parsed_base_url = reqwest::Url::parse(&base_url)
-            .context("MINDCRAFT_BASE_URL must be a valid http:// or https:// base URL")?;
-        let host = parsed_base_url.host_str().unwrap_or_default();
-        let loopback_host = host.eq_ignore_ascii_case("localhost")
-            || host.parse::<std::net::IpAddr>().is_ok_and(|address| address.is_loopback());
-        if !["http", "https"].contains(&parsed_base_url.scheme())
-            || host.is_empty()
-            || (parsed_base_url.scheme() == "http" && !loopback_host)
-            || !parsed_base_url.username().is_empty()
-            || parsed_base_url.password().is_some()
-            || parsed_base_url.query().is_some()
-            || parsed_base_url.fragment().is_some()
-        {
-            bail!("MINDCRAFT_BASE_URL must use HTTPS for remote hosts (HTTP is allowed only for localhost/loopback), include a host, and contain no credentials, query, or fragment");
-        }
+        validate_provider_base_url(&base_url)?;
 
         let mut api_token = env::var("MINDCRAFT_API_TOKEN").unwrap_or_default();
         let api_token_was_generated = api_token.is_empty();
@@ -118,6 +104,25 @@ impl Config {
 }
 
 
+fn validate_provider_base_url(value: &str) -> Result<()> {
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|_| anyhow::anyhow!("MINDCRAFT_BASE_URL must be a valid http:// or https:// base URL"))?;
+    let host = parsed.host_str().unwrap_or_default();
+    let loopback_host = host.eq_ignore_ascii_case("localhost")
+        || host.parse::<std::net::IpAddr>().is_ok_and(|address| address.is_loopback());
+    if !["http", "https"].contains(&parsed.scheme())
+        || host.is_empty()
+        || (parsed.scheme() == "http" && !loopback_host)
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        bail!("MINDCRAFT_BASE_URL must use HTTPS for remote hosts (HTTP is allowed only for localhost/loopback), include a host, and contain no credentials, query, or fragment");
+    }
+    Ok(())
+}
+
 fn validate_api_token(token: &str) -> Result<()> {
     if token.len() < 32 || !token.is_ascii()
         || token.bytes().any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control()) {
@@ -128,7 +133,17 @@ fn validate_api_token(token: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_api_token;
+    use super::{validate_api_token, validate_provider_base_url};
+
+    #[test]
+    fn provider_urls_require_https_for_remote_hosts_and_reject_credentials() {
+        assert!(validate_provider_base_url("http://127.0.0.1:11434/v1").is_ok());
+        assert!(validate_provider_base_url("http://localhost:11434/v1").is_ok());
+        assert!(validate_provider_base_url("https://api.example.com/v1").is_ok());
+        for invalid in ["http://api.example.com/v1", "http://", "ftp://example.com", "https://user:pass@example.com", "https://example.com/?key=x", "https://example.com/#fragment"] {
+            assert!(validate_provider_base_url(invalid).is_err(), "accepted {invalid}");
+        }
+    }
 
     #[test]
     fn api_tokens_must_have_sufficient_entropy_length_and_safe_header_characters() {
