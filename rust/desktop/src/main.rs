@@ -11,6 +11,8 @@ use std::{
     sync::Mutex,
 };
 use tauri::{AppHandle, Manager, State};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 struct RuntimeProcess(Mutex<Option<Child>>);
 
@@ -38,6 +40,8 @@ struct Setup {
 fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
     let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     Ok(path)
 }
 
@@ -117,7 +121,10 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         ("MINDCRAFT_DATABASE", database.to_string_lossy().into_owned()),
     ];
     let contents = values.iter().map(|(key, value)| format!("{key}={}\n", dotenv_value(value))).collect::<String>();
-    fs::write(data.join(".env"), contents).map_err(|e| e.to_string())?;
+    let env_path = data.join(".env");
+    fs::write(&env_path, contents).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    fs::set_permissions(&env_path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -141,6 +148,8 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<S
         fs::rename(&log_path, previous).map_err(|e| e.to_string())?;
     }
     let log = OpenOptions::new().create(true).append(true).open(&log_path).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    fs::set_permissions(&log_path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
     let log_stderr = log.try_clone().map_err(|e| e.to_string())?;
     let mut command = Command::new(runtime);
     command.current_dir(&data).arg("serve").stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_stderr));
