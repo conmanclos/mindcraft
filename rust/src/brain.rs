@@ -118,7 +118,7 @@ impl Brain {
             bail!("goal must contain 1-4000 bytes");
         }
         let prompt = format!(
-            "Decompose this Minecraft objective into 1 to 12 independently actionable tasks for a cooperative team. Return ONLY a JSON array. Each object must have role, description, priority. Allowed roles: planner, scout, gatherer, builder, crafter, guardian. Priority is an integer 0-100. Do not include code fences or prose. Objective: {goal}"
+            "Decompose this Minecraft objective into 1 to 12 ordered, atomic tasks for a cooperative team. Each task must be one independently verifiable step that can be advanced with exactly one immediate Rust-runtime action; never bundle multiple gameplay actions into one task. Put prerequisites before dependent work, keep each description concrete and bounded, and do not invent coordinates, inventory, structures, or world observations. Tasks are claimed in plan order and the player verifies each result before the next task becomes eligible. Return ONLY a JSON array. Each object must have role, description, priority. Allowed roles: planner, scout, gatherer, builder, crafter, guardian. Priority is an integer 0-100. Do not include code fences or prose. Objective: {goal}"
         );
         let raw = self.reply(&prompt).await?;
         let json = extract_json_segment(&raw, '[', ']')
