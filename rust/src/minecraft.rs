@@ -532,7 +532,7 @@ async fn run_specialist_task(
         // Provider outages and planner timeouts are infrastructure failures,
         // not failed Minecraft work. Release the lease without consuming one
         // of the task's bounded execution attempts.
-        if is_transient_provider_error(&error) {
+        if !brain.uses_replicate() && is_transient_provider_error(&error) {
             if store.release_task(task.id, &agent_id).unwrap_or(false) {
                 bot.chat(format!(
                     "Specialist task #{} is paused because the AI provider is temporarily unavailable. I returned it to the queue without consuming an attempt.",
