@@ -4450,12 +4450,30 @@ async fn execute_inventory_sort(
     }
 }
 
-fn is_trapped_chest_block(block: &impl std::fmt::Debug) -> bool {
+fn normalized_block_kind(block: &impl std::fmt::Debug) -> String {
     format!("{block:?}").chars()
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
-        .collect::<String>()
-        .contains("trappedchest")
+        .collect()
+}
+
+fn is_trapped_chest_block(block: &impl std::fmt::Debug) -> bool {
+    normalized_block_kind(block).contains("trappedchest")
+}
+
+fn is_storage_container_block(block: &impl std::fmt::Debug) -> bool {
+    let kind = normalized_block_kind(block);
+    !kind.contains("trappedchest")
+        && (kind.contains("chest") || kind.contains("barrel") || kind.contains("shulkerbox"))
+}
+
+fn is_furnace_block(block: &impl std::fmt::Debug) -> bool {
+    let kind = normalized_block_kind(block);
+    kind.contains("furnace") || kind.contains("smoker")
+}
+
+fn is_crafting_table_block(block: &impl std::fmt::Debug) -> bool {
+    normalized_block_kind(block).contains("craftingtable")
 }
 
 async fn execute_container_view(
