@@ -231,6 +231,7 @@ struct SchematicBuildRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SpongeSchematicBuildRequest {
     origin: [i32; 3],
     data_base64: String,
