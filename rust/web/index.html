@@ -151,7 +151,7 @@ $("buildSchematic").onclick=async()=>{
     const file=$("schematicFile").files[0];
     let result;
     if(file&&file.name.toLowerCase().endsWith(".schem")){
-      if(file.size>1500000)throw Error("Compressed .schem files must be 1.5 MB or smaller.");
+      if(file.size>1400000)throw Error("Compressed .schem files must be 1.4 MB or smaller.");
       const origin=$("schematicOrigin").value.split(",").map(value=>Number(value.trim()));
       if(origin.length!==3||origin.some(value=>!Number.isInteger(value)))throw Error("Sponge origin must be integer x,y,z coordinates.");
       const bytes=new Uint8Array(await file.arrayBuffer());
