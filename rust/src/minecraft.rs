@@ -398,7 +398,7 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
                         && head.is_air()
                         && !is_hazardous_support(&format!("{feet:?}"))
                         && !is_hazardous_support(&format!("{head:?}"))
-                        && !support.is_air()
+                        && support.is_collision_shape_full()
                         && !is_hazardous_support(&format!("{support:?}"))
                 }) else { continue; };
                 if best.as_ref().is_none_or(|(best_score, _, _, _)| score < *best_score) {
@@ -1374,7 +1374,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 let position = BlockPos::new(origin_x, y, origin_z);
                                 let Some(block) = world.get_block_state(position) else { break; };
                                 let debug = format!("{block:?}").to_ascii_lowercase();
-                                if !block.is_air() && !is_hazardous_support(&debug) {
+                                if block.is_collision_shape_full() && !is_hazardous_support(&debug) {
                                     last_solid = Some(position);
                                 }
                             }
@@ -1389,7 +1389,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             world.get_block_state(destination).is_some_and(|block| block.is_air())
                                 && world.get_block_state(destination.up(1)).is_some_and(|block| block.is_air())
                                 && world.get_block_state(destination.down(1)).is_some_and(|block| {
-                                    !block.is_air() && !is_hazardous_support(&format!("{block:?}"))
+                                    block.is_collision_shape_full() && !is_hazardous_support(&format!("{block:?}"))
                                 })
                         };
                         if !safe_landing {
@@ -1519,6 +1519,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let world = world.read();
                             world.get_block_state(destination).is_some_and(|block| block.is_air())
                                 && world.get_block_state(destination.up(1)).is_some_and(|block| block.is_air())
+                                && world.get_block_state(destination.down(1)).is_some_and(|block| {
+                                    block.is_collision_shape_full() && !is_hazardous_support(&format!("{block:?}"))
+                                })
                         };
                         if !landing_is_clear {
                             bot.chat("That saved location is unloaded or no longer has two clear blocks for a safe landing.");
@@ -1585,7 +1588,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 let feet_name = format!("{feet:?}").to_ascii_lowercase();
                                 let head_name = format!("{head:?}").to_ascii_lowercase();
                                 let support_name = format!("{support:?}").to_ascii_lowercase();
-                                (feet.is_air() && head.is_air() && !support.is_air()
+                                (feet.is_air() && head.is_air() && support.is_collision_shape_full()
                                     && !is_hazardous_support(&support_name)
                                     && !is_hazardous_support(&feet_name) && !is_hazardous_support(&head_name))
                                     .then_some(target)
