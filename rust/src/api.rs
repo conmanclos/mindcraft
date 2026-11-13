@@ -1034,6 +1034,26 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "stop" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
+        "locate" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use block_name[@range] syntax, for example diamond_ore@128".into()))?;
+            let (block_name, range) = match raw.split_once('@') {
+                Some((block, range)) if !range.contains('@') => {
+                    let range = range.trim().parse::<u16>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "locate range must be an integer from 8 to 512 blocks".into()))?;
+                    if !(8..=512).contains(&range) {
+                        return Err((StatusCode::BAD_REQUEST, "locate range must be from 8 to 512 blocks".into()));
+                    }
+                    (block.trim(), range)
+                }
+                Some(_) => return Err((StatusCode::BAD_REQUEST, "locate accepts at most one @range suffix".into())),
+                None => (raw.trim(), 128),
+            };
+            if block_name.is_empty() || block_name.len() > 64
+                || !block_name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':')) {
+                return Err((StatusCode::BAD_REQUEST, "locate block name must be a Minecraft block ID such as diamond_ore or minecraft:diamond_ore".into()));
+            }
+            Ok(BotCommand::Locate(block_name.to_ascii_lowercase(), range))
+        }
         "collect" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use block_name[*count][@range] syntax, for example oak_log*8@64".into()))?;
             let (raw_block, range) = match raw.split_once('@') {
