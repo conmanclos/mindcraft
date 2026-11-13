@@ -4239,7 +4239,7 @@ async fn execute_smelt(
         if container.menu().ok().flatten().is_none() {
             bot.chat("The furnace menu closed before smelting finished; I scheduled background recovery for the completed batch.");
             drop(container);
-            schedule_smelt_followup(bot.clone(), input.clone(), position, count);
+            schedule_smelt_followup(bot.clone(), input.clone(), position, count, generation_state.clone(), generation);
             return false;
         }
         output_ready = container.slots()
@@ -4287,15 +4287,24 @@ async fn execute_smelt(
 /// Continue checking a furnace after the foreground action times out or its
 /// menu closes. The retry path reopens the same loaded furnace and only takes
 /// output after the server reports the complete expected batch.
-fn schedule_smelt_followup(bot: Client, input: String, position: BlockPos, count: u8) {
+fn schedule_smelt_followup(
+    bot: Client,
+    input: String,
+    position: BlockPos,
+    count: u8,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
     tokio::task::spawn_local(async move {
+        let cancelled = || generation_state.as_ref()
+            .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10 * 60);
         loop {
-            if !bot.exists() || tokio::time::Instant::now() >= deadline {
+            if cancelled() || !bot.exists() || tokio::time::Instant::now() >= deadline {
                 break;
             }
             tokio::time::sleep(Duration::from_secs(15)).await;
-            if !bot.exists() || tokio::time::Instant::now() >= deadline {
+            if cancelled() || !bot.exists() || tokio::time::Instant::now() >= deadline {
                 break;
             }
             if execute_smelt_collect(
@@ -4303,8 +4312,8 @@ fn schedule_smelt_followup(bot: Client, input: String, position: BlockPos, count
                 input.clone(),
                 position,
                 count,
-                None,
-                0,
+                generation_state.clone(),
+                generation,
                 false,
             ).await {
                 tracing::info!(username = %bot.username(), input = %input, count, "background furnace recovery collected the complete output batch");
