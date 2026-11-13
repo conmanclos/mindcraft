@@ -531,6 +531,12 @@ async fn run_specialist_task(
             }
             anyhow::bail!("Minecraft command dispatcher is unavailable and the task lease could not be released");
         };
+        if !bot.exists() {
+            if store.release_task(task.id, &agent_id)? {
+                return Ok(());
+            }
+            anyhow::bail!("Minecraft bot disconnected before the specialist action could be dispatched");
+        }
         if !store.mark_task_for_review(task.id, &agent_id)? {
             anyhow::bail!("task lease could not be moved into the review queue");
         }
