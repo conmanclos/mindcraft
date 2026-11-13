@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::ClientboundGamePacket, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -74,6 +74,7 @@ struct BotState {
     is_following: Option<Arc<AtomicBool>>,
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
+    dimension: Option<Arc<Mutex<String>>>,
     is_exploring: Option<Arc<AtomicBool>>,
     explore_radius: Option<Arc<AtomicUsize>>,
     explore_step: Option<Arc<AtomicUsize>>,
@@ -489,6 +490,7 @@ fn make_state(
         is_following: Some(Arc::new(AtomicBool::new(false))),
         last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
         last_snapshot: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(2))))),
+        dimension: Some(Arc::new(Mutex::new("minecraft:overworld".into()))),
         is_exploring: Some(Arc::new(AtomicBool::new(false))),
         explore_radius: Some(Arc::new(AtomicUsize::new(32))),
         explore_step: Some(Arc::new(AtomicUsize::new(0))),
@@ -515,6 +517,16 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::ConnectionFailed(error) => {
             tracing::warn!(username = %bot.username(), error = ?error, "Minecraft connection attempt failed; Azalea will retry");
+        }
+        Event::Packet(packet) => {
+            let dimension_name = match packet.as_ref() {
+                ClientboundGamePacket::Login(login) => Some(login.common.dimension.to_string()),
+                ClientboundGamePacket::Respawn(respawn) => Some(respawn.common.dimension.to_string()),
+                _ => None,
+            };
+            if let (Some(name), Some(dimension)) = (dimension_name, &state.dimension) {
+                *dimension.lock().await = name;
+            }
         }
         Event::Disconnect(reason) => {
             if let Some(connected) = &state.connected {
@@ -557,9 +569,15 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     format!("{slot}: {description}")
                                 })
                                 .collect::<Vec<_>>();
+                            let dimension = if let Some(dimension) = &state.dimension {
+                                dimension.lock().await.clone()
+                            } else {
+                                "minecraft:overworld".into()
+                            };
                             let snapshot = crate::api::WorldSnapshot {
                                 agent: bot.username(),
                                 role: state.role.clone().unwrap_or_else(|| "planner".into()),
+                                dimension,
                                 position: [position.x as f64, position.y as f64, position.z as f64],
                                 health,
                                 food: hunger.food,
