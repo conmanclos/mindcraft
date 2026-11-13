@@ -5142,6 +5142,14 @@ async fn execute_hotbar_restock(
 ) {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    let matches_selector = |item: &azalea_inventory::ItemStack| {
+        if item.is_empty() { return false; }
+        if selector == "food" {
+            safe_food_priority(&format!("{item:?}")).is_some()
+        } else {
+            item_name_matches(&format!("{:?}", item.kind()), &selector)
+        }
+    };
     if cancelled() { return; }
     let Ok(menu) = bot.menu() else {
         bot.chat("I couldn't inspect the player inventory before restocking the hotbar.");
@@ -5161,6 +5169,9 @@ async fn execute_hotbar_restock(
         bot.chat("I couldn't open the player inventory for hotbar restocking.");
         return;
     };
+
+    let mut topped_up_items = 0u32;
+    let mut topped_up_stacks = 0usize;
     let mut moved_stacks = 0usize;
     for target_slot in hotbar_slots {
         if cancelled() { break; }
@@ -5172,10 +5183,90 @@ async fn execute_hotbar_restock(
             bot.chat("A container opened during hotbar restocking; no container slots were touched.");
             return;
         }
-        if !live_menu.slot(target_slot).is_some_and(|item| item.is_empty()) {
+        let live_slots = live_menu.slots();
+        let Some(target_before) = live_slots.get(target_slot).cloned() else { continue; };
+
+        if !target_before.is_empty() {
+            if !matches_selector(&target_before) { continue; }
+            let target_count = target_before.count();
+            let max_stack = target_before.get_component::<MaxStackSize>()
+                .map(|component| component.count.clamp(1, 64))
+                .unwrap_or(1);
+            let capacity = max_stack.saturating_sub(target_count);
+            if capacity == 0 { continue; }
+            let source_slot = main_slots.iter().copied().find(|slot| {
+                live_slots.get(*slot).is_some_and(|item| {
+                    !item.is_empty() && item.kind() == target_before.kind() && matches_selector(item)
+                })
+            });
+            let Some(source_slot) = source_slot else { continue; };
+            let Some(source_before) = live_slots.get(source_slot).cloned().filter(|item| !item.is_empty()) else { continue; };
+            let source_count = source_before.count();
+            let requested = capacity.min(source_count);
+            let source_kind = format!("{:?}", source_before.kind());
+
+            inventory.left_click(source_slot);
+            bot.wait_updates(1).await;
+            let picked_up = bot.menu().ok().and_then(|menu| {
+                menu.try_as_player()?;
+                menu.slot(source_slot).map(|item| item.is_empty())
+            }).unwrap_or(false);
+            if !picked_up {
+                bot.chat("The server did not confirm picking up the matching inventory stack; hotbar restocking stopped.");
+                return;
+            }
+
+            let mut attempted = 0u8;
+            for _ in 0..requested {
+                if cancelled() { break; }
+                inventory.right_click(target_slot);
+                bot.wait_updates(1).await;
+                attempted = attempted.saturating_add(1);
+            }
+            // Always return the cursor-held remainder to its original main-inventory slot.
+            inventory.left_click(source_slot);
+            bot.wait_updates(2).await;
+
+            let Some(verified_menu) = bot.menu().ok() else {
+                bot.chat("The inventory closed while topping up a hotbar stack. Reopen it and inspect the cursor and both slots.");
+                return;
+            };
+            if verified_menu.try_as_player().is_none() {
+                bot.chat("A container opened while topping up a hotbar stack. Inspect the cursor and player inventory before retrying.");
+                return;
+            }
+            let target_after = verified_menu.slot(target_slot).cloned();
+            let source_after = verified_menu.slot(source_slot).cloned();
+            let moved = target_after.as_ref()
+                .filter(|item| !item.is_empty() && item.kind() == target_before.kind())
+                .map(|item| item.count().saturating_sub(target_count))
+                .unwrap_or(0);
+            let expected_source = source_count.saturating_sub(moved);
+            let source_confirmed = source_after.as_ref().is_some_and(|item| {
+                if expected_source == 0 {
+                    item.is_empty()
+                } else {
+                    !item.is_empty()
+                        && item.count() == expected_source
+                        && item.kind() == source_before.kind()
+                }
+            });
+            let target_confirmed = target_after.as_ref().is_some_and(|item| {
+                !item.is_empty()
+                    && item.kind() == target_before.kind()
+                    && item.count() == target_count.saturating_add(moved)
+            });
+            if !source_confirmed || !target_confirmed || moved > u32::from(attempted) {
+                bot.chat(format!("The server did not confirm a safe top-up of {source_kind}. Inspect the hotbar and original inventory slot before retrying."));
+                return;
+            }
+            if moved > 0 {
+                topped_up_items = topped_up_items.saturating_add(u32::from(moved));
+                topped_up_stacks += 1;
+            }
             continue;
         }
-        let live_slots = live_menu.slots();
+
         let source_slot = if selector == "food" {
             main_slots.iter().copied().filter_map(|slot| {
                 let item = live_slots.get(slot)?;
@@ -5184,9 +5275,7 @@ async fn execute_hotbar_restock(
             }).max_by_key(|(_, priority)| *priority).map(|(slot, _)| slot)
         } else {
             main_slots.iter().copied().find(|slot| {
-                live_slots.get(*slot).is_some_and(|item| {
-                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &selector)
-                })
+                live_slots.get(*slot).is_some_and(matches_selector)
             })
         };
         let Some(source_slot) = source_slot else { break; };
@@ -5218,13 +5307,10 @@ async fn execute_hotbar_restock(
         let target_matches = verified_menu.slot(target_slot).is_some_and(|item| {
             !item.is_empty()
                 && item.count() == source_count
-                && item_name_matches(&format!("{:?}", item.kind()), &selector)
+                && matches_selector(item)
         });
         let source_empty = verified_menu.slot(source_slot).is_some_and(|item| item.is_empty());
         if !target_matches || !source_empty {
-            // If the source slot is still empty, a stack may remain on the
-            // cursor after a partial/late destination update. Try to return
-            // that cursor stack to its original slot before stopping.
             if source_empty {
                 inventory.left_click(source_slot);
                 bot.wait_updates(2).await;
@@ -5233,7 +5319,7 @@ async fn execute_hotbar_restock(
                     menu.slot(source_slot).map(|item| {
                         !item.is_empty()
                             && item.count() == source_count
-                            && item_name_matches(&format!("{:?}", item.kind()), &selector)
+                            && item.kind() == source_before.kind()
                     })
                 }).unwrap_or(false);
                 if restored {
@@ -5248,12 +5334,13 @@ async fn execute_hotbar_restock(
         }
         moved_stacks += 1;
     }
+
     if cancelled() {
-        bot.chat(format!("Hotbar restocking cancelled after moving {moved_stacks} verified stack(s)."));
-    } else if moved_stacks == 0 {
-        bot.chat(format!("No empty hotbar slot could be filled from the main inventory with '{selector}'."));
+        bot.chat(format!("Hotbar restocking cancelled after topping up {topped_up_items} item(s) and moving {moved_stacks} verified stack(s)."));
+    } else if topped_up_items == 0 && moved_stacks == 0 {
+        bot.chat(format!("No compatible partial hotbar stack or empty hotbar slot could be restocked from the main inventory with '{selector}'."));
     } else {
-        bot.chat(format!("Hotbar restocking complete: moved {moved_stacks} verified '{selector}' stack(s) into empty hotbar slots. Existing hotbar items were preserved."));
+        bot.chat(format!("Hotbar restocking complete: added {topped_up_items} item(s) to {topped_up_stacks} existing stack(s) and moved {moved_stacks} whole stack(s) into empty hotbar slots. Other hotbar items were preserved."));
     }
 }
 
