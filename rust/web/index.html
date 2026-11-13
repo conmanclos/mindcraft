@@ -306,7 +306,7 @@ $("planTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
     await api("/api/tasks/"+currentTask.id+"/heartbeat",{agent_id:currentTaskAgentId});
-    $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". Use the live game state and choose one safe, supported next action.";
+    $("message").value="Work on this specialist task: "+currentTask.description+". Assigned role: "+currentTask.role+". "+(currentTask.last_error?"Previous attempt failed: "+currentTask.last_error+". Avoid repeating that failed approach. ":"")+"Use the live game state and choose one safe, supported next action.";
     $("message").focus();
     $("plan").click();
   }catch(e){$("taskResult").textContent="Task lease renewal failed; check the connection and retry. The current lease may expire if it cannot be renewed. "+e.message}
