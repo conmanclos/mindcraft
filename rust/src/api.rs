@@ -410,13 +410,26 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let context = state.store.recent_context(12, 6_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let world = state.status.world.lock().await.clone();
-    let world_context = world.map(|w| format!("\nCurrent bot state: dimension {}, position {:?}, health {}/20, food {}/20, saturation {}, inventory: {:?}.", w.dimension, w.position, w.health, w.food, w.saturation, w.inventory)).unwrap_or_default();
+    let world_context = world.map(|w| format!("\nPrimary bot state: dimension {}, position {:?}, health {}/20, food {}/20, saturation {}, inventory: {:?}.", w.dimension, w.position, w.health, w.food, w.saturation, w.inventory)).unwrap_or_default();
+    let mut agents = state.status.agents.lock().await.values().cloned().collect::<Vec<_>>();
+    agents.sort_by(|left, right| left.agent.cmp(&right.agent));
+    let team_context = format!(
+        "\nConnected bot team: {}.",
+        if agents.is_empty() {
+            "none".to_owned()
+        } else {
+            agents.iter().map(|agent| format!(
+                "{} ({}) at {:?} in {}, health {:.1}/20, food {}/20",
+                agent.agent, agent.role, agent.position, agent.dimension, agent.health, agent.food
+            )).collect::<Vec<_>>().join("; ")
+        }
+    );
     let mut online_players = state.status.online_players.lock().await.iter().cloned().collect::<Vec<_>>();
     online_players.sort_unstable_by_key(|name| name.to_ascii_lowercase());
     let player_context = format!("\nPlayers currently listed online: {}.", if online_players.is_empty() { "none".to_owned() } else { online_players.join(", ") });
     let memory_context = state.store.relevant_memory_context(&request.message, 4_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let prompt = format!("Recent conversation:\n{context}{world_context}{player_context}\n{memory_context}\n\nLatest user message:\n{}", request.message);
+    let prompt = format!("Recent conversation:\n{context}{world_context}{team_context}{player_context}\n{memory_context}\n\nLatest user message:\n{}", request.message);
     let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
