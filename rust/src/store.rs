@@ -747,7 +747,7 @@ impl Store {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at, verification_note
-             FROM agent_tasks WHERE status='review' ORDER BY priority DESC, id ASC"
+             FROM agent_tasks WHERE status='review' ORDER BY priority DESC, id ASC LIMIT 200"
         )?;
         let rows = statement.query_map([], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
