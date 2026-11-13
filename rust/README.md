@@ -37,6 +37,7 @@ cargo run -- build '{"origin":[0,64,0],"blocks":[{"x":0,"y":0,"z":0,"material":"
 cargo run -- build-sponge starter.schem --origin 100,64,100 --rotation 90 --agent Builder
 cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
 cargo run -- execute '{"action":"inventory_compact","risk":"high","reason":"User approved stack compaction"}'
+cargo run -- execute '{"action":"container_sort","target":"12,64,20","risk":"high","reason":"User approved sorting this storage container"}'
 cargo run -- execute '{"action":"trade","target":"12,64,20","risk":"high","reason":"User approved merchant inspection"}'
 cargo run -- execute '{"action":"trade","target":"12,64,20,0","risk":"high","reason":"User approved this exact offer"}'
 cargo run -- execute '{"action":"enter_portal","target":"100,64,100","risk":"high","reason":"User approved this portal transition"}'
