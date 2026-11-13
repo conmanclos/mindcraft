@@ -216,6 +216,7 @@ struct PlanRequest { message: String, #[serde(default)] agent: Option<String> }
 struct ExecuteRequest { action: PlannedAction, #[serde(default)] agent: Option<String> }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SchematicBuildRequest {
     origin: [i32; 3],
     blocks: Vec<SchematicBlock>,
@@ -1054,6 +1055,7 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
 
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct SchematicDocument {
     blocks: Vec<SchematicBlock>,
     #[serde(default)]
@@ -1065,6 +1067,7 @@ struct SchematicDocument {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct SchematicBlock {
     x: i32,
     y: i32,
