@@ -45,7 +45,7 @@ cargo run -- execute '{"action":"enter_portal","target":"100,64,100","risk":"hig
 ## Current implementation
 
 - Shared Tokio process for the CLI, HTTP API, dashboard, persistence, AI provider client, and optional Minecraft connection.
-- Axum dashboard/API bound to loopback by default. API routes require a bearer token; a one-time token is generated and printed when no token is configured. A per-credential fixed-window limiter caps requests at 180 per 60 seconds and bounds its in-memory credential buckets.
+- Axum dashboard/API bound to loopback by default, with optional native Rustls HTTPS for direct remote binds. Non-loopback binds require both MINDCRAFT_TLS_CERT and MINDCRAFT_TLS_KEY; otherwise use a loopback bind behind a trusted TLS reverse proxy. API routes require a bearer token; a one-time token is generated and printed when no token is configured. A per-credential fixed-window limiter caps requests at 180 per 60 seconds and bounds its in-memory credential buckets.
 - Provider adapters for OpenAI-compatible endpoints (including Ollama), Anthropic Messages, and Google Gemini.
 - SQLite conversation and strategic-goal persistence using WAL mode, a bounded five-second busy wait, automatic WAL checkpoints, secure deletion, owner-only database-file permissions on Unix, and a 10,000-record memory ceiling that evicts the least-important/least-recently-accessed entry when a new unique record is added; persistent writes validate conversation roles and payload sizes, enforce bounded task roles/descriptions and 1-12 task goal plans, and only allow tasks to be appended to active goals; dashboard chat and addressed in-game teammate conversations share the same bounded history.
 - Layered persistent memory in SQLite for semantic knowledge, episodic events, player preferences, and world facts. Records are keyed by memory type and subject, carry confidence/importance/source metadata, update in place instead of duplicating, and are available to both chat and specialist planning. The browser dashboard and macOS desktop app can create, review, and delete memories through authenticated API routes.
@@ -93,8 +93,9 @@ Edit `.env`:
 - `MINDCRAFT_API_KEY=...` for hosted providers
 - `MINDCRAFT_MODE=assisted|balanced|autonomous`
 - `MINDCRAFT_BIND=127.0.0.1:8787`
+- `MINDCRAFT_TLS_CERT=/path/to/fullchain.pem` and `MINDCRAFT_TLS_KEY=/path/to/private-key.pem` (both required for direct non-loopback binds; optional for loopback)
 
-Secrets are read from environment variables and are not written to SQLite. Keep the bind address on loopback unless you set a strong `MINDCRAFT_API_TOKEN` and put the service behind a trusted TLS reverse proxy. Azalea supports offline account mode for local/offline-mode servers and Microsoft device-code authentication for online-mode servers. No Microsoft password is accepted or stored by this application.
+Secrets are read from environment variables and are not written to SQLite. Keep the bind address on loopback unless you set a strong `MINDCRAFT_API_TOKEN` and configure both `MINDCRAFT_TLS_CERT` and `MINDCRAFT_TLS_KEY` for native HTTPS, or put the loopback service behind a trusted TLS reverse proxy. Azalea supports offline account mode for local/offline-mode servers and Microsoft device-code authentication for online-mode servers. No Microsoft password is accepted or stored by this application.
 
 ## Run
 
