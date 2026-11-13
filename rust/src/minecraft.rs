@@ -950,6 +950,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 if !critical_health && !bot.has_attack_cooldown()
                                     && matches!(bot.hit_result(), HitResult::Entity(hit) if hit.entity == target.id())
                                     && target.exists()
+                                    && target.distance_to_client().ok().is_some_and(|distance| distance <= 4.0)
                                 {
                                     target.attack();
                                     tracing::info!(username = %bot.username(), target = ?target.kind(), "autonomous close-range defense attacked a visible hostile mob");
