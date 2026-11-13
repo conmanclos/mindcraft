@@ -2569,8 +2569,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         tokio::task::spawn_local(async move {
                             let position = BlockPos::new(x, y, z);
                             let Ok(world) = client.world() else { client.chat("I can't read the loaded world to reach that container."); return; };
-                            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                            let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
                                 client.chat("That container coordinate is not a loaded non-air block."); return;
+                            };
+                            if is_trapped_chest_block(&target_block) {
+                                client.chat("I won't open a trapped chest because opening it can trigger redstone mechanisms."); return;
                             }
                             let chunk_storage = world.read().chunks.clone();
                             if !goto_cancellable(&client, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
@@ -2668,8 +2671,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("I can't read the loaded world to reach that container.");
                                 return;
                             };
-                            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+                            let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
                                 client.chat("That container coordinate is not a loaded non-air block.");
+                                return;
+                            };
+                            if is_trapped_chest_block(&target_block) {
+                                client.chat("I won't open a trapped chest because opening it can trigger redstone mechanisms.");
                                 return;
                             }
                             let chunk_storage = world.read().chunks.clone();
@@ -4435,6 +4442,14 @@ async fn execute_inventory_sort(
     }
 }
 
+fn is_trapped_chest_block(block: &impl std::fmt::Debug) -> bool {
+    format!("{block:?}").chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>()
+        .contains("trappedchest")
+}
+
 async fn execute_container_view(
     bot: Client,
     position: BlockPos,
@@ -4452,10 +4467,7 @@ async fn execute_container_view(
         bot.chat("That container coordinate is not a loaded non-air block.");
         return;
     };
-    let target_kind = format!("{target_block:?}").chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase).collect::<String>();
-    if target_kind.contains("trappedchest") {
+    if is_trapped_chest_block(&target_block) {
         bot.chat("I won't open a trapped chest for inspection because opening it can trigger redstone mechanisms.");
         return;
     }
@@ -4539,8 +4551,12 @@ async fn execute_container_sort(
         bot.chat("I can't read the loaded world to reach that storage container.");
         return;
     };
-    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+    let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
         bot.chat("That storage coordinate is not a loaded non-air block.");
+        return;
+    };
+    if is_trapped_chest_block(&target_block) {
+        bot.chat("I won't open a trapped chest because opening it can trigger redstone mechanisms.");
         return;
     }
     let chunk_storage = world.read().chunks.clone();
