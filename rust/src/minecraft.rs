@@ -34,6 +34,7 @@ pub enum BotCommand {
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
     Collect(String, u8, u16),
+    Locate(String, u16),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1196,6 +1197,60 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                             if !cancelled() && client.exists() {
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
+                            }
+                        });
+                    }
+                    BotCommand::Locate(block_name, range) => {
+                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let kind = match block_name.parse::<BlockKind>() {
+                                Ok(kind) if kind != BlockKind::Air => kind,
+                                _ => {
+                                    client.chat(format!("I don't recognize '{block_name}' as a Minecraft block."));
+                                    return;
+                                }
+                            };
+                            let Ok(position) = client.position() else {
+                                client.chat("I can't read my position to search for blocks.");
+                                return;
+                            };
+                            let origin = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
+                            let states = BlockStates::from([kind]);
+                            let radius_squared = i64::from(range) * i64::from(range);
+                            let mut candidates = {
+                                let Ok(world) = client.world() else {
+                                    client.chat("The loaded world is unavailable; I can't search for that block.");
+                                    return;
+                                };
+                                let world = world.read();
+                                world.find_blocks(origin, &states).filter(|target| {
+                                    let dx = i64::from(target.x) - i64::from(origin.x);
+                                    let dy = i64::from(target.y) - i64::from(origin.y);
+                                    let dz = i64::from(target.z) - i64::from(origin.z);
+                                    dx * dx + dy * dy + dz * dz <= radius_squared
+                                }).take(512).collect::<Vec<_>>()
+                            };
+                            candidates.sort_unstable_by_key(|target| {
+                                let dx = i64::from(target.x) - i64::from(origin.x);
+                                let dy = i64::from(target.y) - i64::from(origin.y);
+                                let dz = i64::from(target.z) - i64::from(origin.z);
+                                (dx * dx + dy * dy + dz * dz, target.x, target.y, target.z)
+                            });
+                            if !client.exists() { return; }
+                            if let Some(target) = candidates.first() {
+                                let dx = i64::from(target.x) - i64::from(origin.x);
+                                let dy = i64::from(target.y) - i64::from(origin.y);
+                                let dz = i64::from(target.z) - i64::from(origin.z);
+                                let distance = ((dx * dx + dy * dy + dz * dz) as f64).sqrt();
+                                client.chat(format!("Nearest loaded {block_name} found at {}, {}, {} ({distance:.1} blocks away; search radius {range}).", target.x, target.y, target.z));
+                            } else {
+                                client.chat(format!("No loaded {block_name} blocks found within {range} blocks. Explore or move closer to load more chunks."));
                             }
                         });
                     }
