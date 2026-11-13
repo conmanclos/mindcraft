@@ -531,6 +531,8 @@ fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)
         "torch".to_owned()
     } else if block == "redstone_wall_torch" {
         "redstone_torch".to_owned()
+    } else if block == "soul_wall_torch" {
+        "soul_torch".to_owned()
     } else if block == "wall_sign" {
         "oak_sign".to_owned()
     } else if let Some(prefix) = block.strip_suffix("_wall_sign") {
