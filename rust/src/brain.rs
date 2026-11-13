@@ -158,7 +158,7 @@ impl Brain {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
         let safe = ["look", "follow", "stop", "say", "goto", "explore", "jump"];
-        let destructive = ["attack", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "equip", "optimize_armor", "inventory_sort", "trade", "enter_portal", "use_item"];
+        let destructive = ["attack", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "container_sort", "equip", "optimize_armor", "inventory_sort", "inventory_compact", "trade", "enter_portal", "use_item"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
