@@ -205,6 +205,16 @@ impl Store {
         if !task_columns.iter().any(|name| name == "verification_note") {
             connection.execute("ALTER TABLE agent_tasks ADD COLUMN verification_note TEXT", [])?;
         }
+        let memory_columns = {
+            let mut statement = connection.prepare("PRAGMA table_info(memories)")?;
+            statement.query_map([], |row| row.get::<_, String>(1))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        if !memory_columns.iter().any(|name| name == "last_accessed_at") {
+            // Older native databases predate access-aware memory eviction.
+            // Add the nullable column in place so existing memories are kept.
+            connection.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TEXT", [])?;
+        }
         connection.execute(
             "CREATE INDEX IF NOT EXISTS agent_tasks_ready_idx ON agent_tasks(status, available_at, priority DESC, id)",
             [],
