@@ -1048,7 +1048,9 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
                 }
                 None => (raw.trim(), 32),
             };
-            if name.is_empty() || name.len() > 64
+            let entity_id = name.rsplit(':').next().unwrap_or(name);
+            if name.is_empty() || name.len() > 64 || entity_id.is_empty()
+                || !entity_id.bytes().any(|byte| byte.is_ascii_alphanumeric())
                 || !name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':')) {
                 return Err((StatusCode::BAD_REQUEST, "locate_entity requires an entity type or player name".into()));
             }
