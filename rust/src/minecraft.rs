@@ -1233,7 +1233,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                             let raw_name = debug.split_once("kind:")
                                                 .map(|(_, rest)| rest.trim_start().split([',', '}', ' ']).next().unwrap_or(&debug))
                                                 .unwrap_or_else(|| debug.split(['[', '{']).next().unwrap_or(&debug));
-                                            let name = raw_name.trim().to_ascii_lowercase();
+                                            let name = raw_name.rsplit(':').next().unwrap_or(raw_name).trim().to_ascii_lowercase();
                                             if !name.is_empty() {
                                                 *counts.entry(name).or_insert(0) += 1;
                                             }
