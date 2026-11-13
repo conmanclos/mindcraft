@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage, MaxStackSize}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -41,6 +41,7 @@ pub enum BotCommand {
     Equip(u8),
     OptimizeArmor,
     InventorySort,
+    InventoryCompact,
     Trade(i32, i32, i32, Option<u8>),
     EnterPortal(i32, i32, i32),
     Explore(u16),
@@ -3218,6 +3219,102 @@ async fn execute_container_sort(
         Ok(None) => bot.chat("I could not open that block as a storage container."),
         Err(error) => tracing::warn!(username = %bot.username(), %error, "storage sort failed to open container"),
     }
+}
+
+async fn execute_inventory_compact(
+    bot: Client,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    let Ok(menu) = bot.menu() else {
+        bot.chat("I couldn't inspect the player inventory before compacting it.");
+        return;
+    };
+    if menu.try_as_player().is_none() {
+        bot.chat("Close the open container before compacting your inventory.");
+        return;
+    }
+    let slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
+    let Ok(inventory) = bot.get_inventory() else {
+        bot.chat("I couldn't open the player inventory for compaction.");
+        return;
+    };
+    let mut moved_items = 0u32;
+    let mut merged_stacks = 0usize;
+    for target_index in 0..slots.len() {
+        if cancelled() {
+            bot.chat(format!("Inventory compaction cancelled after merging {moved_items} item(s) across {merged_stacks} stack(s)."));
+            return;
+        }
+        let target_slot = slots[target_index];
+        let Some(target_item) = bot.menu().ok()
+            .and_then(|live| live.slot(target_slot).cloned())
+            .filter(|item| !item.is_empty()) else { continue; };
+        let Some(target_data) = target_item.as_present() else { continue; };
+        let max_stack = target_item.get_component::<MaxStackSize>()
+            .map(|component| component.count.clamp(1, 64))
+            .unwrap_or(1);
+        let mut target_count = target_item.count();
+        if target_count >= max_stack { continue; }
+        for source_index in target_index + 1..slots.len() {
+            if cancelled() { break; }
+            if target_count >= max_stack { break; }
+            let source_slot = slots[source_index];
+            let Some(source_item) = bot.menu().ok()
+                .and_then(|live| live.slot(source_slot).cloned())
+                .filter(|item| !item.is_empty()) else { continue; };
+            let Some(source_data) = source_item.as_present() else { continue; };
+            if !target_data.is_same_item_and_components(source_data) { continue; }
+            let amount = source_item.count().min(max_stack - target_count);
+            if amount <= 0 { continue; }
+            let source_before = source_item.count();
+            let target_before = target_count;
+            // Once the source stack is picked up, always return the cursor to
+            // its original emptying slot before honoring cancellation.
+            inventory.left_click(source_slot);
+            bot.wait_updates(1).await;
+            let source_picked_up = bot.menu().ok()
+                .and_then(|live| live.slot(source_slot).map(|item| item.is_empty()))
+                .unwrap_or(false);
+            if !source_picked_up {
+                bot.chat("The server did not confirm picking up a source stack; inventory compaction stopped.");
+                return;
+            }
+            for _ in 0..amount {
+                inventory.right_click(target_slot);
+                bot.wait_updates(1).await;
+            }
+            inventory.left_click(source_slot);
+            bot.wait_updates(2).await;
+            let Some(live) = bot.menu().ok() else {
+                bot.chat("The inventory closed during compaction. Check the player inventory before retrying.");
+                return;
+            };
+            if live.try_as_player().is_none() {
+                bot.chat("A container opened during compaction. Check the player inventory before retrying.");
+                return;
+            }
+            let target_after = live.slot(target_slot).map(|item| item.count()).unwrap_or(0);
+            let source_after = live.slot(source_slot).map(|item| item.count()).unwrap_or(0);
+            let actual_moved = target_after.saturating_sub(target_before).max(0) as u32;
+            if target_after > target_before && source_after < source_before {
+                moved_items = moved_items.saturating_add(actual_moved);
+                merged_stacks += 1;
+                target_count = target_after;
+            }
+            if target_after != target_before + amount || source_after != source_before - amount {
+                bot.chat(format!("The server accepted a partial inventory merge ({actual_moved} item(s)); compaction stopped without repeating the transfer."));
+                return;
+            }
+        }
+    }
+    if cancelled() {
+        bot.chat(format!("Inventory compaction cancelled after merging {moved_items} item(s) across {merged_stacks} stack(s)."));
+        return;
+    }
+    bot.chat(format!("Inventory compacted and server-confirmed: merged {moved_items} item(s) across {merged_stacks} stack(s). Hotbar, armor, and offhand were preserved."));
 }
 
 async fn execute_armor_upgrade(bot: Client) {
