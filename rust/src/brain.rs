@@ -266,8 +266,9 @@ impl Brain {
         }
 
         let get_url = prediction.pointer("/urls/get").and_then(Value::as_str)
+            .map(str::to_owned)
             .ok_or_else(|| anyhow!("Replicate did not return a prediction status URL"))?;
-        let parsed = reqwest::Url::parse(get_url)?;
+        let parsed = reqwest::Url::parse(&get_url)?;
         if parsed.scheme() != "https" || parsed.host_str() != Some("api.replicate.com")
             || !parsed.username().is_empty() || parsed.password().is_some() {
             bail!("Replicate returned an unsafe prediction status URL");
@@ -275,7 +276,7 @@ impl Brain {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
         while tokio::time::Instant::now() < deadline {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            prediction = self.http.get(get_url)
+            prediction = self.http.get(&get_url)
                 .bearer_auth(&self.config.api_key)
                 .timeout(std::time::Duration::from_secs(20))
                 .send().await?.error_for_status()?.json().await?;
