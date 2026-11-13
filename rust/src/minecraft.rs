@@ -4461,10 +4461,6 @@ fn normalized_block_kind(block: &impl std::fmt::Debug) -> String {
         .collect()
 }
 
-fn is_trapped_chest_block(block: &impl std::fmt::Debug) -> bool {
-    normalized_block_kind(block).contains("trappedchest")
-}
-
 fn is_storage_container_block(block: &impl std::fmt::Debug) -> bool {
     let kind = normalized_block_kind(block);
     !kind.contains("trappedchest")
