@@ -1580,13 +1580,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let target = bot.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true)
                             .into_iter()
                             .find(|player| {
-                                player.exists()
+                                player.exists() && player.uuid() != bot.uuid()
                                     && tab_list.get(&player.uuid()).is_some_and(|profile| profile.profile.name.eq_ignore_ascii_case(&name))
                             });
                         let Some(target) = target else {
                             bot.chat(format!("I can't find a visible player named '{name}'."));
                             continue;
                         };
+                        if !target.exists() {
+                            bot.chat(format!("Player '{name}' left the loaded world before I could navigate to them."));
+                            continue;
+                        }
                         let target_position = target.position();
                         let destination = BlockPos::new(target_position.x.floor() as i32, target_position.y.floor() as i32, target_position.z.floor() as i32);
                         let Ok(own_position) = bot.position() else { continue; };
