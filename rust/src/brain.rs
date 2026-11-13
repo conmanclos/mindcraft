@@ -133,6 +133,10 @@ impl Brain {
         self.config.mode == "autonomous"
     }
 
+    pub fn uses_replicate(&self) -> bool {
+        self.config.provider == "replicate"
+    }
+
     pub async fn reply(&self, prompt: &str) -> Result<String> {
         // Chat prompts include the latest user message plus bounded history,
         // world telemetry, online-player context, and relevant memories. Keep
@@ -167,7 +171,11 @@ impl Brain {
             };
             match result {
                 Ok(reply) => return Ok(reply),
-                Err(error) if attempt < 2 && is_transient_provider_error(&error) => {
+                // Replicate prediction creation is not idempotent; do not
+                // automatically repeat a timed-out POST that may already have
+                // created a billable prediction.
+                Err(error) if self.config.provider != "replicate"
+                    && attempt < 2 && is_transient_provider_error(&error) => {
                     let delay = std::time::Duration::from_millis(500u64 << attempt);
                     tracing::warn!(
                         provider = %self.config.provider,
