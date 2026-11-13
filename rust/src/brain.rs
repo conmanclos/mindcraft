@@ -73,6 +73,7 @@ fn replicate_output_text(prediction: &Value) -> Result<String> {
         Value::Array(parts) => parts.iter().map(|part| {
             part.as_str().map(str::to_owned).unwrap_or_else(|| part.to_string())
         }).collect::<String>(),
+        Value::Null => bail!("Replicate returned a null output"),
         other => other.to_string(),
     };
     if text.trim().is_empty() {
