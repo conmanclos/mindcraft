@@ -58,6 +58,7 @@ pub enum BotCommand {
     OptimizeArmor,
     InventorySort,
     InventoryCompact,
+    HotbarRestock(String),
     Trade(i32, i32, i32, Option<u8>),
     EnterPortal(i32, i32, i32),
     Explore(u16),
@@ -2413,6 +2414,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             execute_inventory_sort(client, generation_state, generation).await;
+                        });
+                    }
+                    BotCommand::HotbarRestock(selector) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        cancel_active_mining(&bot);
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_hotbar_restock(client, selector, generation_state, generation).await;
                         });
                     }
                     BotCommand::InventoryCompact => {
@@ -4780,6 +4796,99 @@ async fn execute_container_sort(
         }
         Ok(None) => bot.chat("I could not open that block as a storage container."),
         Err(error) => tracing::warn!(username = %bot.username(), %error, "storage sort failed to open container"),
+    }
+}
+
+async fn execute_hotbar_restock(
+    bot: Client,
+    selector: String,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return; }
+    let Ok(menu) = bot.menu() else {
+        bot.chat("I couldn't inspect the player inventory before restocking the hotbar.");
+        return;
+    };
+    if menu.try_as_player().is_none() {
+        bot.chat("Close the open container before restocking the hotbar.");
+        return;
+    }
+    let main_slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
+    let hotbar_slots = menu.hotbar_slots_range().collect::<Vec<_>>();
+    if main_slots.is_empty() || hotbar_slots.len() != 9 {
+        bot.chat("The player inventory layout is unavailable; no items were moved.");
+        return;
+    }
+    let Ok(inventory) = bot.get_inventory() else {
+        bot.chat("I couldn't open the player inventory for hotbar restocking.");
+        return;
+    };
+    let mut moved_stacks = 0usize;
+    for target_slot in hotbar_slots {
+        if cancelled() { break; }
+        let Some(live_menu) = bot.menu().ok() else {
+            bot.chat("The player inventory closed during hotbar restocking.");
+            return;
+        };
+        if live_menu.try_as_player().is_none() {
+            bot.chat("A container opened during hotbar restocking; no container slots were touched.");
+            return;
+        }
+        if !live_menu.slot(target_slot).is_some_and(|item| item.is_empty()) {
+            continue;
+        }
+        let live_slots = live_menu.slots();
+        let Some(source_slot) = main_slots.iter().copied().find(|slot| {
+            live_slots.get(*slot).is_some_and(|item| {
+                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &selector)
+            })
+        }) else { break; };
+        let Some(source_before) = live_slots.get(source_slot).cloned().filter(|item| !item.is_empty()) else { continue; };
+        let source_count = source_before.count();
+        let source_kind = format!("{:?}", source_before.kind());
+        inventory.left_click(source_slot);
+        bot.wait_updates(1).await;
+        let picked_up = bot.menu().ok().and_then(|menu| {
+            menu.try_as_player()?;
+            menu.slot(source_slot).map(|item| item.is_empty())
+        }).unwrap_or(false);
+        if !picked_up {
+            bot.chat("The server did not confirm picking up the selected inventory stack; hotbar restocking stopped.");
+            return;
+        }
+        // Do not check cancellation between pickup and placement: always put
+        // the cursor-held stack into the reserved empty hotbar slot.
+        inventory.left_click(target_slot);
+        bot.wait_updates(2).await;
+        let Some(verified_menu) = bot.menu().ok() else {
+            bot.chat("The inventory closed while placing a hotbar stack. Reopen it and inspect the cursor and selected slots.");
+            return;
+        };
+        if verified_menu.try_as_player().is_none() {
+            bot.chat("A container opened while placing a hotbar stack. Inspect the cursor and player inventory before retrying.");
+            return;
+        }
+        let target_matches = verified_menu.slot(target_slot).is_some_and(|item| {
+            !item.is_empty()
+                && item.count() == source_count
+                && item_name_matches(&format!("{:?}", item.kind()), &selector)
+        });
+        let source_empty = verified_menu.slot(source_slot).is_some_and(|item| item.is_empty());
+        if !target_matches || !source_empty {
+            bot.chat(format!("The server did not confirm moving {source_kind} into the hotbar. Restocking stopped; inspect both slots before retrying."));
+            return;
+        }
+        moved_stacks += 1;
+    }
+    if cancelled() {
+        bot.chat(format!("Hotbar restocking cancelled after moving {moved_stacks} verified stack(s)."));
+    } else if moved_stacks == 0 {
+        bot.chat(format!("No empty hotbar slot could be filled from the main inventory with '{selector}'."));
+    } else {
+        bot.chat(format!("Hotbar restocking complete: moved {moved_stacks} verified '{selector}' stack(s) into empty hotbar slots. Existing hotbar items were preserved."));
     }
 }
 
