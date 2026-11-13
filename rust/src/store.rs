@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::Serialize;
 use std::{collections::HashSet, path::Path, sync::Mutex};
 
@@ -9,6 +9,36 @@ const MAX_TASK_DESCRIPTION_BYTES: usize = 500;
 const MAX_MEMORY_SUBJECT_BYTES: usize = 200;
 const MAX_MEMORY_CONTENT_BYTES: usize = 4_000;
 const MAX_MEMORY_RECORDS: i64 = 10_000;
+const MAX_GOAL_RECORDS: i64 = 1_000;
+const MAX_TASK_RECORDS: i64 = 12_000;
+
+fn prune_terminal_goal_history(
+    transaction: &Transaction<'_>,
+    incoming_goals: usize,
+    incoming_tasks: usize,
+) -> Result<()> {
+    loop {
+        let goals: i64 = transaction.query_row("SELECT COUNT(*) FROM goals", [], |row| row.get(0))?;
+        let tasks: i64 = transaction.query_row("SELECT COUNT(*) FROM agent_tasks", [], |row| row.get(0))?;
+        if goals + incoming_goals as i64 <= MAX_GOAL_RECORDS
+            && tasks + incoming_tasks as i64 <= MAX_TASK_RECORDS {
+            return Ok(());
+        }
+        let removed = transaction.execute(
+            "DELETE FROM goals WHERE id = (
+                SELECT id FROM goals
+                WHERE status IN ('complete','failed','cancelled')
+                ORDER BY created_at ASC, id ASC LIMIT 1
+            )",
+            [],
+        )?;
+        if removed == 0 {
+            anyhow::bail!(
+                "goal/task history is at its bounded capacity ({MAX_GOAL_RECORDS} goals, {MAX_TASK_RECORDS} tasks) and no completed goal can be safely pruned"
+            );
+        }
+    }
+}
 
 fn validate_task(role: &str, description: &str) -> Result<()> {
     const ALLOWED_ROLES: [&str; 6] = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
@@ -407,9 +437,16 @@ impl Store {
     }
 
     pub fn create_goal(&self, description: &str) -> Result<i64> {
-        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        connection.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
-        Ok(connection.last_insert_rowid())
+        if description.trim().is_empty() || description.len() > MAX_GOAL_BYTES {
+            anyhow::bail!("goal descriptions must contain 1-4000 bytes");
+        }
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        prune_terminal_goal_history(&transaction, 1, 0)?;
+        transaction.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
+        let id = transaction.last_insert_rowid();
+        transaction.commit()?;
+        Ok(id)
     }
 
     /// Create a goal and all of its specialist tasks in one transaction so
@@ -421,6 +458,7 @@ impl Store {
     ) -> Result<(i64, Vec<i64>)> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        prune_terminal_goal_history(&tx, 1, tasks.len())?;
         tx.execute("INSERT INTO goals(description) VALUES (?1)", [description])?;
         let goal_id = tx.last_insert_rowid();
         let mut task_ids = Vec::with_capacity(tasks.len());
@@ -439,6 +477,7 @@ impl Store {
         validate_task(role, description)?;
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        prune_terminal_goal_history(&tx, 0, 1)?;
         let goal_status: Option<String> = tx.query_row(
             "SELECT status FROM goals WHERE id=?1",
             [goal_id],
