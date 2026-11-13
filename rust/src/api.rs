@@ -699,8 +699,8 @@ fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (Status
         let state = palette_by_id.get(&palette_id)
             .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic BlockData references an unknown palette ID".into()))?;
         let Some(material) = sponge_block_item(state)? else { continue; };
-        if blocks.len() >= 64 {
-            return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic contains more than 64 non-air blocks; split it into smaller builds".into()));
+        if blocks.len() >= 256 {
+            return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic contains more than 256 non-air blocks; split it into smaller builds".into()));
         }
         let x = index % width;
         let z = (index / width) % length;
@@ -823,8 +823,8 @@ fn resolve_agent_target(config: &Config, target: Option<String>) -> Result<Optio
 
 fn parse_build_targets(raw: &str) -> Result<Vec<(i32, i32, i32)>, (StatusCode, String)> {
     let entries = raw.split(';').map(str::trim).filter(|entry| !entry.is_empty()).collect::<Vec<_>>();
-    if entries.is_empty() || entries.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "build target must contain 1-64 semicolon-separated x,y,z block positions".into()));
+    if entries.is_empty() || entries.len() > 256 {
+        return Err((StatusCode::BAD_REQUEST, "build target must contain 1-256 semicolon-separated x,y,z block positions".into()));
     }
     let mut unique = HashSet::new();
     let mut positions = Vec::with_capacity(entries.len());
@@ -947,8 +947,8 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
         _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, bridge_7x3, watchtower_3x3, or perimeter_wall_7x7x2".into())),
     }
     positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
-    if positions.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "expanded blueprint exceeds the 64-block single-stack build limit".into()));
+    if positions.len() > 256 {
+        return Err((StatusCode::BAD_REQUEST, "expanded blueprint exceeds the 256-block build limit".into()));
     }
     Ok(positions)
 }
@@ -974,13 +974,13 @@ struct SchematicBlock {
 }
 
 /// Parse a compact JSON schematic with relative coordinates and an absolute
-/// origin. The 64-block and 32-block relative bounds keep model/API payloads
+/// origin. The 256-block and 32-block relative bounds keep model/API payloads
 /// bounded and prevent accidental world-scale construction plans.
 fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, String)> {
     let spec = raw.strip_prefix("schematic:")
         .ok_or((StatusCode::BAD_REQUEST, "schematic target must start with schematic:".into()))?;
-    if spec.len() > 12_000 {
-        return Err((StatusCode::BAD_REQUEST, "schematic JSON exceeds the 12000-byte limit".into()));
+    if spec.len() > 48_000 {
+        return Err((StatusCode::BAD_REQUEST, "schematic JSON exceeds the 48000-byte limit".into()));
     }
     let (json, origin_raw) = spec.split_once('|')
         .ok_or((StatusCode::BAD_REQUEST, "schematic syntax is schematic:{\"blocks\":[...]}|origin_x,origin_y,origin_z".into()))?;
@@ -990,8 +990,8 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
     let (ox, oy, oz) = parse_blueprint_origin(origin_raw)?;
     let document: SchematicDocument = serde_json::from_str(json)
         .map_err(|_| (StatusCode::BAD_REQUEST, "schematic must be valid JSON with a blocks array".into()))?;
-    if document.blocks.is_empty() || document.blocks.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "schematic must contain 1-64 blocks".into()));
+    if document.blocks.is_empty() || document.blocks.len() > 256 {
+        return Err((StatusCode::BAD_REQUEST, "schematic must contain 1-256 blocks".into()));
     }
     if ![0, 90, 180, 270].contains(&document.rotation) {
         return Err((StatusCode::BAD_REQUEST, "schematic rotation must be 0, 90, 180, or 270 degrees".into()));
