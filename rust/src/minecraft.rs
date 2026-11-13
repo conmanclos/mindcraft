@@ -5256,7 +5256,7 @@ async fn execute_hotbar_restock(
                     && item.kind() == target_before.kind()
                     && item.count() == target_count.saturating_add(moved)
             });
-            if !source_confirmed || !target_confirmed || moved > u32::from(attempted) {
+            if !source_confirmed || !target_confirmed || moved > attempted {
                 bot.chat(format!("The server did not confirm a safe top-up of {source_kind}. Inspect the hotbar and original inventory slot before retrying."));
                 return;
             }
