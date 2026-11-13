@@ -1463,7 +1463,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else {
                             String::new()
                         };
-                        if dimension != "minecraft:overworld" {
+                        if dimension != "minecraft:overworld" && dimension != "overworld" {
                             bot.chat("I won't interact with a bed outside the Overworld because beds explode in other dimensions.");
                             continue;
                         }
