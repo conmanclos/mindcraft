@@ -1036,6 +1036,20 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
         "go_to_surface" => Ok(BotCommand::GoToSurface),
+        "remember_here" | "go_to_remembered_place" => {
+            let name = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a saved-place name".into()))?;
+            let name = name.trim();
+            if name.is_empty() || name.len() > 80
+                || name.chars().any(|character| character.is_control())
+                || !name.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, ' ' | '_' | '-')) {
+                return Err((StatusCode::BAD_REQUEST, "saved-place names must be 1-80 safe ASCII letters, numbers, spaces, underscores, or hyphens".into()));
+            }
+            if action.action.eq_ignore_ascii_case("remember_here") {
+                Ok(BotCommand::RememberHere(name.to_owned()))
+            } else {
+                Ok(BotCommand::GoToRememberedPlace(name.to_owned()))
+            }
+        }
         "move_away" => {
             let distance = action.target.as_deref().unwrap_or("8").trim().parse::<u8>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "move_away distance must be an integer from 1 to 32 blocks".into()))?;
