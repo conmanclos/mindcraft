@@ -1997,6 +1997,174 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
     Ok(())
 }
 
+async fn execute_mine_block(
+    client: Client,
+    position: BlockPos,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+    announce: bool,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() || !client.exists() { return false; }
+    let Ok(world) = client.world() else {
+        if announce { client.chat("I can't read the loaded world to pathfind to that block."); }
+        return false;
+    };
+    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+        if announce { client.chat("That target is not a loaded non-air block; I won't report an empty position as mined."); }
+        return false;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(&client, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+        if announce && !cancelled() { client.chat("Pathfinding to the block timed out or failed."); }
+        return false;
+    }
+    if cancelled() || !client.exists() || !client.is_goto_target_reached() {
+        if announce && !cancelled() { client.chat("I couldn't reach that block safely."); }
+        return false;
+    }
+    let Ok(own_position) = client.position() else { return false; };
+    let target_position = position.center();
+    let dx = own_position.x - target_position.x;
+    let dy = own_position.y - target_position.y;
+    let dz = own_position.z - target_position.z;
+    if dx * dx + dy * dy + dz * dz > 20.25 {
+        if announce { client.chat("That block is still outside the 4.5-block mining reach."); }
+        return false;
+    }
+    let Some(block_state) = world.read().get_block_state(position) else {
+        if announce { client.chat("The target block unloaded before I could choose a tool."); }
+        return false;
+    };
+    let best_tool = match client.best_tool_in_hotbar_for_block(block_state) {
+        Ok(tool) if tool.percentage_per_tick.is_finite() && tool.percentage_per_tick > 0.0 => tool,
+        Ok(_) => {
+            if announce { client.chat("I can't safely mine that block with any tool in my hotbar."); }
+            return false;
+        }
+        Err(error) => {
+            tracing::warn!(username = %client.username(), %error, "could not determine the best mining tool");
+            if announce { client.chat("I couldn't determine a safe mining tool for that block."); }
+            return false;
+        }
+    };
+    let selected_slot = best_tool.index as u8;
+    client.set_selected_hotbar_slot(selected_slot);
+    client.wait_updates(1).await;
+    if client.selected_hotbar_slot().ok() != Some(selected_slot) {
+        if announce { client.chat("The server did not confirm the required hotbar tool selection."); }
+        return false;
+    }
+    client.look_at(target_position);
+    client.wait_updates(1).await;
+    if cancelled() { return false; }
+    match client.hit_result() {
+        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+        _ => {
+            if announce { client.chat("I don't have a clear line of sight to that block."); }
+            return false;
+        }
+    }
+
+    let mut mining_ticks = client.get_tick_broadcaster();
+    client.start_mining(position);
+    let start_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut mining_started = false;
+    loop {
+        if cancelled() {
+            cancel_active_mining(&client);
+            return false;
+        }
+        if !client.exists() { return false; }
+        if client.is_mining() {
+            mining_started = true;
+            break;
+        }
+        match tokio::time::timeout_at(start_deadline, mining_ticks.recv()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
+                tracing::debug!(username = %client.username(), skipped, "mining start wait missed tick notifications");
+            }
+            Ok(Err(broadcast::error::RecvError::Closed)) => return false,
+            Err(_) => break,
+        }
+    }
+    if !mining_started {
+        if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
+            if approach_mined_drop(&client, position, &generation_state, generation).await {
+                if announce { client.chat("The block broke before the mining state could be observed; I approached its drop location."); }
+                return true;
+            }
+        } else if announce && !cancelled() {
+            client.chat("The server did not start mining that block; it may be protected or out of reach.");
+        }
+        return false;
+    }
+
+    let mining_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if cancelled() {
+            cancel_active_mining(&client);
+            if announce { client.chat("Mining was cancelled by a newer command."); }
+            return false;
+        }
+        if !client.exists() { return false; }
+        if !client.is_mining() {
+            let mut final_state = world.read().get_block_state(position);
+            for _ in 0..5 {
+                if final_state.as_ref().is_some_and(|block| block.is_air()) { break; }
+                client.wait_ticks(1).await;
+                final_state = world.read().get_block_state(position);
+            }
+            match final_state {
+                Some(block) if block.is_air() => {
+                    if approach_mined_drop(&client, position, &generation_state, generation).await {
+                        if announce {
+                            client.chat(format!("Block broken at {}, {}, {}. I moved through the drop location; verify the items in inventory.", position.x, position.y, position.z));
+                        }
+                        return true;
+                    }
+                    if announce && !cancelled() {
+                        client.chat("Block broken, but I couldn't safely reach the drop location.");
+                    }
+                }
+                Some(_) => {
+                    if announce { client.chat("Mining stopped, but the target block remains. It may be protected or the tool/action was rejected."); }
+                }
+                None => {
+                    if announce { client.chat("Mining stopped, but the target chunk is no longer loaded; I can't confirm the block result."); }
+                }
+            }
+            return false;
+        }
+        match tokio::time::timeout_at(mining_deadline, mining_ticks.recv()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
+                tracing::debug!(username = %client.username(), skipped, "mining task missed tick notifications; resuming from current state");
+            }
+            Ok(Err(broadcast::error::RecvError::Closed)) => return false,
+            Err(_) => break,
+        }
+    }
+    cancel_active_mining(&client);
+    client.wait_ticks(2).await;
+    if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
+        if approach_mined_drop(&client, position, &generation_state, generation).await {
+            if announce {
+                client.chat(format!("Block broken at {}, {}, {}. I moved through the drop location; verify the items in inventory.", position.x, position.y, position.z));
+            }
+            return true;
+        }
+        if announce && !cancelled() {
+            client.chat("Block broken, but I couldn't safely reach the drop location.");
+        }
+    } else if announce {
+        client.chat("Mining did not finish within 30 seconds; the block may be too hard, protected, or unreachable.");
+    }
+    false
+}
+
 async fn approach_mined_drop(
     client: &Client,
     position: BlockPos,
