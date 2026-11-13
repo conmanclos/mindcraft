@@ -936,10 +936,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             "survival telemetry is unavailable; stopping movement and discarding queued gameplay commands"
                         );
                         if let Some(status) = &state.status {
-                            if let Some(agent_id) = &state.agent_id {
-                                status.agents.lock().await.remove(agent_id);
-                            }
-                            if state.primary {
+                            status.agents.lock().await.remove(&bot.username());
+                            if state.is_primary {
                                 *status.world.lock().await = None;
                             }
                         }
