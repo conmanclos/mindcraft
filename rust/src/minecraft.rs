@@ -1230,7 +1230,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                             let Some(block) = world.get_block_state(position) else { continue; };
                                             if block.is_air() { continue; }
                                             let debug = format!("{block:?}");
-                                            let name = debug.split(['[', '{']).next().unwrap_or(&debug).trim().to_ascii_lowercase();
+                                            let raw_name = debug.split_once("kind:")
+                                                .map(|(_, rest)| rest.trim_start().split([',', '}', ' ']).next().unwrap_or(&debug))
+                                                .unwrap_or_else(|| debug.split(['[', '{']).next().unwrap_or(&debug));
+                                            let name = raw_name.trim().to_ascii_lowercase();
                                             if !name.is_empty() {
                                                 *counts.entry(name).or_insert(0) += 1;
                                             }
