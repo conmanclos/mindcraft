@@ -3555,6 +3555,10 @@ fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'
         "bread" => Some((true, "bread", &[(1, "wheat"), (2, "wheat"), (3, "wheat")])),
         "ladder" => Some((true, "ladder", &[(1, "stick"), (3, "stick"), (4, "stick"), (5, "stick"), (6, "stick"), (7, "stick"), (9, "stick")])),
         "composter" => Some((true, "composter", &[(1, "wooden_slab"), (3, "wooden_slab"), (4, "wooden_slab"), (6, "wooden_slab"), (7, "wooden_slab"), (8, "wooden_slab"), (9, "wooden_slab")])),
+        "barrel" => Some((true, "barrel", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "wooden_slab"), (6, "wooden_slab"), (7, "planks"), (8, "planks"), (9, "planks")])),
+        "campfire" => Some((true, "campfire", &[(2, "stick"), (4, "stick"), (5, "coal_or_charcoal"), (6, "stick"), (7, "log"), (8, "log"), (9, "log")])),
+        "lantern" => Some((true, "lantern", &[(1, "iron_nugget"), (2, "iron_nugget"), (3, "iron_nugget"), (4, "iron_nugget"), (5, "torch"), (6, "iron_nugget"), (7, "iron_nugget"), (8, "iron_nugget"), (9, "iron_nugget")])),
+        "iron_bars" => Some((true, "iron_bars", &[(1, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (6, "iron_ingot"), (7, "iron_ingot"), (9, "iron_ingot")])),
         "shield" => Some((true, "shield", &[(2, "iron_ingot"), (4, "planks"), (5, "planks"), (6, "planks"), (8, "planks")])),
         "bed" => Some((true, "bed", &[(1, "wool"), (2, "wool"), (3, "wool"), (4, "planks"), (5, "planks"), (6, "planks")])),
         "bookshelf" => Some((true, "bookshelf", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "book"), (5, "book"), (6, "book"), (7, "planks"), (8, "planks"), (9, "planks")])),
@@ -3693,6 +3697,7 @@ fn recipe_output_count(recipe: &str) -> u8 {
         "glass_pane" => 16,
         "cookie" => 8,
         "rail" | "iron_bars" => 16,
+        "iron_nuggets" | "gold_nuggets" | "wheat_from_hay" => 9,
         "powered_rail" | "detector_rail" | "activator_rail" => 6,
         "iron_nuggets" | "gold_nuggets" | "wheat_from_hay" => 9,
         "fire_charge" => 3,
@@ -6381,7 +6386,7 @@ mod recipe_tests {
 
     #[test]
     fn allowlisted_recipes_fit_their_declared_crafting_grid() {
-        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe", "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe", "golden_pickaxe", "golden_axe", "golden_sword", "golden_shovel", "golden_hoe", "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe", "leather_helmet", "leather_chestplate", "leather_leggings", "leather_boots", "iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots", "shears", "bucket", "bow", "fishing_rod", "arrow", "paper", "glass_pane", "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl", "furnace", "chest", "bread", "ladder"] {
+        for recipe in ["planks", "sticks", "torch", "crafting_table", "wooden_pickaxe", "wooden_axe", "wooden_sword", "wooden_shovel", "wooden_hoe", "stone_pickaxe", "stone_axe", "stone_sword", "stone_shovel", "stone_hoe", "iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel", "iron_hoe", "golden_pickaxe", "golden_axe", "golden_sword", "golden_shovel", "golden_hoe", "diamond_pickaxe", "diamond_axe", "diamond_sword", "diamond_shovel", "diamond_hoe", "leather_helmet", "leather_chestplate", "leather_leggings", "leather_boots", "iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots", "shears", "bucket", "bow", "fishing_rod", "arrow", "paper", "glass_pane", "door", "trapdoor", "slab", "stairs", "fence", "sign", "boat", "bowl", "furnace", "chest", "bread", "ladder", "barrel", "campfire", "lantern", "iron_bars"] {
             let (requires_table, _, ingredients) = recipe_spec(recipe).expect("recipe must be allowlisted");
             let grid_size = if requires_table { 9 } else { 4 };
             let mut used = std::collections::HashSet::new();
