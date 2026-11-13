@@ -70,6 +70,7 @@ pub struct RuntimeStatus {
     pub online_players: Mutex<HashSet<String>>,
     pub agent_tokens: Mutex<HashMap<String, AgentCredential>>,
     pub connection: Mutex<ConnectionDiagnostics>,
+    pub chat_lock: Arc<Mutex<()>>,
 }
 
 impl Default for RuntimeStatus {
@@ -94,10 +95,6 @@ struct ApiState {
     store: Arc<Store>,
     status: Arc<RuntimeStatus>,
     rate_limits: Arc<Mutex<HashMap<String, RateWindow>>>,
-    // Chat history is a single ordered conversation. Serialize chat turns so
-    // concurrent dashboard requests cannot splice one user's prompt into
-    // another request's context or interleave assistant responses.
-    chat_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Clone, Copy)]
@@ -332,7 +329,6 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         store,
         status,
         rate_limits: Arc::new(Mutex::new(HashMap::new())),
-        chat_lock: Arc::new(Mutex::new(())),
     };
     let app = Router::new()
         .route("/", get(dashboard))
@@ -419,7 +415,7 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     }
     // Keep the conversation snapshot stable for the full provider round trip.
     // Failed or timed-out generations are not persisted as half-finished turns.
-    let _chat_turn = state.chat_lock.lock().await;
+    let _chat_turn = state.status.chat_lock.lock().await;
     let context = state.store.recent_context(12, 6_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let world = state.status.world.lock().await.clone();
