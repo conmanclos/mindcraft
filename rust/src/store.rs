@@ -331,15 +331,14 @@ impl Store {
             prune_memory_history(&tx, 1)?;
         }
         tx.execute(
-            "INSERT INTO memories(kind, subject, content, confidence, importance, source, updated_at, last_accessed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            "INSERT INTO memories(kind, subject, content, confidence, importance, source, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP)
              ON CONFLICT(kind, subject) DO UPDATE SET
                content=excluded.content,
                confidence=excluded.confidence,
                importance=excluded.importance,
                source=excluded.source,
-               updated_at=CURRENT_TIMESTAMP,
-               last_accessed_at=CURRENT_TIMESTAMP",
+               updated_at=CURRENT_TIMESTAMP",
             params![kind, subject, content, confidence.clamp(0.0, 1.0), importance.clamp(0, 100), source],
         )?;
         let id = tx.query_row(
@@ -857,7 +856,7 @@ impl Store {
              ON CONFLICT(kind, subject) DO UPDATE SET
                content=excluded.content, confidence=excluded.confidence,
                importance=excluded.importance, source=excluded.source,
-               updated_at=CURRENT_TIMESTAMP, last_accessed_at=CURRENT_TIMESTAMP",
+               updated_at=CURRENT_TIMESTAMP",
             params![memory_subject, memory_content],
         )?;
         tx.commit()?;
