@@ -6253,6 +6253,8 @@ fn item_name_matches(debug_name: &str, selector: &str) -> bool {
         wood_type && name.ends_with("fencegate")
     } else if selector == "bed" {
         name.ends_with("bed")
+    } else if selector == "food" {
+        safe_food_priority(debug_name).is_some()
     } else {
         name == selector
     }
