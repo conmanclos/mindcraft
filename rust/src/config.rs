@@ -96,8 +96,8 @@ impl Config {
         }
         let azure_api_version = env::var("MINDCRAFT_AZURE_API_VERSION")
             .unwrap_or_else(|_| "2024-10-21".into()).trim().to_owned();
-        if azure_api_version.is_empty() || azure_api_version.len() > 40
-            || !azure_api_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.')) {
+        if provider == "azure" && (azure_api_version.is_empty() || azure_api_version.len() > 40
+            || !azure_api_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))) {
             bail!("MINDCRAFT_AZURE_API_VERSION must contain 1-40 ASCII letters, numbers, dots, or hyphens");
         }
         if provider_requires_api_key(&provider) && api_key.is_empty() {
