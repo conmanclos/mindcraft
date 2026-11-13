@@ -759,7 +759,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if target.look_at().is_ok() {
                                 bot.wait_updates(1).await;
                                 if !critical_health && !bot.has_attack_cooldown()
-                                    && matches!(bot.hit_result(), Ok(HitResult::Entity(hit)) if hit.entity == target.id())
+                                    && matches!(bot.hit_result(), HitResult::Entity(hit)) if hit.entity == target.id())
                                     && target.exists()
                                 {
                                     target.attack();
@@ -1041,7 +1041,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         if !bot.has_attack_cooldown() {
-                            if let Ok(HitResult::Entity(hit)) = bot.hit_result() {
+                            if let HitResult::Entity(hit)) = bot.hit_result() {
                                 let target = bot.entity_ref_for(hit.entity);
                                 if let (Ok(target_position), Ok(own_position)) = (target.position(), bot.position()) {
                                     let dx = target_position.x - own_position.x;
@@ -1563,7 +1563,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
                             }
-                            if !matches!(client.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == destination) {
+                            if !matches!(client.hit_result(), HitResult::Block(hit)) if !hit.miss && hit.block_pos == destination) {
                                 client.chat("I reached the bed's area but couldn't get a clear line of sight.");
                                 return;
                             }
@@ -2400,7 +2400,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             client.look_at(position.center());
                             client.wait_updates(1).await;
                             if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
-                            if !matches!(client.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+                            if !matches!(client.hit_result(), HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
                                 client.chat("I don't have a clear line of sight to that container."); return;
                             }
                             match client.open_container_at(position).await {
@@ -2510,7 +2510,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 return;
                             }
                             match client.hit_result() {
-                                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+                                HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
                                 _ => {
                                     client.chat("I don't have a clear line of sight to that container.");
                                     return;
@@ -2790,7 +2790,7 @@ async fn execute_mine_block(
     client.wait_updates(1).await;
     if cancelled() { return false; }
     match client.hit_result() {
-        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+        HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
         _ => {
             if announce { client.chat("I don't have a clear line of sight to that block."); }
             return false;
@@ -3524,7 +3524,7 @@ async fn execute_craft(
             bot.wait_updates(1).await;
             if cancelled() { return false; }
             match bot.hit_result() {
-                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+                HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
                 _ => {
                     bot.chat("I don't have a clear line of sight to that crafting table.");
                     return false;
@@ -3715,7 +3715,7 @@ async fn place_block_at(
         bot.wait_updates(1).await;
         if cancelled() { return false; }
         match bot.hit_result() {
-            Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == face => {
+            HitResult::Block(hit)) if !hit.miss && hit.block_pos == support && hit.direction == face => {
                 bot.block_interact(support);
                 for _ in 0..10 {
                     if cancelled() { return false; }
@@ -3851,7 +3851,7 @@ async fn till_soil_at(
     bot.wait_updates(1).await;
     if cancelled() { return false; }
     match bot.hit_result() {
-        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position && hit.direction == Direction::Up => {}
+        HitResult::Block(hit)) if !hit.miss && hit.block_pos == position && hit.direction == Direction::Up => {}
         _ => {
             bot.chat("I don't have a clear view of the top of that soil block.");
             return false;
@@ -3984,7 +3984,7 @@ async fn plant_crop_at(
     bot.wait_updates(1).await;
     if cancelled() { return false; }
     match bot.hit_result() {
-        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == farmland && hit.direction == Direction::Up => {}
+        HitResult::Block(hit)) if !hit.miss && hit.block_pos == farmland && hit.direction == Direction::Up => {}
         _ => {
             bot.chat("I don't have a clear view of the top of that farmland block.");
             return false;
@@ -4287,7 +4287,7 @@ async fn execute_container_view(
     bot.look_at(position.center());
     bot.wait_updates(1).await;
     if cancelled() { return; }
-    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+    if !matches!(bot.hit_result(), HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
         bot.chat("I don't have a clear line of sight to that container.");
         return;
     }
@@ -4376,7 +4376,7 @@ async fn execute_container_sort(
     bot.look_at(position.center());
     bot.wait_updates(1).await;
     if cancelled() { return; }
-    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+    if !matches!(bot.hit_result(), HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
         bot.chat("I don't have a clear line of sight to that storage container.");
         return;
     }
@@ -4920,7 +4920,7 @@ async fn execute_trade(
         if cancelled() { return false; }
         if merchant.look_at().is_err() { return false; }
         bot.wait_updates(1).await;
-        if !matches!(bot.hit_result(), Ok(HitResult::Entity(hit)) if hit.entity == merchant.id()) {
+        if !matches!(bot.hit_result(), HitResult::Entity(hit)) if hit.entity == merchant.id()) {
             bot.chat("The merchant is not directly visible. I will not interact through a wall or obstruction.");
             return false;
         }
@@ -5108,7 +5108,7 @@ async fn execute_clear_furnace(
     bot.look_at(position.center());
     bot.wait_updates(1).await;
     if cancelled() { return false; }
-    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+    if !matches!(bot.hit_result(), HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
         bot.chat("I don't have a clear line of sight to that furnace.");
         return false;
     }
@@ -5246,7 +5246,7 @@ async fn execute_smelt_collect(
     bot.look_at(position.center());
     bot.wait_updates(1).await;
     if cancelled() { return false; }
-    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+    if !matches!(bot.hit_result(), HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
         if announce { bot.chat("I don't have a clear line of sight to that furnace."); }
         return false;
     }
@@ -5360,7 +5360,7 @@ async fn execute_smelt(
     bot.wait_updates(1).await;
     if cancelled() { return false; }
     match bot.hit_result() {
-        Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+        HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
         _ => {
             bot.chat("I don't have a clear line of sight to that furnace.");
             return false;
