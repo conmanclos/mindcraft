@@ -3258,7 +3258,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                             tracing::warn!(%error, "could not persist Minecraft chat turn");
                                         }
                                     }
-                                    let safe_reply: String = reply.chars().take(240).collect();
+                                    let safe_reply = truncate_utf16(&reply, 240);
                                     if bot.exists()
                                         && !safe_reply.trim().is_empty()
                                         && !safe_reply.trim_start().starts_with('/')
