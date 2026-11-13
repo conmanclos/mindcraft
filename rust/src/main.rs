@@ -168,6 +168,13 @@ fn print_json(value: &Value) -> Result<()> {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
+    // Conversation history, world memories, Microsoft auth caches, and SQLite
+    // WAL/SHM files may contain private user or account data. Restrict all
+    // subsequently-created files and directories to the current OS user.
+    #[cfg(unix)]
+    unsafe {
+        libc::umask(0o077);
+    }
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
