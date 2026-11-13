@@ -833,6 +833,26 @@ impl Store {
             "Verified completion by {agent_id} for the {role} task: {description}. Observed result: {}",
             verification_note.trim()
         );
+        let memory_exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM memories WHERE kind='episodic' AND subject=?1)",
+            [&memory_subject],
+            |row| row.get(0),
+        )?;
+        if !memory_exists {
+            let memory_count: i64 = tx.query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))?;
+            if memory_count >= MAX_MEMORY_RECORDS {
+                tx.execute(
+                    "DELETE FROM memories WHERE id IN (
+                       SELECT id FROM memories
+                       ORDER BY importance ASC,
+                                COALESCE(last_accessed_at, updated_at) ASC,
+                                updated_at ASC, id ASC
+                       LIMIT 1
+                     )",
+                    [],
+                )?;
+            }
+        }
         tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source)
              VALUES ('episodic', ?1, ?2, 1.0, 35, 'verified_task')
