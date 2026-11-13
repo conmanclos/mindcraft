@@ -2580,8 +2580,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
                                 client.chat("That container coordinate is not a loaded non-air block."); return;
                             };
-                            if is_trapped_chest_block(&target_block) {
-                                client.chat("I won't open a trapped chest because opening it can trigger redstone mechanisms."); return;
+                            if !is_storage_container_block(&target_block) {
+                                client.chat("That block is not a supported storage container (chest, ender chest, barrel, or shulker box)."); return;
                             }
                             let chunk_storage = world.read().chunks.clone();
                             if !goto_cancellable(&client, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
@@ -2683,8 +2683,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("That container coordinate is not a loaded non-air block.");
                                 return;
                             };
-                            if is_trapped_chest_block(&target_block) {
-                                client.chat("I won't open a trapped chest because opening it can trigger redstone mechanisms.");
+                            if !is_storage_container_block(&target_block) {
+                                client.chat("That block is not a supported storage container (chest, ender chest, barrel, or shulker box).");
                                 return;
                             }
                             let chunk_storage = world.read().chunks.clone();
@@ -3703,8 +3703,12 @@ async fn execute_craft(
                 bot.chat("I can't read the loaded world to reach the crafting table.");
                 return false;
             };
-            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+            let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
                 bot.chat("That crafting-table coordinate is not a loaded non-air block.");
+                return false;
+            };
+            if !is_crafting_table_block(&target_block) {
+                bot.chat("That coordinate is not a crafting table; I won't open an unrelated block.");
                 return false;
             }
             let chunk_storage = world.read().chunks.clone();
@@ -4493,8 +4497,8 @@ async fn execute_container_view(
         bot.chat("That container coordinate is not a loaded non-air block.");
         return;
     };
-    if is_trapped_chest_block(&target_block) {
-        bot.chat("I won't open a trapped chest for inspection because opening it can trigger redstone mechanisms.");
+    if !is_storage_container_block(&target_block) {
+        bot.chat("That block is not a supported storage container (chest, ender chest, barrel, or shulker box).");
         return;
     }
     let chunk_storage = world.read().chunks.clone();
@@ -4581,8 +4585,8 @@ async fn execute_container_sort(
         bot.chat("That storage coordinate is not a loaded non-air block.");
         return;
     };
-    if is_trapped_chest_block(&target_block) {
-        bot.chat("I won't open a trapped chest because opening it can trigger redstone mechanisms.");
+    if !is_storage_container_block(&target_block) {
+        bot.chat("That block is not a supported storage container (chest, ender chest, barrel, or shulker box).");
         return;
     }
     let chunk_storage = world.read().chunks.clone();
@@ -5318,8 +5322,12 @@ async fn execute_clear_furnace(
         bot.chat("The world is unavailable; I cannot reach that furnace.");
         return false;
     };
-    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+    let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
         bot.chat("That coordinate is not a loaded non-air furnace block.");
+        return false;
+    };
+    if !is_furnace_block(&target_block) {
+        bot.chat("That coordinate is not a furnace, blast furnace, or smoker; no container was opened.");
         return false;
     }
     let chunk_storage = world.read().chunks.clone();
@@ -5456,8 +5464,12 @@ async fn execute_smelt_collect(
         if announce { bot.chat("The world is unavailable; I cannot reach that furnace."); }
         return false;
     };
-    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+    let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
         if announce { bot.chat("That furnace coordinate is not a loaded non-air block."); }
+        return false;
+    };
+    if !is_furnace_block(&target_block) {
+        if announce { bot.chat("That coordinate is not a furnace, blast furnace, or smoker; no container was opened."); }
         return false;
     }
     let chunk_storage = world.read().chunks.clone();
@@ -5568,8 +5580,12 @@ async fn execute_smelt(
         bot.chat("I can't read the loaded world to reach that furnace.");
         return false;
     };
-    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+    let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
         bot.chat("That furnace coordinate is not a loaded non-air block.");
+        return false;
+    };
+    if !is_furnace_block(&target_block) {
+        bot.chat("That coordinate is not a furnace, blast furnace, or smoker; no container was opened.");
         return false;
     }
     let chunk_storage = world.read().chunks.clone();
