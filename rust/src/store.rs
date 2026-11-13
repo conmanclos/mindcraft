@@ -459,6 +459,15 @@ impl Store {
         description: &str,
         tasks: &[(String, String, i32)],
     ) -> Result<(i64, Vec<i64>)> {
+        if description.trim().is_empty() || description.len() > MAX_GOAL_BYTES {
+            anyhow::bail!("goal descriptions must contain 1-4000 bytes");
+        }
+        if tasks.is_empty() || tasks.len() > MAX_TASKS_PER_GOAL {
+            anyhow::bail!("goal plans must contain 1-12 specialist tasks");
+        }
+        for (role, task_description, _) in tasks {
+            validate_task(role, task_description)?;
+        }
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         prune_terminal_goal_history(&tx, 1, tasks.len())?;
