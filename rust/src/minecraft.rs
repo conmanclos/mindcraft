@@ -58,7 +58,7 @@ struct TradeOfferSnapshot {
     input_a_count: i32,
     input_b: Option<(String, i32)>,
     output: String,
-    output_count: u8,
+    output_count: i32,
     out_of_stock: bool,
 }
 
@@ -589,7 +589,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 || !offer.price_multiplier.is_finite()
                                 || !(0.0..=10.0).contains(&offer.price_multiplier)
                                 || input_b.as_ref().is_some_and(|(_, count)| *count <= 0 || *count > 64)
-                                || output_count == 0 || output_count > 64 {
+                                || output_count <= 0 || output_count > 64 {
                                 return None;
                             }
                             let demand_delta = ((offer.base_cost_a.count as f32 * offer.demand as f32)
@@ -3545,7 +3545,7 @@ async fn execute_trade(
     let count_output = |items: &[azalea_inventory::ItemStack]| -> u16 {
         player_slots.iter().filter_map(|slot| items.get(*slot))
             .filter(|item| !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &offer.output))
-            .map(|item| u16::from(item.count()))
+            .map(|item| u16::try_from(item.count()).unwrap_or(0))
             .sum()
     };
     let before = count_output(&slots);
@@ -3555,7 +3555,7 @@ async fn execute_trade(
     if cancelled() { return false; }
     let after_slots = container.slots().unwrap_or_default();
     let after = count_output(&after_slots);
-    if after >= before + u16::from(offer.output_count) {
+    if after >= before + offer.output_count as u16 {
         bot.chat(format!("Completed merchant trade #{index}: received {}x {}.", offer.output_count, offer.output));
         true
     } else {
