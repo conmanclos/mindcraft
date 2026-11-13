@@ -7080,7 +7080,8 @@ async fn restock_one_food_stack_to_hotbar(bot: &Client, allow_golden_apple: bool
         if (golden_apple && !allow_golden_apple) || (!golden_apple && !allow_ordinary_food) {
             return None;
         }
-        Some((slot, safe_food_priority(&compact)?))
+        let priority = safe_food_priority(&compact)?;
+        Some((slot, if golden_apple && allow_golden_apple { priority.saturating_add(1) } else { priority }))
     }).max_by_key(|(_, priority)| *priority)?.0;
     let source_before = slots.get(source_slot)?.clone();
     let inventory = bot.get_inventory().ok()?;
