@@ -583,6 +583,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let output_count = offer.result.count();
                             if index > u8::MAX as usize
                                 || offer.base_cost_a.count <= 0 || offer.base_cost_a.count > 64
+                                || !offer.base_cost_a.components.expected.is_empty()
+                                || offer.cost_b.as_ref().is_some_and(|cost| !cost.components.expected.is_empty())
+                                || offer.result.component_patch().iter().next().is_some()
                                 || !offer.price_multiplier.is_finite()
                                 || !(0.0..=10.0).contains(&offer.price_multiplier)
                                 || input_b.as_ref().is_some_and(|(_, count)| *count <= 0 || *count > 64)
