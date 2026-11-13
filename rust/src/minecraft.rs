@@ -583,14 +583,22 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let output_count = offer.result.count();
                             if index > u8::MAX as usize
                                 || offer.base_cost_a.count <= 0 || offer.base_cost_a.count > 64
+                                || !offer.price_multiplier.is_finite()
+                                || !(0.0..=10.0).contains(&offer.price_multiplier)
                                 || input_b.as_ref().is_some_and(|(_, count)| *count <= 0 || *count > 64)
                                 || output_count == 0 || output_count > 64 {
                                 return None;
                             }
+                            let demand_delta = ((offer.base_cost_a.count as f32 * offer.demand as f32)
+                                * offer.price_multiplier).floor() as i32;
+                            let adjusted_input_a_count = offer.base_cost_a.count
+                                .saturating_add(demand_delta)
+                                .saturating_add(offer.special_price_diff)
+                                .clamp(1, 64);
                             Some(TradeOfferSnapshot {
                                 index: index as u32,
                                 input_a: format!("{:?}", offer.base_cost_a.item),
-                                input_a_count: offer.base_cost_a.count,
+                                input_a_count: adjusted_input_a_count,
                                 input_b,
                                 output: format!("{:?}", offer.result.kind()),
                                 output_count,
