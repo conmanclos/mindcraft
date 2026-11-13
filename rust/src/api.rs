@@ -595,13 +595,31 @@ fn decode_sponge_varints(data: &[i8], expected: usize) -> Result<Vec<u32>, (Stat
     Ok(output)
 }
 
-fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)> {
-    if state.contains('[') || state.contains(']') {
-        return Err((StatusCode::NOT_IMPLEMENTED, format!(
-            "Sponge block state '{state}' includes orientation or behavior properties that the item-placement executor cannot preserve safely"
-        )));
-    }
-    let block_state = state;
+fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (StatusCode, String)> {
+    let (block_state, axis) = if let Some((block_state, raw_properties)) = state.split_once('[') {
+        let properties = raw_properties.strip_suffix(']')
+            .filter(|properties| !properties.contains('[') && !properties.contains(']'))
+            .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()))?;
+        let entries = properties.split(',').collect::<Vec<_>>();
+        if entries.len() != 1 {
+            return Err((StatusCode::NOT_IMPLEMENTED, format!(
+                "Sponge block state '{state}' has multiple properties; only axis orientation is currently supported"
+            )));
+        }
+        let (key, value) = entries[0].split_once('=')
+            .ok_or((StatusCode::BAD_REQUEST, "Sponge block-state properties must use key=value syntax".into()))?;
+        if key != "axis" || !matches!(value, "x" | "y" | "z") {
+            return Err((StatusCode::NOT_IMPLEMENTED, format!(
+                "Sponge block state '{state}' uses an unsupported property; only axis=x/y/z can be reproduced"
+            )));
+        }
+        (block_state, Some(value.to_owned()))
+    } else {
+        if state.contains(']') {
+            return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()));
+        }
+        (state, None)
+    };
     let (namespace, block) = block_state.split_once(':').unwrap_or(("minecraft", block_state));
     if namespace != "minecraft" {
         return Err((StatusCode::NOT_IMPLEMENTED, format!("Sponge schematic block namespace '{namespace}' is not supported")));
@@ -637,7 +655,7 @@ fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)
     } else {
         block.to_owned()
     };
-    Ok(Some(item))
+    Ok(Some((item, axis)))
 }
 
 fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (StatusCode, String)> {
