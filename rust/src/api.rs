@@ -130,6 +130,15 @@ fn consume_rate_window(window: &mut RateWindow, now: Instant) -> bool {
     true
 }
 
+async fn no_store_responses(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, max-age=0"),
+    );
+    response
+}
+
 async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next) -> Response {
     // Only authenticated credentials receive individual buckets. Otherwise an
     // unauthenticated caller can fill the bounded map with arbitrary bearer
@@ -351,7 +360,8 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
             .allow_origin([HeaderValue::from_static("tauri://localhost"), HeaderValue::from_static("http://tauri.localhost")])
             .allow_methods([Method::GET, Method::POST, Method::DELETE])
             .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]))
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(no_store_responses));
 
     if let (Some(cert_path), Some(key_path)) = (&config.tls_cert_path, &config.tls_key_path) {
         let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await?;
