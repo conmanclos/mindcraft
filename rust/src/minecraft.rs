@@ -512,8 +512,16 @@ async fn run_specialist_task(
         }
         let command = crate::api::command_from_action(action.clone())
             .map_err(|(_, reason)| anyhow::anyhow!("planner produced an unsupported task action: {reason}"))?;
-        let sender = status.command_tx.lock().await.clone()
-            .ok_or_else(|| anyhow::anyhow!("Minecraft command dispatcher is unavailable"))?;
+        let Some(sender) = status.command_tx.lock().await.clone() else {
+            if store.release_task(task.id, &agent_id)? {
+                bot.chat(format!(
+                    "Specialist task #{} is waiting because the Minecraft command dispatcher is offline. I returned it to the queue without consuming an attempt.",
+                    task.id
+                ));
+                return Ok(());
+            }
+            anyhow::bail!("Minecraft command dispatcher is unavailable and the task lease could not be released");
+        };
         if !store.mark_task_for_review(task.id, &agent_id)? {
             anyhow::bail!("task lease could not be moved into the review queue");
         }
