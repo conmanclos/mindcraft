@@ -917,6 +917,26 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "optimize_armor" => Ok(BotCommand::OptimizeArmor),
         "inventory_sort" => Ok(BotCommand::InventorySort),
+        "trade" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z to inspect a nearby merchant or x,y,z,index to execute one offer".into()))?;
+            let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
+            if parts.len() != 3 && parts.len() != 4 {
+                return Err((StatusCode::BAD_REQUEST, "trade target must be x,y,z or x,y,z,offer_index".into()));
+            }
+            let coordinates = parts[..3].iter().map(|value| value.parse::<i32>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "merchant coordinates must be integers".into()))?;
+            if coordinates[1] < -64 || coordinates[1] > 320
+                || coordinates.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "merchant coordinates are outside supported world bounds".into()));
+            }
+            let offer_index = if parts.len() == 4 {
+                let index = parts[3].parse::<u8>()
+                    .map_err(|_| (StatusCode::BAD_REQUEST, "merchant offer index must be an integer from 0 to 255".into()))?;
+                Some(index)
+            } else { None };
+            Ok(BotCommand::Trade(coordinates[0], coordinates[1], coordinates[2], offer_index))
+        }
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
