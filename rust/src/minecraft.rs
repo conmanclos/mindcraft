@@ -2648,29 +2648,73 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             let total = jobs.len();
-                            for (index, job) in jobs.into_iter().enumerate() {
+                            // Load every distinct furnace before waiting for any output. Each
+                            // furnace keeps smelting on the server while the bot visits the next.
+                            for (index, job) in jobs.iter().enumerate() {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                     return;
                                 }
-                                client.chat(format!("Starting furnace queue job {} of {} at {}, {}, {}.", index + 1, total, job.x, job.y, job.z));
-                                let completed = execute_smelt(
+                                client.chat(format!("Preparing parallel furnace job {} of {} at {}, {}, {}.", index + 1, total, job.x, job.y, job.z));
+                                let started = execute_smelt(
                                     client.clone(),
-                                    job.input,
+                                    job.input.clone(),
                                     BlockPos::new(job.x, job.y, job.z),
                                     job.count,
                                     generation_state.clone(),
                                     generation,
                                     false,
                                 ).await;
-                                if !completed {
+                                if !started {
                                     if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                        client.chat(format!("Furnace queue stopped at job {} of {}; later furnaces were left untouched.", index + 1, total));
+                                        client.chat(format!("Furnace queue stopped while preparing job {} of {}; later furnaces were left untouched.", index + 1, total));
                                     }
                                     return;
                                 }
                             }
+
+                            let mut collected_jobs = 0usize;
+                            for (index, job) in jobs.iter().enumerate() {
+                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    return;
+                                }
+                                let position = BlockPos::new(job.x, job.y, job.z);
+                                let deadline = tokio::time::Instant::now() + Duration::from_secs(10 * 60);
+                                let mut collected = false;
+                                while !collected && tokio::time::Instant::now() < deadline {
+                                    if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+                                        || !client.exists() {
+                                        return;
+                                    }
+                                    collected = execute_smelt_collect(
+                                        client.clone(),
+                                        job.input.clone(),
+                                        position,
+                                        job.count,
+                                        generation_state.clone(),
+                                        generation,
+                                        false,
+                                    ).await;
+                                    if !collected {
+                                        tokio::time::sleep(Duration::from_secs(5)).await;
+                                    }
+                                }
+                                if collected {
+                                    collected_jobs += 1;
+                                    client.chat(format!("Collected furnace queue job {} of {} after its complete output was server-confirmed.", index + 1, total));
+                                } else {
+                                    schedule_smelt_followup(
+                                        client.clone(),
+                                        job.input.clone(),
+                                        position,
+                                        job.count,
+                                        generation_state.clone(),
+                                        generation,
+                                    );
+                                    client.chat(format!("Furnace queue job {} of {} is still running or unavailable; background recovery will continue checking it.", index + 1, total));
+                                }
+                            }
                             if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                client.chat(format!("Finished processing the {} queued furnace jobs. Check each furnace output and inventory.", total));
+                                client.chat(format!("Furnace queue finished: {collected_jobs} of {total} complete batches collected; any remaining jobs have background recovery scheduled."));
                             }
                         });
                     }
