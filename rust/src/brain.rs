@@ -208,7 +208,7 @@ impl Brain {
     pub fn authorize_action(&self, action: &PlannedAction, explicit_approval: bool) -> Result<()> {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
-        let safe = ["look", "follow", "stop", "stay", "say", "goto", "explore", "locate", "nearby_blocks", "craftable", "craft_plan", "entities", "locate_entity", "go_to_surface", "move_away", "remember_here", "go_to_remembered_place", "saved_places", "look_at_player", "go_to_bed", "container_view", "jump"];
+        let safe = ["look", "follow", "stop", "stay", "say", "goto", "explore", "locate", "nearby_blocks", "craftable", "craft_plan", "entities", "locate_entity", "go_to_surface", "move_away", "remember_here", "go_to_remembered_place", "saved_places", "look_at_player", "goto_player", "go_to_bed", "container_view", "jump"];
         let destructive = ["attack", "mine", "collect", "place", "till", "plant", "harvest", "clear_furnace", "build", "craft", "smelt", "smelt_collect", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "container_sort", "equip", "optimize_armor", "inventory_sort", "inventory_compact", "trade", "enter_portal", "use_item", "eat"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
