@@ -620,20 +620,25 @@ fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (S
         let properties = raw_properties.strip_suffix(']')
             .filter(|properties| !properties.contains('[') && !properties.contains(']'))
             .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()))?;
-        let entries = properties.split(',').collect::<Vec<_>>();
-        if entries.len() != 1 {
-            return Err((StatusCode::NOT_IMPLEMENTED, format!(
-                "Sponge block state '{state}' has multiple properties; only axis orientation is currently supported"
-            )));
+        let mut axis = None;
+        for entry in properties.split(',') {
+            let (key, value) = entry.split_once('=')
+                .ok_or((StatusCode::BAD_REQUEST, "Sponge block-state properties must use key=value syntax".into()))?;
+            match key {
+                "axis" if axis.is_none() && matches!(value, "x" | "y" | "z") => {
+                    axis = Some(value.to_owned());
+                }
+                // These explicit false values match the default placement state.
+                "waterlogged" | "lit" | "open" | "powered" | "triggered" | "extended" | "snowy"
+                    if value == "false" => {}
+                _ => {
+                    return Err((StatusCode::NOT_IMPLEMENTED, format!(
+                        "Sponge block state '{state}' uses a property the placement executor cannot reproduce"
+                    )));
+                }
+            }
         }
-        let (key, value) = entries[0].split_once('=')
-            .ok_or((StatusCode::BAD_REQUEST, "Sponge block-state properties must use key=value syntax".into()))?;
-        if key != "axis" || !matches!(value, "x" | "y" | "z") {
-            return Err((StatusCode::NOT_IMPLEMENTED, format!(
-                "Sponge block state '{state}' uses an unsupported property; only axis=x/y/z can be reproduced"
-            )));
-        }
-        (block_state, Some(value.to_owned()))
+        (block_state, axis)
     } else {
         if state.contains(']') {
             return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()));
