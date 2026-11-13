@@ -778,7 +778,36 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Tick => {
             let mut critical_health = false;
             if bot.exists() {
-                let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) else { return Ok(()); };
+                let (health, hunger) = match (bot.health(), bot.hunger()) {
+                    (Ok(health), Ok(hunger)) => (health, hunger),
+                    (health_result, hunger_result) => {
+                        tracing::warn!(
+                            username = %bot.username(),
+                            health_error = ?health_result.err(),
+                            hunger_error = ?hunger_result.err(),
+                            "survival telemetry is unavailable; stopping movement and discarding queued gameplay commands"
+                        );
+                        if let Some(generation) = &state.mine_generation {
+                            generation.fetch_add(1, Ordering::Relaxed);
+                        }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        cancel_active_mining(&bot);
+                        if let Some(receiver) = &state.commands {
+                            let mut receiver = receiver.lock().await;
+                            loop {
+                                match receiver.try_recv() {
+                                    Ok(_) | Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                                    Err(broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed) => break,
+                                }
+                            }
+                        }
+                        return Ok(());
+                    }
+                };
                 critical_health = !health.is_finite() || health <= 6.0;
                 if !health.is_finite() {
                     tracing::warn!(username = %bot.username(), "health telemetry is invalid; suppressing gameplay actions until a valid snapshot arrives");
