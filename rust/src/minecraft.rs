@@ -5309,6 +5309,14 @@ async fn execute_hotbar_restock(
                 menu.slot(source_slot).map(|item| item.is_empty())
             }).unwrap_or(false);
             if !picked_up {
+                let cursor_may_hold_stack = bot.menu().ok().and_then(|menu| {
+                    menu.try_as_player()?;
+                    menu.slot(source_slot).map(|item| item.is_empty())
+                }).unwrap_or(false);
+                if cursor_may_hold_stack {
+                    inventory.left_click(source_slot);
+                    bot.wait_updates(2).await;
+                }
                 bot.chat("The server did not confirm picking up the matching inventory stack; hotbar restocking stopped.");
                 return;
             }
@@ -5386,6 +5394,14 @@ async fn execute_hotbar_restock(
             menu.slot(source_slot).map(|item| item.is_empty())
         }).unwrap_or(false);
         if !picked_up {
+            let cursor_may_hold_stack = bot.menu().ok().and_then(|menu| {
+                menu.try_as_player()?;
+                menu.slot(source_slot).map(|item| item.is_empty())
+            }).unwrap_or(false);
+            if cursor_may_hold_stack {
+                inventory.left_click(source_slot);
+                bot.wait_updates(2).await;
+            }
             bot.chat("The server did not confirm picking up the selected inventory stack; hotbar restocking stopped.");
             return;
         }
