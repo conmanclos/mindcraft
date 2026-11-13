@@ -3149,7 +3149,7 @@ async fn execute_container_sort(
                 drop(container);
                 return;
             }
-            let key = |item: &_| -> String {
+            let key = |item| -> String {
                 if item.is_empty() { String::new() } else { format!("{item:?}") }
             };
             let mut current = (0..container_slots).map(|slot| key(&snapshot[slot])).collect::<Vec<_>>();
