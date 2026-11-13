@@ -265,11 +265,13 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
             if entry.get_password().is_err() {
                 return Err("This AI provider requires an API key. Enter it once to store it in the operating system credential store.".into());
             }
-        } else if let Ok(entry) = Entry::new("com.mindcraft.minecraft", &key_account) {
-            // Never carry a previously stored hosted-provider key into a
-            // user-configured local/OpenAI-compatible endpoint unless the
-            // user enters that key explicitly for this setup.
-            let _ = entry.delete_credential();
+        } else if ["ollama", "lmstudio", "vllm"].contains(&setup.provider.as_str()) {
+            // Local providers do not use API keys. Remove only a credential
+            // saved specifically for this local provider; preserve optional
+            // OpenAI-compatible endpoint credentials across ordinary saves.
+            if let Ok(entry) = Entry::new("com.mindcraft.minecraft", &key_account) {
+                let _ = entry.delete_credential();
+            }
         }
     } else {
         let entry = Entry::new("com.mindcraft.minecraft", &key_account)
