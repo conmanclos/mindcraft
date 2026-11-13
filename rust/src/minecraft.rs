@@ -46,6 +46,7 @@ pub enum BotCommand {
     GoToRememberedPlace(String),
     SavedPlaces,
     LookAtPlayer(String),
+    GotoPlayer(String),
     GoToBed,
     Place(i32, i32, i32),
     Till(i32, i32, i32),
@@ -1572,6 +1573,53 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             client.block_interact(destination);
                             client.wait_ticks(3).await;
                             client.chat("Interacted with the nearest Overworld bed. Sleeping depends on the server's time, nearby threats, and bed availability.");
+                        });
+                    }
+                    BotCommand::GotoPlayer(name) => {
+                        let tab_list = bot.tab_list();
+                        let target = bot.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true)
+                            .into_iter()
+                            .find(|player| {
+                                player.exists()
+                                    && tab_list.get(&player.uuid()).is_some_and(|profile| profile.profile.name.eq_ignore_ascii_case(&name))
+                            });
+                        let Some(target) = target else {
+                            bot.chat(format!("I can't find a visible player named '{name}'."));
+                            continue;
+                        };
+                        let target_position = target.position();
+                        let destination = BlockPos::new(target_position.x.floor() as i32, target_position.y.floor() as i32, target_position.z.floor() as i32);
+                        let Ok(own_position) = bot.position() else { continue; };
+                        let dx = own_position.x - target_position.x;
+                        let dy = own_position.y - target_position.y;
+                        let dz = own_position.z - target_position.z;
+                        if dx * dx + dy * dy + dz * dz > 128.0 * 128.0 {
+                            bot.chat("That player is more than 128 blocks away; move closer or use follow.");
+                            continue;
+                        }
+                        let Ok(world) = bot.world() else {
+                            bot.chat("The loaded world is unavailable; I can't pathfind to that player.");
+                            continue;
+                        };
+                        let chunk_storage = world.read().chunks.clone();
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(current) = &state.follow_target { *current.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            if !goto_cancellable(&client, ReachBlockPosGoal::new(destination, chunk_storage), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat(format!("Pathfinding to player '{name}' timed out or failed."));
+                                }
+                                return;
+                            }
+                            if !client.exists() || generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) { return; }
+                            client.chat(format!("Reached the area near player '{name}'."));
                         });
                     }
                     BotCommand::LookAtPlayer(name) => {
