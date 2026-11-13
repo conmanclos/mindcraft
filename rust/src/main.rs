@@ -191,7 +191,12 @@ async fn main() -> Result<()> {
     unsafe {
         libc::umask(0o077);
     }
-    dotenvy::dotenv().ok();
+    // A missing .env is normal for environment-only/headless launches, but
+    // an existing malformed file must not be silently ignored and replaced by
+    // unrelated defaults from the parent shell.
+    if std::path::Path::new(".env").is_file() {
+        dotenvy::dotenv()?;
+    }
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
