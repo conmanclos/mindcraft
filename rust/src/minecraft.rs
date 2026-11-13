@@ -757,6 +757,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 connection.last_error = Some(format!("{reason:?}"));
                 connection.last_disconnected_unix = Some(unix_timestamp());
             }
+            // Merchant container IDs and offers are connection-scoped. Never
+            // reuse a stale menu snapshot after Azalea reconnects the client.
+            if let Some(position) = &state.merchant_position { *position.lock().await = None; }
+            if let Some(offers) = &state.merchant_offers { *offers.lock().await = None; }
             if let Some(connected) = &state.connected {
                 if connected.swap(false, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
