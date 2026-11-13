@@ -443,6 +443,21 @@ fn instant_before(duration: Duration) -> Instant {
     now.checked_sub(duration).unwrap_or(now)
 }
 
+fn is_transient_provider_error(error: &anyhow::Error) -> bool {
+    if error.downcast_ref::<tokio::time::error::Elapsed>().is_some() {
+        return true;
+    }
+    error.downcast_ref::<reqwest::Error>().is_some_and(|request_error| {
+        request_error.is_timeout()
+            || request_error.is_connect()
+            || request_error.status().is_some_and(|status| {
+                status == reqwest::StatusCode::REQUEST_TIMEOUT
+                    || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                    || status.is_server_error()
+            })
+    })
+}
+
 async fn run_specialist_task(
     bot: &Client,
     brain: Arc<Brain>,
@@ -514,6 +529,18 @@ async fn run_specialist_task(
         Ok::<(), anyhow::Error>(())
     }.await;
     if let Err(error) = result {
+        // Provider outages and planner timeouts are infrastructure failures,
+        // not failed Minecraft work. Release the lease without consuming one
+        // of the task's bounded execution attempts.
+        if is_transient_provider_error(&error) {
+            if store.release_task(task.id, &agent_id).unwrap_or(false) {
+                bot.chat(format!(
+                    "Specialist task #{} is paused because the AI provider is temporarily unavailable. I returned it to the queue without consuming an attempt.",
+                    task.id
+                ));
+                return Ok(());
+            }
+        }
         let mut reason = error.to_string();
         if reason.len() > 900 {
             let mut boundary = 900;
