@@ -1035,6 +1035,15 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "stop" | "stay" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
+        "craft_plan" => {
+            let recipe = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a supported recipe name".into()))?;
+            let recipe = recipe.trim().to_ascii_lowercase();
+            if recipe.is_empty() || recipe.len() > 64
+                || !recipe.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+                return Err((StatusCode::BAD_REQUEST, "craft_plan requires a 1-64 character recipe identifier".into()));
+            }
+            Ok(BotCommand::CraftPlan(recipe))
+        }
         "go_to_surface" => Ok(BotCommand::GoToSurface),
         "go_to_bed" => Ok(BotCommand::GoToBed),
         "look_at_player" => {
