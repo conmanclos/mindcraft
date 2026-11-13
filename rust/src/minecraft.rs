@@ -961,7 +961,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 }
                 // Autonomous armor reflex fills empty armor slots only; it never replaces worn gear.
                 // Explicitly approved optimize_armor actions handle intentional upgrades.
-                if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous()) {
+                if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
+                    && !critical_health
+                {
                     let should_equip = if let Some(last) = &state.last_auto_armor {
                         let mut last = last.lock().await;
                         if last.elapsed() >= Duration::from_secs(30) {
