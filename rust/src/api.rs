@@ -1035,6 +1035,25 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "stop" | "stay" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
+        "locate_entity" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use entity_name[@range] syntax".into()))?;
+            let (name, range) = match raw.rsplit_once('@') {
+                Some((name, range)) => {
+                    let range = range.trim().parse::<u16>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "locate_entity range must be an integer from 4 to 128 blocks".into()))?;
+                    if !(4..=128).contains(&range) {
+                        return Err((StatusCode::BAD_REQUEST, "locate_entity range must be from 4 to 128 blocks".into()));
+                    }
+                    (name.trim(), range)
+                }
+                None => (raw.trim(), 32),
+            };
+            if name.is_empty() || name.len() > 64
+                || !name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':')) {
+                return Err((StatusCode::BAD_REQUEST, "locate_entity requires an entity type or player name".into()));
+            }
+            Ok(BotCommand::LocateEntity(name.to_ascii_lowercase(), range))
+        }
         "entities" => {
             let range = action.target.as_deref().unwrap_or("32").trim().parse::<u16>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "entities range must be an integer from 4 to 128 blocks".into()))?;
