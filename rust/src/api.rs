@@ -1034,6 +1034,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "stop" | "stay" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
+        "nearby_blocks" => {
+            let range = action.target.as_deref().unwrap_or("4").trim().parse::<u8>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "nearby_blocks range must be an integer from 1 to 8 blocks".into()))?;
+            if !(1..=8).contains(&range) {
+                return Err((StatusCode::BAD_REQUEST, "nearby_blocks range must be from 1 to 8 blocks".into()));
+            }
+            Ok(BotCommand::NearbyBlocks(range))
+        }
         "locate" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use block_name[@range] syntax, for example diamond_ore@128".into()))?;
             let (block_name, range) = match raw.split_once('@') {
