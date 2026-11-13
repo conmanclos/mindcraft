@@ -3973,7 +3973,7 @@ async fn execute_smelt_collect(
         ready = container.slots().and_then(|slots| slots.get(2).map(|item| {
             !item.is_empty()
                 && item.count() >= count
-                && item_name_matches(&format!("{:?}", item.kind()), result_name)
+                && item_name_matches_exact(&format!("{:?}", item.kind()), result_name)
         })).unwrap_or(false);
         if ready { break; }
         bot.wait_ticks(1).await;
