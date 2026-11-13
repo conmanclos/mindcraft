@@ -306,6 +306,9 @@ async fn main() -> Result<()> {
             }
             let origin = parse_schematic_origin(&origin)?;
             let bytes = std::fs::read(&file)?;
+            if bytes.is_empty() || bytes.len() > 1_400_000 {
+                bail!("compressed Sponge schematic file changed or exceeds the 1.4 MB limit");
+            }
             let request = json!({
                 "origin": origin,
                 "data_base64": BASE64_STANDARD.encode(bytes),
