@@ -49,7 +49,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="row" style="margin-top:10px"><label for="taskFailure" style="min-width:150px">Failure / partial-result details</label><textarea id="taskFailure" rows="2" maxlength="1000" placeholder="Describe what failed or what partially changed so the specialist can replan safely." style="flex:1"></textarea></div>
 <div class="row" style="margin-top:12px"><button id="refreshReview" class="secondary">Refresh review queue</button><select id="reviewQueue" style="flex:1"><option value="">No review tasks loaded</option></select><button id="loadReview" class="secondary" disabled>Load for review</button></div>
 <div style="margin-top:10px"><label for="taskVerification">Observed in-game result (required to complete a task)</label><textarea id="taskVerification" rows="2" maxlength="500" placeholder="Describe what you checked in Minecraft and what actually changed."></textarea></div>
-<div class="muted">Autonomous specialist actions appear here after they are queued. Inspect the result in Minecraft before marking a task complete; release it to retry.</div>
+<div class="muted">Autonomous specialist actions appear here after they are queued. Inspect the result in Minecraft before marking a task complete; release it to retry unchanged, or report a failure to trigger bounded replanning with the failure details.</div>
 <div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
 </section>
 <section class="panel"><h2>Persistent memory</h2>
@@ -282,7 +282,7 @@ $("loadReview").onclick=()=>{
   $("releaseTask").disabled=false;
   $("failTask").disabled=false;
   $("claimTask").disabled=true;
-  $("taskResult").textContent="Review task #"+task.id+" · "+task.role+" · assigned to "+task.assigned_agent+"\n"+task.description+"\nAttempts: "+task.attempts+"/5"+(task.last_error?"\nLast failure: "+task.last_error:"")+"\nVerify the in-game result before completing. Release to return it to the pending queue.";
+  $("taskResult").textContent="Review task #"+task.id+" · "+task.role+" · assigned to "+task.assigned_agent+"\n"+task.description+"\nAttempts: "+task.attempts+"/5"+(task.last_error?"\nLast failure: "+task.last_error:"")+"\nVerify the in-game result before completing. Release to retry unchanged, or report a failure to trigger bounded replanning with the failure details.";
 };
 $("claimTask").onclick=async()=>{
   try{
