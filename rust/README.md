@@ -27,6 +27,8 @@ cargo run -- heartbeat-task 1 Mindcraft
 cargo run -- complete-task 1 Mindcraft
 cargo run -- release-task 1 Mindcraft
 cargo run -- fail-task 1 Mindcraft "Path was blocked"
+cargo run -- issue-agent-credential scout-worker-1
+cargo run -- revoke-agent-credential scout-worker-1
 cargo run -- plan "Gather food and build a shelter" --agent Mindcraft
 cargo run -- create-goal "Prepare a safe base near spawn"
 cargo run -- cancel-goal 1
@@ -35,7 +37,7 @@ cargo run -- build '{"origin":[0,64,0],"blocks":[{"x":0,"y":0,"z":0,"material":"
 cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
 ```
 
-`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, `goal-tasks`, `review-tasks`, and the task lease/claim/complete/release/fail commands expose the same persistent-memory and specialist-task workflow; `build` accepts the same bounded mixed-material schematic payload as the dashboard. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
+`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, `goal-tasks`, `review-tasks`, and the task lease/claim/complete/release/fail commands and short-lived agent credential issue/revoke commands expose the same persistent-memory and specialist-task workflow; `build` accepts the same bounded mixed-material schematic payload as the dashboard. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
 
 ## Current implementation
 
