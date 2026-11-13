@@ -25,10 +25,11 @@ cargo run -- plan "Gather food and build a shelter" --agent Mindcraft
 cargo run -- create-goal "Prepare a safe base near spawn"
 cargo run -- cancel-goal 1
 cargo run -- retry-goal 1
+cargo run -- build '{"origin":[0,64,0],"blocks":[{"x":0,"y":0,"z":0,"material":"oak_planks"}]}'
 cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
 ```
 
-`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, and `goal-tasks` expose the corresponding persistent-memory and task views. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
+`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, and `goal-tasks` expose the corresponding persistent-memory and task views; `build` accepts the same bounded mixed-material schematic payload as the dashboard. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
 
 ## Current implementation
 
