@@ -84,6 +84,7 @@ impl Default for RuntimeStatus {
             online_players: Mutex::new(HashSet::new()),
             agent_tokens: Mutex::new(HashMap::new()),
             connection: Mutex::new(ConnectionDiagnostics::default()),
+            chat_lock: Arc::new(Mutex::new(())),
         }
     }
 }
