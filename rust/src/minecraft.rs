@@ -675,9 +675,29 @@ fn make_state(
     }
 }
 
+async fn discard_pending_commands(state: &BotState, username: &str, reason: &'static str) {
+    let Some(receiver) = &state.commands else { return; };
+    let mut receiver = receiver.lock().await;
+    let mut dropped = 0usize;
+    loop {
+        match receiver.try_recv() {
+            Ok(_) => dropped = dropped.saturating_add(1),
+            Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+                dropped = dropped.saturating_add(skipped as usize);
+            }
+            Err(broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed) => break,
+        }
+    }
+    if dropped > 0 {
+        tracing::warn!(username, dropped, reason, "discarded stale queued commands for this bot");
+    }
+}
+
 async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> {
     match event {
         Event::Spawn => {
+            let username = bot.username();
+            discard_pending_commands(&state, &username, "spawn").await;
             if let Some(status) = &state.status {
                 let mut connection = status.connection.lock().await;
                 connection.state = "connected".into();
@@ -766,6 +786,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             }
         }
         Event::Disconnect(reason) => {
+            let username = bot.username();
+            discard_pending_commands(&state, &username, "disconnect").await;
             if let Some(status) = &state.status {
                 let mut connection = status.connection.lock().await;
                 connection.state = "reconnecting".into();
@@ -804,6 +826,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Tick => {
             // Never dispatch queued gameplay commands through a disconnected client.
             if !bot.exists() {
+                let username = bot.username();
+                discard_pending_commands(&state, &username, "offline tick").await;
                 return Ok(());
             }
             let mut critical_health = false;
