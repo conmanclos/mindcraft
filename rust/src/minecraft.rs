@@ -2455,7 +2455,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let generation_state = state.mine_generation.clone();
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            if place_block_at(&client, position, &generation_state, generation).await {
+                            if place_block_at(&client, position, None, &generation_state, generation).await {
                                 client.chat(format!("Placed a block at {}, {}, {}.", x, y, z));
                             } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 client.chat("Placement was not confirmed. I need an air target, a reachable full-collision support face, line of sight, and a placeable selected block.");
@@ -5814,7 +5814,7 @@ async fn execute_build_mixed(
             selected_slot = Some(slot);
         }
         let target = BlockPos::new(block.x, block.y, block.z);
-        if !place_block_at(&bot, target, &generation_state, generation).await {
+        if !place_block_at(&bot, target, None, &generation_state, generation).await {
             if !cancelled() {
                 bot.chat(format!("Schematic stopped at block {} of {} ({} {} {}): placement was not confirmed. Check support, reach, line of sight, and material stock.", index + 1, blocks.len(), block.x, block.y, block.z));
             }
