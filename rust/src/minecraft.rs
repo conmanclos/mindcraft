@@ -3150,7 +3150,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::Chat(message) => {
             let sender = message.sender();
-            let content = message.content();
+            // Server chat is remote input. Bound it before logging, persistence,
+            // and provider prompting so oversized messages cannot inflate
+            // memory or AI requests.
+            let content = truncate_utf16(&message.content(), 2_000);
             tracing::info!(bot = %bot.username(), sender = ?sender, %content, "Minecraft chat");
 
             let own_username = bot.username();
