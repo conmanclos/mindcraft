@@ -342,7 +342,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
         let address = SocketAddr::from(([127, 0, 0, 1], api_port));
         if let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(200)) {
             let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-            let request = b"GET /api/health HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n";
+            let request = b"GET /api/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
             if stream.write_all(request).is_ok() {
                 let mut response = [0_u8; 128];
                 if let Ok(read) = stream.read(&mut response) {
