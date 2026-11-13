@@ -40,6 +40,7 @@ pub enum BotCommand {
     Entities(u16),
     LocateEntity(String, u16),
     GoToSurface,
+    MoveAway(u8),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1142,6 +1143,61 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("Reached the surface above the current column.");
                             } else {
                                 client.chat("Pathfinding stopped before reaching the surface.");
+                            }
+                        });
+                    }
+                    BotCommand::MoveAway(distance) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let Ok(position) = bot.position() else { continue; };
+                        let origin = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
+                        let Ok(world) = bot.world() else {
+                            bot.chat("The loaded world is unavailable; I can't choose a safe direction.");
+                            continue;
+                        };
+                        let destination = {
+                            let world = world.read();
+                            let offsets = [(0, -1), (1, 0), (0, 1), (-1, 0)];
+                            offsets.into_iter().find_map(|(dx, dz)| {
+                                let target = BlockPos::new(origin.x + dx * i32::from(distance), origin.y, origin.z + dz * i32::from(distance));
+                                let feet = world.get_block_state(target)?;
+                                let head = world.get_block_state(target.up(1))?;
+                                let support = world.get_block_state(target.down(1))?;
+                                let feet_name = format!("{feet:?}").to_ascii_lowercase();
+                                let head_name = format!("{head:?}").to_ascii_lowercase();
+                                let support_name = format!("{support:?}").to_ascii_lowercase();
+                                (feet.is_air() && head.is_air() && !support.is_air()
+                                    && !support_name.contains("water") && !support_name.contains("lava")
+                                    && !feet_name.contains("water") && !head_name.contains("water"))
+                                    .then_some(target)
+                            })
+                        };
+                        let Some(destination) = destination else {
+                            bot.chat("I couldn't find a loaded cardinal destination with clear headroom and solid support at that distance.");
+                            continue;
+                        };
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            if !goto_cancellable(&client, BlockPosGoal(destination), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding away from the current location timed out or failed.");
+                                }
+                                return;
+                            }
+                            let Ok(current) = client.position() else { return; };
+                            let dx = current.x - (destination.x as f64 + 0.5);
+                            let dy = current.y - (destination.y as f64 + 0.5);
+                            let dz = current.z - (destination.z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz <= 9.0 {
+                                client.chat(format!("Moved away from the starting location toward {}, {}, {}.", destination.x, destination.y, destination.z));
+                            } else {
+                                client.chat("Pathfinding stopped before reaching the selected safe destination.");
                             }
                         });
                     }
