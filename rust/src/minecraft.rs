@@ -290,6 +290,7 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
     let center = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
     let world = bot.world().ok()?;
     let world = world.read();
+    let biome = world.get_biome(center).map(|biome| format!("{biome:?}").to_ascii_lowercase()).unwrap_or_default();
     let radius = radius.clamp(4, 8);
     let mut best: Option<(f64, BlockPos, BlockPos, &'static str)> = None;
     for y in -3..=3 {
@@ -300,6 +301,17 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
                 let Some(block) = world.get_block_state(poi) else { continue; };
                 let Some(kind) = point_of_interest_kind(&format!("{block:?}")) else { continue; };
                 let distance_sq = (x * x + y * y + z * z) as f64;
+                // Prefer resources and safe points that are characteristic of
+                // the current biome, without assuming a biome when chunks lack data.
+                let biome_weight = if (biome.contains("nether") || biome.contains("crimson") || biome.contains("warped"))
+                    && matches!(kind, "ancient debris" | "nether gold ore" | "nether quartz ore") { 0.65 }
+                else if (biome.contains("mountain") || biome.contains("peaks") || biome.contains("windswept"))
+                    && kind == "emerald ore" { 0.65 }
+                else if biome.contains("badlands") && kind == "gold ore" { 0.75 }
+                else if (biome.contains("desert") || biome.contains("beach"))
+                    && kind == "archaeology site" { 0.75 }
+                else { 1.0 };
+                let score = distance_sq * biome_weight;
                 // Once the bot has reached a POI, skip it so the patrol moves on.
                 if distance_sq <= 16.0 { continue; }
                 let approaches = [
@@ -312,8 +324,8 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
                 let Some(approach) = approaches.into_iter().find(|candidate| {
                     world.get_block_state(*candidate).is_some_and(|state| state.is_air())
                 }) else { continue; };
-                if best.as_ref().is_none_or(|(score, _, _, _)| distance_sq < *score) {
-                    best = Some((distance_sq, poi, approach, kind));
+                if best.as_ref().is_none_or(|(best_score, _, _, _)| score < *best_score) {
+                    best = Some((score, poi, approach, kind));
                 }
             }
         }
