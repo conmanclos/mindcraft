@@ -616,7 +616,7 @@ fn schematic_axis_supported(block: &str) -> bool {
 }
 
 fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>, Option<bool>)>, (StatusCode, String)> {
-    let (block_state, axis) = if let Some((block_state, raw_properties)) = state.split_once('[') {
+    let (block_state, axis, slab_top) = if let Some((block_state, raw_properties)) = state.split_once('[') {
         let properties = raw_properties.strip_suffix(']')
             .filter(|properties| !properties.contains('[') && !properties.contains(']'))
             .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()))?;
