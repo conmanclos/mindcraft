@@ -2681,7 +2681,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let started_total = started_jobs.len();
                             let mut collected_jobs = 0usize;
                             let mut pending_jobs = Vec::new();
-                            for (job_number, (input, position, count, original_index)) in started_jobs.iter().enumerate() {
+                            for (input, position, count, original_index) in started_jobs.iter() {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                     return;
                                 }
