@@ -716,14 +716,14 @@ fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (Status
     for (index, palette_id) in block_ids.into_iter().enumerate() {
         let state = palette_by_id.get(&palette_id)
             .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic BlockData references an unknown palette ID".into()))?;
-        let Some(material) = sponge_block_item(state)? else { continue; };
+        let Some((material, axis)) = sponge_block_item(state)? else { continue; };
         if blocks.len() >= 256 {
             return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic contains more than 256 non-air blocks; split it into smaller builds".into()));
         }
         let x = index % width;
         let z = (index / width) % length;
         let y = index / (width * length);
-        blocks.push(SchematicBlock { x: x as i32 + offset[0], y: y as i32 + offset[1], z: z as i32 + offset[2], material });
+        blocks.push(SchematicBlock { x: x as i32 + offset[0], y: y as i32 + offset[1], z: z as i32 + offset[2], material, axis });
     }
     if blocks.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains no placeable non-air blocks".into()));
@@ -1037,6 +1037,8 @@ struct SchematicBlock {
     y: i32,
     z: i32,
     material: String,
+    #[serde(default)]
+    axis: Option<String>,
 }
 
 /// Parse a compact JSON schematic with relative coordinates and an absolute
@@ -1074,6 +1076,17 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
             || material == "air" {
             return Err((StatusCode::BAD_REQUEST, "each schematic material must be an exact non-air item name using letters, numbers, and underscores".into()));
         }
+        let mut axis = block.axis.map(|value| value.trim().to_ascii_lowercase());
+        if axis.as_deref().is_some_and(|value| !matches!(value, "x" | "y" | "z")) {
+            return Err((StatusCode::BAD_REQUEST, "schematic axis must be x, y, or z".into()));
+        }
+        if matches!(rotation, 90 | 270) {
+            axis = axis.map(|value| match value.as_str() {
+                "x" => "z".to_owned(),
+                "z" => "x".to_owned(),
+                _ => value,
+            });
+        }
         if [block.x, block.y, block.z].iter().any(|value| value.unsigned_abs() > 32) {
             return Err((StatusCode::BAD_REQUEST, "schematic-relative coordinates must stay within 32 blocks of the origin".into()));
         }
@@ -1095,7 +1108,7 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
         if !seen.insert((x, y, z)) {
             return Err((StatusCode::BAD_REQUEST, "schematic cannot contain duplicate block coordinates".into()));
         }
-        blocks.push(BuildBlock { material, x, y, z });
+        blocks.push(BuildBlock { material, x, y, z, axis });
     }
     blocks.sort_by_key(|block| (block.y, block.x, block.z));
     Ok(blocks)
