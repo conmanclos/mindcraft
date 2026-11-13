@@ -5391,10 +5391,6 @@ async fn execute_clear_furnace(
         bot.chat("The target changed and is no longer a furnace; nothing was opened.");
         return false;
     }
-    if !world.read().get_block_state(position).is_some_and(|block| is_furnace_block(&block)) {
-        bot.chat("The target changed and is no longer a furnace; nothing was opened.");
-        return false;
-    }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
         bot.chat("I couldn't open a furnace interface at that coordinate.");
         return false;
@@ -5660,6 +5656,10 @@ async fn execute_smelt(
             bot.chat("I don't have a clear line of sight to that furnace.");
             return false;
         }
+    }
+    if !world.read().get_block_state(position).is_some_and(|block| is_furnace_block(&block)) {
+        bot.chat("The target changed and is no longer a furnace; nothing was opened.");
+        return false;
     }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
         bot.chat("I couldn't open a furnace interface. Close other menus and check that the target is a furnace, blast furnace, or smoker.");
