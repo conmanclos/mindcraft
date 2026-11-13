@@ -937,6 +937,17 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             } else { None };
             Ok(BotCommand::Trade(coordinates[0], coordinates[1], coordinates[2], offer_index))
         }
+        "enter_portal" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be an existing Nether portal, End portal, or End gateway block coordinate x,y,z".into()))?;
+            let parsed = raw.split(',').map(str::trim).map(str::parse::<i32>)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "portal target must be integer x,y,z coordinates".into()))?;
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+                || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "portal coordinates are outside supported world bounds".into()));
+            }
+            Ok(BotCommand::EnterPortal(parsed[0], parsed[1], parsed[2]))
+        }
         "use_item" => Ok(BotCommand::UseItem),
         "attack" => {
             let target = action.target.unwrap_or_default();
