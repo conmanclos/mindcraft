@@ -1732,7 +1732,7 @@ async fn fail_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     match outcome {
         Some(status) => Ok(Json(serde_json::json!({"recorded":true,"status":status}))),
-        None => Err((StatusCode::CONFLICT, "task is not actively leased by this agent".into())),
+        None => Err((StatusCode::CONFLICT, "task is not claimed or awaiting review under this agent".into())),
     }
 }
 
