@@ -3224,6 +3224,187 @@ async fn execute_build_mixed(
     }
 }
 
+async fn execute_trade(
+    bot: Client,
+    position: BlockPos,
+    offer_index: Option<u8>,
+    offers_state: Option<Arc<Mutex<Option<Vec<TradeOfferSnapshot>>>>>,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return false; }
+
+    let mut merchant = None;
+    let entities = match bot.nearest_entities_by::<(), ()>(|_| true) {
+        Ok(entities) => entities,
+        Err(error) => {
+            bot.chat(format!("I couldn't inspect nearby merchants: {error}"));
+            return false;
+        }
+    };
+    for entity in entities {
+        let kind = entity.kind().map(|kind| format!("{kind:?}")).unwrap_or_default();
+        let compact: String = kind.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if compact != "villager" && compact != "wanderingtrader" { continue; }
+        let Ok(entity_position) = entity.position() else { continue; };
+        if entity_position.x.floor() as i32 != position.x
+            || entity_position.y.floor() as i32 != position.y
+            || entity_position.z.floor() as i32 != position.z {
+            continue;
+        }
+        if !entity.distance_to_client().ok().is_some_and(|distance| distance <= 4.5) {
+            continue;
+        }
+        merchant = Some(entity);
+        break;
+    }
+    let Some(merchant) = merchant else {
+        bot.chat("No villager or wandering trader was found at those block coordinates within 4.5 blocks. Move closer and retry.");
+        return false;
+    };
+
+    if offer_index.is_none() {
+        if bot.menu().ok().and_then(|menu| menu.try_as_player().map(|_| ())).is_none() {
+            bot.chat("Close the current container before opening a merchant trade window.");
+            return false;
+        }
+        if let Some(offers) = &offers_state {
+            *offers.lock().await = None;
+        }
+        if cancelled() { return false; }
+        if merchant.look_at().is_err() { return false; }
+        merchant.interact();
+        let mut offers = None;
+        for _ in 0..60 {
+            if cancelled() { return false; }
+            bot.wait_ticks(1).await;
+            if let Some(snapshot) = offers_state.as_ref().and_then(|state| {
+                state.try_lock().ok().and_then(|guard| guard.clone())
+            }) {
+                if !snapshot.is_empty() {
+                    offers = Some(snapshot);
+                    break;
+                }
+            }
+        }
+        let Some(offers) = offers else {
+            bot.chat("The merchant did not send a trade list. Check line of sight and whether the villager can trade.");
+            return false;
+        };
+        let Ok(menu) = bot.menu() else { return false; };
+        if !matches!(menu, azalea_inventory::Menu::Merchant { .. }) {
+            bot.chat("The merchant trade window did not open; no trade was attempted.");
+            return false;
+        }
+        bot.chat(format!("Merchant offers at {},{},{}:", position.x, position.y, position.z));
+        for offer in offers.iter().take(12) {
+            let second_cost = offer.input_b.as_ref()
+                .map(|(name, count)| format!(" + {count}x {name}"))
+                .unwrap_or_default();
+            bot.chat(format!(
+                "Trade #{}: {}x {}{} -> {}x {}{}",
+                offer.index, offer.input_a_count, offer.input_a, second_cost,
+                offer.output_count, offer.output,
+                if offer.out_of_stock { " (out of stock)" } else { "" }
+            ));
+        }
+        if offers.len() > 12 {
+            bot.chat(format!("{} additional offers omitted from the chat list.", offers.len() - 12));
+        }
+        bot.chat("Choose an offer with trade x,y,z,index. The trade window is left open.");
+        return true;
+    }
+
+    let Some(index) = offer_index else { return false; };
+    let Some(offers) = offers_state.as_ref().and_then(|state| {
+        state.try_lock().ok().and_then(|guard| guard.clone())
+    }) else {
+        bot.chat("No merchant offer list is available. Run trade x,y,z first to inspect this merchant.");
+        return false;
+    };
+    let Some(offer) = offers.iter().find(|offer| offer.index == u32::from(index)).cloned() else {
+        bot.chat(format!("Trade offer #{index} is not in the current merchant offer list."));
+        return false;
+    };
+    if offer.out_of_stock {
+        bot.chat(format!("Trade offer #{index} is out of stock."));
+        return false;
+    }
+    if cancelled() { return false; }
+    let Ok(menu) = bot.menu() else {
+        bot.chat("The merchant trade window is no longer open. Inspect the merchant again.");
+        return false;
+    };
+    if !matches!(menu, azalea_inventory::Menu::Merchant { .. }) {
+        bot.chat("Open the merchant's trade window first by running trade x,y,z.");
+        return false;
+    }
+    bot.write_packet(ServerboundSelectTrade { item: u32::from(index) });
+    bot.wait_ticks(2).await;
+    if cancelled() { return false; }
+
+    let Ok(menu) = bot.menu() else { return false; };
+    if !matches!(menu, azalea_inventory::Menu::Merchant { .. }) {
+        bot.chat("The merchant window closed before the selected trade could be checked.");
+        return false;
+    }
+    let Some(container) = bot.get_inventory().ok() else {
+        bot.chat("I couldn't access the selected merchant offer.");
+        return false;
+    };
+    let Some(slots) = container.slots() else {
+        bot.chat("The merchant trade slots are unavailable.");
+        return false;
+    };
+    let input_a_matches = slots.get(0).is_some_and(|item| {
+        !item.is_empty() && item.count() as i32 >= offer.input_a_count
+            && item_name_matches(&format!("{:?}", item.kind()), &offer.input_a)
+    });
+    let input_b_matches = match (&offer.input_b, slots.get(1)) {
+        (Some((name, count)), Some(item)) => !item.is_empty()
+            && item.count() as i32 >= *count
+            && item_name_matches(&format!("{:?}", item.kind()), name),
+        (None, Some(item)) => item.is_empty(),
+        (None, None) => true,
+        (Some(_), None) => false,
+    };
+    let output_matches = slots.get(2).is_some_and(|item| {
+        !item.is_empty() && item.count() >= offer.output_count
+            && item_name_matches(&format!("{:?}", item.kind()), &offer.output)
+    });
+    if !input_a_matches || !input_b_matches || !output_matches {
+        bot.chat("The server's selected merchant slots do not match the saved offer. Nothing was traded.");
+        return false;
+    }
+
+    let player_slots = menu.player_slots_range().collect::<Vec<_>>();
+    let count_output = |items: &[azalea_inventory::ItemStack]| -> u16 {
+        player_slots.iter().filter_map(|slot| items.get(*slot))
+            .filter(|item| !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &offer.output))
+            .map(|item| u16::from(item.count()))
+            .sum()
+    };
+    let before = count_output(&slots);
+    if cancelled() { return false; }
+    container.shift_click(2);
+    bot.wait_ticks(3).await;
+    if cancelled() { return false; }
+    let after_slots = container.slots().unwrap_or_default();
+    let after = count_output(&after_slots);
+    if after >= before + u16::from(offer.output_count) {
+        bot.chat(format!("Completed merchant trade #{index}: received {}x {}.", offer.output_count, offer.output));
+        true
+    } else {
+        bot.chat(format!("Trade #{index} was not confirmed in inventory. I did not repeat it; check the merchant and inventory before retrying."));
+        false
+    }
+}
+
 async fn execute_smelt(
     bot: Client,
     input: String,
