@@ -392,9 +392,7 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
-    state.store.append_message("user", &request.message)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    state.store.append_message("assistant", &reply)
+    state.store.append_exchange(&request.message, &reply)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(ChatResponse { reply }))
 }
