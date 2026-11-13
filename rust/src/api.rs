@@ -911,6 +911,54 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
             // every support face and stops if a span cannot be supported.
             for x in 0..7 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
         }
+        "platform_11x11" => {
+            for x in 0..11 { for z in 0..11 { positions.push((ox + x, oy, oz + z)); } }
+        }
+        "bridge_15x3" => {
+            for x in 0..15 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
+        }
+        "starter_house_5x5" => {
+            for x in 0..5 { for z in 0..5 { positions.push((ox + x, oy, oz + z)); } }
+            for y in 1..=3 {
+                for x in 0..5 {
+                    for z in 0..5 {
+                        let perimeter = x == 0 || x == 4 || z == 0 || z == 4;
+                        let doorway = z == 0 && x == 2 && y <= 2;
+                        if perimeter && !doorway { positions.push((ox + x, oy + y, oz + z)); }
+                    }
+                }
+            }
+            for x in 0..5 { for z in 0..5 { positions.push((ox + x, oy + 4, oz + z)); } }
+        }
+        "watchtower_5x5" => {
+            for x in 0..5 { for z in 0..5 { positions.push((ox + x, oy, oz + z)); } }
+            for y in 1..=3 {
+                for x in 0..5 {
+                    for z in 0..5 {
+                        let perimeter = x == 0 || x == 4 || z == 0 || z == 4;
+                        let doorway = z == 0 && x == 2 && y <= 2;
+                        if perimeter && !doorway { positions.push((ox + x, oy + y, oz + z)); }
+                    }
+                }
+            }
+            for x in 0..5 { for z in 0..5 {
+                if x == 0 || x == 4 || z == 0 || z == 4 {
+                    positions.push((ox + x, oy + 4, oz + z));
+                }
+            }}
+            for x in 0..5 { for z in 0..5 { positions.push((ox + x, oy + 5, oz + z)); } }
+        }
+        "perimeter_wall_11x11x3" => {
+            for y in 0..3 {
+                for x in 0..11 {
+                    for z in 0..11 {
+                        let perimeter = x == 0 || x == 10 || z == 0 || z == 10;
+                        let doorway = z == 0 && x == 5 && y < 2;
+                        if perimeter && !doorway { positions.push((ox + x, oy + y, oz + z)); }
+                    }
+                }
+            }
+        }
         "watchtower_3x3" => {
             // Compact 3x3 tower with a two-block doorway and a full roof.
             for x in 0..3 { for z in 0..3 { positions.push((ox + x, oy, oz + z)); } }
@@ -944,7 +992,7 @@ fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32
                 }
             }
         }
-        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, wall_7x3, starter_hut, starter_house_4x4, bridge_7x3, watchtower_3x3, or perimeter_wall_7x7x2".into())),
+        _ => return Err((StatusCode::BAD_REQUEST, "unknown blueprint; choose platform_5x5, platform_11x11, wall_7x3, starter_hut, starter_house_4x4, starter_house_5x5, bridge_7x3, bridge_15x3, watchtower_3x3, watchtower_5x5, perimeter_wall_7x7x2, or perimeter_wall_11x11x3".into())),
     }
     positions.sort_by_key(|(x, y, z)| (*y, *x, *z));
     if positions.len() > 256 {
