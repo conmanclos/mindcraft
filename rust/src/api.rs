@@ -1727,7 +1727,7 @@ mod tests {
             api_token: "0123456789abcdef0123456789abcdef".into(),
             api_token_was_generated: false,
             mode: "balanced".into(), provider: "ollama".into(), model: "test".into(),
-            api_key: String::new(), base_url: "http://127.0.0.1:11434/v1".into(),
+            api_key: String::new(), base_url: "http://127.0.0.1:11434/v1".into(), azure_api_version: "2024-10-21".into(),
             minecraft_server: Some("localhost".into()), minecraft_username: "Mindcraft".into(),
             minecraft_accounts: vec!["Mindcraft".into(), "Scout".into(), "Builder".into()],
             minecraft_auth: auth.into(), microsoft_email: None,
