@@ -67,6 +67,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <script>
 const $=id=>document.getElementById(id);
 let token="";
+let statusTimer=null;
 let lastPlan=null;
 let currentTask=null;
 let currentTaskAgentId=null;
@@ -88,9 +89,7 @@ async function api(path,body){
   if(!r.ok)throw Error(data.error||data.message||("HTTP "+r.status));
   return data;
 }
-async function connect(){
-  token=$("token").value.trim();
-  if(!token)throw Error("Enter the API token printed in the terminal.");
+async function refreshStatus(){
   const s=await api("/api/status");
   $("mc").textContent=String(s.connected_agents);
   $("agentRoster").textContent=((s.agents||[]).map(a=>a.agent+" · "+(a.role||"teammate")+" · "+(a.dimension||"unknown dimension")+" · "+(a.biome||"unknown biome")+" · "+a.health+"/20 HP · "+a.food+"/20 food · "+a.position.map(v=>v.toFixed(1)).join(", ")+"\n"+(a.inventory||[]).join(" | ")).join("\n\n")||"No connected agents yet.")+"\nPlayers online: "+((s.online_players||[]).join(", ")||"none");
@@ -111,6 +110,15 @@ async function connect(){
     "Last connection error: "+(d.last_error||"none")
   ].join("\n");
   $("connection").textContent="Connected to local runtime";
+}
+async function connect(){
+  token=$("token").value.trim();
+  if(!token)throw Error("Enter the API token printed in the terminal.");
+  await refreshStatus();
+  if(statusTimer)clearInterval(statusTimer);
+  statusTimer=setInterval(()=>refreshStatus().catch(error=>{
+    $("connection").textContent="Runtime status unavailable: "+error.message;
+  }),5000);
 }
 $("connect").onclick=()=>connect().catch(e=>{$("connection").textContent=e.message});
 $("send").onclick=async()=>{
