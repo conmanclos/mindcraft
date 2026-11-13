@@ -15,8 +15,12 @@ The native CLI can operate the same local runtime used by the browser dashboard 
 
 ```sh
 cargo run -- status
+cargo run -- chat "What should we do next?"
 cargo run -- goals
 cargo run -- memories
+cargo run -- remember preference building "Prefers compact stone bases"
+cargo run -- forget-memory 1
+cargo run -- goal-tasks 1
 cargo run -- plan "Gather food and build a shelter" --agent Mindcraft
 cargo run -- create-goal "Prepare a safe base near spawn"
 cargo run -- cancel-goal 1
@@ -24,7 +28,7 @@ cargo run -- retry-goal 1
 cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
 ```
 
-`execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
+`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, and `goal-tasks` expose the corresponding persistent-memory and task views. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
 
 ## Current implementation
 
