@@ -65,6 +65,22 @@ fn extract_json_segment(raw: &str, open: char, close: char) -> Option<&str> {
     None
 }
 
+fn replicate_output_text(prediction: &Value) -> Result<String> {
+    let output = prediction.get("output")
+        .ok_or_else(|| anyhow!("Replicate succeeded without an output field"))?;
+    let text = match output {
+        Value::String(value) => value.clone(),
+        Value::Array(parts) => parts.iter().map(|part| {
+            part.as_str().map(str::to_owned).unwrap_or_else(|| part.to_string())
+        }).collect::<String>(),
+        other => other.to_string(),
+    };
+    if text.trim().is_empty() {
+        bail!("Replicate returned an empty model response");
+    }
+    Ok(text)
+}
+
 impl Brain {
     pub fn new(config: Arc<Config>) -> Self {
         Self {
@@ -97,6 +113,7 @@ impl Brain {
             "anthropic" => self.anthropic(&system, prompt).await,
             "google" => self.google(&system, prompt).await,
             "azure" => self.azure_openai(&system, prompt).await,
+            "replicate" => self.replicate(&system, prompt).await,
             "openai" | "openai-compatible" | "ollama" | "deepseek" | "groq"
             | "cerebras" | "mistral" | "openrouter" | "xai" | "grok" | "qwen"
             | "huggingface" | "hyperbolic" | "novita" | "mercury"
@@ -204,6 +221,73 @@ impl Brain {
         let value: Value = request.send().await?.error_for_status()?.json().await?;
         value.pointer("/choices/0/message/content").and_then(Value::as_str)
             .map(str::to_owned).ok_or_else(|| anyhow!("provider response did not contain choices[0].message.content"))
+    }
+
+    async fn replicate(&self, system: &str, prompt: &str) -> Result<String> {
+        if self.config.api_key.is_empty() {
+            bail!("MINDCRAFT_API_KEY is required for Replicate");
+        }
+        let model_spec = self.config.model.trim().strip_prefix("replicate/").unwrap_or(self.config.model.trim());
+        let (model_path, version) = model_spec.split_once(':')
+            .map(|(model, version)| (model, Some(version)))
+            .unwrap_or((model_spec, None));
+        let parts = model_path.split('/').collect::<Vec<_>>();
+        if parts.len() != 2 || parts.iter().any(|part| {
+            part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        }) {
+            bail!("Replicate model must be owner/name or owner/name:version");
+        }
+        if version.is_some_and(|value| value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))) {
+            bail!("Replicate model version must contain only ASCII letters, numbers, hyphens, or underscores");
+        }
+
+        let input = if model_path.to_ascii_lowercase().contains("gemini") {
+            json!({"prompt": format!("{system}\n\n{prompt}")})
+        } else {
+            json!({"prompt": prompt, "system_prompt": system})
+        };
+        let (endpoint, body) = if let Some(version) = version {
+            ("https://api.replicate.com/v1/predictions".to_owned(), json!({"version":version,"input":input}))
+        } else {
+            (format!("https://api.replicate.com/v1/models/{}/{}/predictions", parts[0], parts[1]), json!({"input":input}))
+        };
+        let mut prediction: Value = self.http.post(endpoint)
+            .bearer_auth(&self.config.api_key)
+            .header("Prefer", "wait=30")
+            .timeout(std::time::Duration::from_secs(40))
+            .json(&body)
+            .send().await?.error_for_status()?.json().await?;
+        let status = prediction.get("status").and_then(Value::as_str).unwrap_or_default();
+        if status == "succeeded" {
+            return replicate_output_text(&prediction);
+        }
+        if status == "failed" || status == "canceled" {
+            bail!("Replicate prediction {status}: {}", prediction.get("error").and_then(Value::as_str).unwrap_or("provider returned no error detail"));
+        }
+
+        let get_url = prediction.pointer("/urls/get").and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Replicate did not return a prediction status URL"))?;
+        let parsed = reqwest::Url::parse(get_url)?;
+        if parsed.scheme() != "https" || parsed.host_str() != Some("api.replicate.com")
+            || !parsed.username().is_empty() || parsed.password().is_some() {
+            bail!("Replicate returned an unsafe prediction status URL");
+        }
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
+        while tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            prediction = self.http.get(get_url)
+                .bearer_auth(&self.config.api_key)
+                .timeout(std::time::Duration::from_secs(20))
+                .send().await?.error_for_status()?.json().await?;
+            let status = prediction.get("status").and_then(Value::as_str).unwrap_or_default();
+            if status == "succeeded" {
+                return replicate_output_text(&prediction);
+            }
+            if status == "failed" || status == "canceled" {
+                bail!("Replicate prediction {status}: {}", prediction.get("error").and_then(Value::as_str).unwrap_or("provider returned no error detail"));
+            }
+        }
+        bail!("Replicate prediction did not finish within the two-minute polling window")
     }
 
     async fn azure_openai(&self, system: &str, prompt: &str) -> Result<String> {
