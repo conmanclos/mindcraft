@@ -1249,9 +1249,19 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
                             BlockPos::new(position.x.floor() as i32 + dx, position.y.floor() as i32, position.z.floor() as i32 + dz)
                         });
-                        let waypoint_loaded = bot.world().ok()
-                            .is_some_and(|world| world.read().get_block_state(destination).is_some());
-                        if waypoint_loaded {
+                        let waypoint_safe = bot.world().ok().is_some_and(|world| {
+                            let world = world.read();
+                            let Some(feet) = world.get_block_state(destination) else { return false; };
+                            let Some(head) = world.get_block_state(destination.up(1)) else { return false; };
+                            let Some(support) = world.get_block_state(destination.down(1)) else { return false; };
+                            feet.is_air()
+                                && head.is_air()
+                                && !is_hazardous_support(&format!("{feet:?}"))
+                                && !is_hazardous_support(&format!("{head:?}"))
+                                && !support.is_air()
+                                && !is_hazardous_support(&format!("{support:?}"))
+                        });
+                        if waypoint_safe {
                             if let Some((poi_position, _, kind)) = poi {
                                 if let Some(store) = &state.store {
                                     let subject = format!("poi:{}:{}:{}", poi_position.x, poi_position.y, poi_position.z);
