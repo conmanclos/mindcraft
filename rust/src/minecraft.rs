@@ -3293,7 +3293,6 @@ async fn execute_enter_portal(
     let starting_dimension = dimension_state.as_ref()
         .map(|dimension| dimension.lock().await.clone())
         .unwrap_or_else(|| "unknown".into());
-    let Ok(starting_position) = bot.position() else { return false; };
     bot.chat(format!("Approaching the verified portal at {},{},{}.", position.x, position.y, position.z));
     if !goto_cancellable(&bot, BlockPosGoal(position), &generation_state, generation).await {
         bot.chat("Portal approach was cancelled or could not be completed.");
@@ -3310,8 +3309,7 @@ async fn execute_enter_portal(
             .unwrap_or_else(|| starting_dimension.clone());
         let Ok(current_position) = bot.position() else { continue; };
         let dimension_changed = current_dimension != starting_dimension;
-        let teleported_in_dimension = current_position.distance_to(portal_position) > 16.0
-            || current_position.distance_to(starting_position) > 24.0;
+        let teleported_in_dimension = current_position.distance_to(portal_position) > 16.0;
         if dimension_changed || teleported_in_dimension {
             bot.chat(format!("Portal transition detected. Current dimension: {current_dimension}."));
             return true;
