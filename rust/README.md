@@ -158,7 +158,7 @@ The dashboard is served from `/`. `GET /api/health` is public; all other API rou
 | `POST /api/plan` | Generate and policy-check a structured action proposal |
 | `POST /api/execute` | Explicitly approve and queue a supported game action |
 | `POST /api/build` | Explicitly queue a bounded mixed-material JSON schematic at an absolute origin |
-| `POST /api/build/sponge` | Import a bounded gzip-NBT Sponge v2/v3 schematic from Base64 and queue its block palette at an absolute origin |
+| `POST /api/build/sponge` | Import a bounded gzip/raw-NBT Sponge v2/v3 schematic from Base64 and queue its block palette at an absolute origin |
 | `GET/POST /api/goals` | List goals or decompose a new strategic goal into specialist tasks |
 | `GET /api/goals/{id}/tasks` | List a goal's tasks in enforced execution order |
 | `POST /api/goals/{id}/cancel` | Cancel an active goal and revoke its pending, claimed, and review tasks |
