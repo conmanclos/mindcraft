@@ -7035,6 +7035,12 @@ fn best_safe_food_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> {
         let item = slots.get(slot)?;
         if item.is_empty() { return None; }
         let name = format!("{item:?}").to_ascii_lowercase();
+        // Golden apples are reserved for the separate low-health emergency
+        // path; routine hunger recovery should prefer ordinary food.
+        if name.chars().filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase).collect::<String>().contains("goldenapple") {
+            return None;
+        }
         Some((slot, safe_food_priority(&name)?))
     }).max_by_key(|(_, priority)| *priority)
 }
