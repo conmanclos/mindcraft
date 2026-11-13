@@ -193,6 +193,8 @@ struct SpongeSchematicNbt {
     height: i16,
     #[serde(rename = "Length")]
     length: i16,
+    #[serde(rename = "Offset", default)]
+    offset: Option<fastnbt::IntArray>,
     #[serde(rename = "Palette", default)]
     palette: Option<HashMap<String, i32>>,
     #[serde(rename = "BlockData", default)]
@@ -578,6 +580,10 @@ fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (Status
     let volume = width.checked_mul(height).and_then(|value| value.checked_mul(length))
         .filter(|value| *value <= 35_937)
         .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic dimensions exceed the supported volume".into()))?;
+    let offset = root.offset.map(fastnbt::IntArray::into_inner).unwrap_or_else(|| vec![0, 0, 0]);
+    if offset.len() != 3 || offset.iter().any(|value| value.unsigned_abs() > 32) {
+        return Err((StatusCode::BAD_REQUEST, "Sponge schematic Offset must contain three values within -32..32".into()));
+    }
     let (palette, block_data) = if let Some(blocks) = root.blocks {
         (blocks.palette, blocks.data)
     } else {
@@ -607,7 +613,7 @@ fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (Status
         let x = index % width;
         let z = (index / width) % length;
         let y = index / (width * length);
-        blocks.push(SchematicBlock { x: x as i32, y: y as i32, z: z as i32, material });
+        blocks.push(SchematicBlock { x: x as i32 + offset[0], y: y as i32 + offset[1], z: z as i32 + offset[2], material });
     }
     if blocks.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains no placeable non-air blocks".into()));
