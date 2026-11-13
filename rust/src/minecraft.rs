@@ -1506,9 +1506,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
+                        let chunk_storage = world.read().chunks.clone();
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            if !goto_cancellable(&client, ReachBlockPosGoal::new(destination, world.read().chunks.clone()), &generation_state, generation).await {
+                            if !goto_cancellable(&client, ReachBlockPosGoal::new(destination, chunk_storage), &generation_state, generation).await {
                                 if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                     client.chat("Pathfinding to the nearest bed timed out or failed.");
                                 }
