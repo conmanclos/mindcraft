@@ -4841,11 +4841,20 @@ async fn execute_hotbar_restock(
             continue;
         }
         let live_slots = live_menu.slots();
-        let Some(source_slot) = main_slots.iter().copied().find(|slot| {
-            live_slots.get(*slot).is_some_and(|item| {
-                !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &selector)
+        let source_slot = if selector == "food" {
+            main_slots.iter().copied().filter_map(|slot| {
+                let item = live_slots.get(slot)?;
+                if item.is_empty() { return None; }
+                safe_food_priority(&format!("{item:?}")).map(|priority| (slot, priority))
+            }).max_by_key(|(_, priority)| *priority).map(|(slot, _)| slot)
+        } else {
+            main_slots.iter().copied().find(|slot| {
+                live_slots.get(*slot).is_some_and(|item| {
+                    !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &selector)
+                })
             })
-        }) else { break; };
+        };
+        let Some(source_slot) = source_slot else { break; };
         let Some(source_before) = live_slots.get(source_slot).cloned().filter(|item| !item.is_empty()) else { continue; };
         let source_count = source_before.count();
         let source_kind = format!("{:?}", source_before.kind());
