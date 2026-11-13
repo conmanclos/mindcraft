@@ -166,6 +166,22 @@ fn print_json(value: &Value) -> Result<()> {
     Ok(())
 }
 
+async fn shutdown_signal() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = terminate.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await?;
+    }
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     // Conversation history, world memories, Microsoft auth caches, and SQLite
@@ -205,7 +221,7 @@ async fn main() -> Result<()> {
                 tokio::select! {
                     result = api::serve(config.clone(), brain, store, status) => result?,
                     result = minecraft::connect(server, bot_accounts, bot_auth, microsoft_email, trusted_chat_players, bot_brain, bot_status, bot_store) => result?,
-                    signal = tokio::signal::ctrl_c() => {
+                    signal = shutdown_signal() => {
                         signal?;
                         tracing::info!("shutdown requested; stopping the Minecraft swarm and dashboard");
                     }
