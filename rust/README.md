@@ -9,6 +9,23 @@ Build on the target operating system with `bash build-desktop.sh` on macOS/Linux
 
 This is a Rust-native runtime being developed alongside the original JavaScript/Mineflayer project. Its target is **Minecraft Java Edition 26.1**, pinned to **Azalea 0.16.0+mc26.1**. The native runtime does not use Mineflayer or a JavaScript gameplay bridge.
 
+## CLI operations
+
+The native CLI can operate the same local runtime used by the browser dashboard and desktop app. Start the runtime with `cargo run -- serve`, then set `MINDCRAFT_API_TOKEN` in the CLI environment to the same bearer token printed/configured by that running process. API-backed CLI operations intentionally connect only to a loopback runtime; they do not send the bearer token to a LAN host.
+
+```sh
+cargo run -- status
+cargo run -- goals
+cargo run -- memories
+cargo run -- plan "Gather food and build a shelter" --agent Mindcraft
+cargo run -- create-goal "Prepare a safe base near spawn"
+cargo run -- cancel-goal 1
+cargo run -- retry-goal 1
+cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
+```
+
+`execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
+
 ## Current implementation
 
 - Shared Tokio process for the CLI, HTTP API, dashboard, persistence, AI provider client, and optional Minecraft connection.
