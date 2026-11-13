@@ -7102,7 +7102,17 @@ async fn restock_one_food_stack_to_hotbar(bot: &Client, allow_golden_apple: bool
         menu.try_as_player()?;
         menu.slot(source_slot).map(|item| item.is_empty())
     }).unwrap_or(false);
-    if !picked_up { return None; }
+    if !picked_up {
+        let cursor_may_hold_stack = bot.menu().ok().and_then(|menu| {
+            menu.try_as_player()?;
+            menu.slot(source_slot).map(|item| item.is_empty())
+        }).unwrap_or(false);
+        if cursor_may_hold_stack {
+            inventory.left_click(source_slot);
+            bot.wait_updates(2).await;
+        }
+        return None;
+    }
 
     // The destination was confirmed empty in the live player menu. Always
     // place the cursor-held stack there before returning control to the tick.
