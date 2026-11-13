@@ -202,7 +202,7 @@ async fn main() -> Result<()> {
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => {
             let store = Arc::new(store::Store::open(&config.database)?);
-            let brain = Arc::new(brain::Brain::new(config.clone()));
+            let brain = Arc::new(brain::Brain::new(config.clone())?);
             let status = Arc::new(api::RuntimeStatus::default());
 
             tracing::info!(bind = %config.bind, mode = %config.mode, "Mindcraft runtime starting");
@@ -230,7 +230,7 @@ async fn main() -> Result<()> {
                 tracing::warn!("MINDCRAFT_MC_SERVER is unset; dashboard/API will start without a Minecraft connection");
                 tokio::select! {
                     result = api::serve(config, brain, store, status) => result?,
-                    signal = tokio::signal::ctrl_c() => {
+                    signal = shutdown_signal() => {
                         signal?;
                         tracing::info!("shutdown requested; stopping the dashboard");
                     }
@@ -242,7 +242,7 @@ async fn main() -> Result<()> {
             println!("{}", response.get("reply").and_then(Value::as_str).unwrap_or_default());
         }
         Command::DirectChat { prompt } => {
-            let brain = brain::Brain::new(config);
+            let brain = brain::Brain::new(config)?;
             let response = brain.reply(&prompt).await?;
             println!("{response}");
         }
