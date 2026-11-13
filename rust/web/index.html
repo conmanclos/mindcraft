@@ -46,6 +46,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="row" style="margin-top:16px"><div style="flex:1;min-width:150px"><label for="agentId">Task worker ID (not a Minecraft username)</label><input id="agentId" value="Scout"><div class="muted">Use 1-64 letters, numbers, dots, underscores, or hyphens.</div></div><div style="flex:1;min-width:150px"><label for="agentRole">Specialist role</label><select id="agentRole"><option>scout</option><option>gatherer</option><option>builder</option><option>crafter</option><option>guardian</option><option>planner</option></select></div></div>
 <div class="row" style="margin-top:10px"><button id="claimTask" class="secondary">Claim next task</button><button id="planTask" class="secondary" disabled>Plan claimed task</button><button id="completeTask" class="secondary" disabled>Mark task complete</button><button id="releaseTask" class="secondary" disabled>Release task</button></div>
 <div class="row" style="margin-top:12px"><button id="refreshReview" class="secondary">Refresh review queue</button><select id="reviewQueue" style="flex:1"><option value="">No review tasks loaded</option></select><button id="loadReview" class="secondary" disabled>Load for review</button></div>
+<div style="margin-top:10px"><label for="taskVerification">Observed in-game result (required to complete a task)</label><textarea id="taskVerification" rows="2" maxlength="500" placeholder="Describe what you checked in Minecraft and what actually changed."></textarea></div>
 <div class="muted">Autonomous specialist actions appear here after they are queued. Inspect the result in Minecraft before marking a task complete; release it to retry.</div>
 <div id="taskResult" class="muted" style="white-space:pre-wrap;margin-top:12px">No task claimed.</div>
 </section>
@@ -338,10 +339,13 @@ $("releaseTask").onclick=async()=>{
 $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
-    if(!window.confirm("Only confirm after checking the result in Minecraft. Mark task #"+currentTask.id+" complete?"))return;
+    const verification_note=$("taskVerification").value.trim();
+    if(!verification_note||verification_note.length>500)throw Error("Describe the observed in-game result in 1-500 characters.");
+    if(!window.confirm("Only confirm after checking the result in Minecraft. Mark task #"+currentTask.id+" complete with this verification note?"))return;
     $("completeTask").disabled=true;
-    await api("/api/tasks/"+currentTask.id+"/complete",{agent_id:currentTaskAgentId});
-    $("taskResult").textContent="Task #"+currentTask.id+" marked complete after your confirmation.";
+    await api("/api/tasks/"+currentTask.id+"/complete",{agent_id:currentTaskAgentId,verification_note});
+    $("taskVerification").value="";
+    $("taskResult").textContent="Task #"+currentTask.id+" marked complete with your observed result.";
     currentTask=null;
     currentTaskAgentId=null;
     stopTaskHeartbeat();
