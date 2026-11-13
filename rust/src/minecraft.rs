@@ -836,21 +836,26 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if let Some(target) = &state.follow_target { *target.lock().await = None; }
             if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
             if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
-            if let Some(connected) = &state.connected {
-                if connected.swap(false, Ordering::Relaxed) {
-                    if let Some(status) = &state.status {
-                        let previous = status.connected_agents.fetch_update(
-                            Ordering::Relaxed,
-                            Ordering::Relaxed,
-                            |count| Some(count.saturating_sub(1)),
-                        ).unwrap_or(0);
-                        let count = previous.saturating_sub(1);
-                        status.minecraft_connected.store(count > 0, Ordering::Relaxed);
-                        status.agents.lock().await.remove(&bot.username());
-                        if count == 0 { status.online_players.lock().await.clear(); }
-                        if state.is_primary { *status.world.lock().await = None; }
-                    }
-                }
+            let was_connected = state.connected.as_ref()
+                .is_some_and(|connected| connected.swap(false, Ordering::Relaxed));
+            if let Some(status) = &state.status {
+                let count = if was_connected {
+                    let previous = status.connected_agents.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |count| Some(count.saturating_sub(1)),
+                    ).unwrap_or(0);
+                    previous.saturating_sub(1)
+                } else {
+                    status.connected_agents.load(Ordering::Relaxed)
+                };
+                status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                // Remove the snapshot even if the connection flag was already
+                // false; a missed earlier transition must not leave a phantom
+                // team member visible to planning or task assignment.
+                status.agents.lock().await.remove(&bot.username());
+                if count == 0 { status.online_players.lock().await.clear(); }
+                if state.is_primary { *status.world.lock().await = None; }
             }
             tracing::warn!(username = %bot.username(), reason = ?reason, "Minecraft agent disconnected; Azalea will reconnect this client");
         }
