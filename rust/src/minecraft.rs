@@ -3699,7 +3699,6 @@ fn recipe_output_count(recipe: &str) -> u8 {
         "rail" | "iron_bars" => 16,
         "iron_nuggets" | "gold_nuggets" | "wheat_from_hay" => 9,
         "powered_rail" | "detector_rail" | "activator_rail" => 6,
-        "iron_nuggets" | "gold_nuggets" | "wheat_from_hay" => 9,
         "fire_charge" => 3,
         "bone_meal" => 3,
         _ => 1,
