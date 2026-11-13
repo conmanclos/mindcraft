@@ -158,7 +158,7 @@ impl Brain {
         self.validate_action(action)?;
         let action_name = action.action.to_lowercase();
         let safe = ["look", "follow", "stop", "say", "goto", "explore", "jump"];
-        let destructive = ["attack", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "equip", "optimize_armor", "inventory_sort", "use_item"];
+        let destructive = ["attack", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "equip", "optimize_armor", "inventory_sort", "trade", "use_item"];
         if !safe.contains(&action_name.as_str()) && !destructive.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
@@ -166,7 +166,7 @@ impl Brain {
             bail!("assisted mode requires explicit approval for every action ('{}')", action.action);
         }
         if ["attack", "use_item", "container_transfer", "container_deposit", "optimize_armor", "trade"].contains(&action_name.as_str()) && !explicit_approval {
-            bail!("attack, generic item use, all container transfers (including deposits), and armor replacement always require explicit user approval, including in autonomous mode");
+            bail!("attack, generic item use, all container transfers (including deposits), armor replacement, and merchant trades always require explicit user approval, including in autonomous mode");
         }
         // Never let an LLM-provided risk label downgrade a dangerous executor.
         // The runtime assigns a minimum risk from the action itself, then takes the
