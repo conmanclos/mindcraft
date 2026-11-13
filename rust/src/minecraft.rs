@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage, MaxStackSize}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, block::BlockStates, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage, MaxStackSize}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, registry::builtin::BlockKind, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -32,6 +32,7 @@ pub enum BotCommand {
     Look(i32, i32, i32),
     Goto(i32, i32, i32),
     Mine(i32, i32, i32),
+    Collect(String, u8, u16),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
