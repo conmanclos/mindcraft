@@ -1210,7 +1210,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let radius = f64::from(range);
                             let tab_list = client.tab_list();
                             let mut lines = Vec::new();
-                            let players = client.nearest_entities_by::<(), With<azalea::entity::metadata::Player>>(|_: ()| true);
+                            let players = client.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true);
                             for player in players {
                                 if player.uuid() == client.uuid() || player.distance_to_client() > radius { continue; }
                                 let name = tab_list.get(&player.uuid())
@@ -1219,8 +1219,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 lines.push(format!("player {name} ({:.1} blocks)", player.distance_to_client()));
                             }
                             let mobs = client.nearest_entities_by::<(), (
-                                With<azalea::core::entity_id::MinecraftEntityId>,
-                                Without<azalea::entity::metadata::Player>,
+                                azalea::ecs::prelude::With<azalea::core::entity_id::MinecraftEntityId>,
+                                azalea::ecs::prelude::Without<azalea::entity::metadata::Player>,
                             )>(|_: ()| true);
                             let mut counts: HashMap<String, u32> = HashMap::new();
                             for entity in mobs {
