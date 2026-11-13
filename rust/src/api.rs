@@ -298,9 +298,17 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
             .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]))
         .layer(TraceLayer::new_for_http());
 
-    let listener = tokio::net::TcpListener::bind(config.bind).await?;
-    tracing::info!(address = %listener.local_addr()?, "dashboard available");
-    axum::serve(listener, app).await?;
+    if let (Some(cert_path), Some(key_path)) = (&config.tls_cert_path, &config.tls_key_path) {
+        let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await?;
+        tracing::info!(address = %config.bind, "dashboard available over HTTPS with native Rustls");
+        axum_server::bind_rustls(config.bind, tls)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        let listener = tokio::net::TcpListener::bind(config.bind).await?;
+        tracing::info!(address = %listener.local_addr()?, "dashboard available on loopback HTTP");
+        axum::serve(listener, app).await?;
+    }
     Ok(())
 }
 
