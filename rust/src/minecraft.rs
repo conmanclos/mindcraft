@@ -7045,6 +7045,59 @@ fn best_safe_food_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> {
     }).max_by_key(|(_, priority)| *priority)
 }
 
+async fn restock_one_food_stack_to_hotbar(bot: &Client, allow_golden_apple: bool) -> Option<usize> {
+    let menu = bot.menu().ok()?;
+    menu.try_as_player()?;
+    let main_slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
+    let hotbar_slots = menu.hotbar_slots_range().collect::<Vec<_>>();
+    let slots = menu.slots();
+    let target_slot = hotbar_slots.iter().copied()
+        .find(|slot| slots.get(*slot).is_some_and(|item| item.is_empty()))?;
+    let source_slot = main_slots.iter().copied().filter_map(|slot| {
+        let item = slots.get(slot)?;
+        if item.is_empty() { return None; }
+        let compact: String = format!("{item:?}").chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if !allow_golden_apple && compact.contains("goldenapple") {
+            return None;
+        }
+        Some((slot, safe_food_priority(&compact)?))
+    }).max_by_key(|(_, priority)| *priority)?.0;
+    let source_before = slots.get(source_slot)?.clone();
+    let inventory = bot.get_inventory().ok()?;
+
+    inventory.left_click(source_slot);
+    bot.wait_updates(1).await;
+    let picked_up = bot.menu().ok().and_then(|menu| {
+        menu.try_as_player()?;
+        menu.slot(source_slot).map(|item| item.is_empty())
+    }).unwrap_or(false);
+    if !picked_up { return None; }
+
+    // The destination was confirmed empty in the live player menu. Always
+    // place the cursor-held stack there before returning control to the tick.
+    inventory.left_click(target_slot);
+    bot.wait_updates(2).await;
+    let Some(verified_menu) = bot.menu().ok() else { return None; };
+    if verified_menu.try_as_player().is_none() { return None; }
+    let target_matches = verified_menu.slot(target_slot).is_some_and(|item| {
+        !item.is_empty()
+            && item.kind() == source_before.kind()
+            && item.count() == source_before.count()
+    });
+    let source_empty = verified_menu.slot(source_slot).is_some_and(|item| item.is_empty());
+    if !target_matches || !source_empty {
+        if source_empty {
+            inventory.left_click(source_slot);
+            bot.wait_updates(2).await;
+        }
+        return None;
+    }
+    Some(target_slot)
+}
+
 fn safe_food_priority(name: &str) -> Option<u8> {
     // Debug output may render registry names as either snake_case or CamelCase.
     // Compare an alphanumeric-only lowercase form so both representations work.
