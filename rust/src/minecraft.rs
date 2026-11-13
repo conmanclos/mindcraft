@@ -39,6 +39,7 @@ pub enum BotCommand {
     Craftable,
     Entities(u16),
     LocateEntity(String, u16),
+    GoToSurface,
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1071,6 +1072,75 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         bot.look_at(BlockPos::new(x, y, z).center());
+                    }
+                    BotCommand::GoToSurface => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let Ok(position) = bot.position() else {
+                            bot.chat("I can't read my position to find the surface.");
+                            continue;
+                        };
+                        let origin_x = position.x.floor() as i32;
+                        let origin_z = position.z.floor() as i32;
+                        let start_y = (position.y.floor() as i32).saturating_add(1);
+                        let Ok(world) = bot.world() else {
+                            bot.chat("The loaded world is unavailable; I can't find the surface.");
+                            continue;
+                        };
+                        let surface = {
+                            let world = world.read();
+                            let mut last_solid = None;
+                            for y in start_y..=320 {
+                                let position = BlockPos::new(origin_x, y, origin_z);
+                                let Some(block) = world.get_block_state(position) else { break; };
+                                if !block.is_air() { last_solid = Some(position); }
+                            }
+                            last_solid.map(|solid| BlockPos::new(solid.x, solid.y.saturating_add(1), solid.z))
+                        };
+                        let Some(destination) = surface else {
+                            bot.chat("I couldn't find a loaded solid surface above this column.");
+                            continue;
+                        };
+                        let safe_landing = {
+                            let world = world.read();
+                            world.get_block_state(destination).is_some_and(|block| block.is_air())
+                                && world.get_block_state(destination.up(1)).is_some_and(|block| block.is_air())
+                        };
+                        if !safe_landing {
+                            bot.chat("The top of this column doesn't have two clear blocks for a safe landing.");
+                            continue;
+                        }
+                        let dx = position.x - (destination.x as f64 + 0.5);
+                        let dy = position.y - (destination.y as f64 + 0.5);
+                        let dz = position.z - (destination.z as f64 + 0.5);
+                        if dx * dx + dy * dy + dz * dz > 256.0 * 256.0 {
+                            bot.chat("The surface target is beyond the 256-block pathfinding limit.");
+                            continue;
+                        }
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            if !goto_cancellable(&client, BlockPosGoal(destination), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the surface timed out or failed.");
+                                }
+                                return;
+                            }
+                            let Ok(current) = client.position() else { return; };
+                            let dx = current.x - (destination.x as f64 + 0.5);
+                            let dy = current.y - (destination.y as f64 + 0.5);
+                            let dz = current.z - (destination.z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz <= 9.0 {
+                                client.chat("Reached the surface above the current column.");
+                            } else {
+                                client.chat("Pathfinding stopped before reaching the surface.");
+                            }
+                        });
                     }
                     BotCommand::Goto(x, y, z) => {
                         let generation = state.mine_generation.as_ref()
