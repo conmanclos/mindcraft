@@ -11,6 +11,7 @@ pub struct Config {
     pub model: String,
     pub api_key: String,
     pub base_url: String,
+    pub azure_api_version: String,
     pub minecraft_server: Option<String>,
     pub minecraft_username: String,
     pub minecraft_accounts: Vec<String>,
@@ -90,8 +91,14 @@ impl Config {
         let default_base_url = default_provider_base_url(&provider);
         let base_url = env::var("MINDCRAFT_BASE_URL")
             .unwrap_or_else(|_| default_base_url.into()).trim().to_owned();
-        if provider == "openai-compatible" && base_url.is_empty() {
-            bail!("MINDCRAFT_BASE_URL is required when MINDCRAFT_PROVIDER=openai-compatible");
+        if ["openai-compatible", "azure"].contains(&provider.as_str()) && base_url.is_empty() {
+            bail!("MINDCRAFT_BASE_URL is required for the selected custom-endpoint AI provider");
+        }
+        let azure_api_version = env::var("MINDCRAFT_AZURE_API_VERSION")
+            .unwrap_or_else(|_| "2024-10-21".into()).trim().to_owned();
+        if azure_api_version.is_empty() || azure_api_version.len() > 40
+            || !azure_api_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.')) {
+            bail!("MINDCRAFT_AZURE_API_VERSION must contain 1-40 ASCII letters, numbers, dots, or hyphens");
         }
         if provider_requires_api_key(&provider) && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required for the selected hosted AI provider");
@@ -133,6 +140,7 @@ impl Config {
             model,
             api_key,
             base_url,
+            azure_api_version,
             minecraft_server,
             minecraft_username,
             minecraft_accounts,
@@ -152,7 +160,7 @@ fn supported_provider(provider: &str) -> bool {
         "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
         | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
         | "xai" | "grok" | "qwen" | "huggingface" | "hyperbolic" | "novita"
-        | "mercury" | "lmstudio" | "vllm"
+        | "mercury" | "lmstudio" | "vllm" | "azure"
     )
 }
 
@@ -160,7 +168,7 @@ fn provider_requires_api_key(provider: &str) -> bool {
     matches!(provider,
         "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
         | "mistral" | "openrouter" | "xai" | "grok" | "qwen" | "huggingface"
-        | "hyperbolic" | "novita" | "mercury"
+        | "hyperbolic" | "novita" | "mercury" | "azure"
     )
 }
 
@@ -169,7 +177,7 @@ fn default_provider_base_url(provider: &str) -> &'static str {
         "ollama" => "http://127.0.0.1:11434/v1",
         "lmstudio" => "http://127.0.0.1:1234/v1",
         "vllm" => "http://127.0.0.1:8000/v1",
-        "openai-compatible" => "",
+        "openai-compatible" | "azure" => "",
         "deepseek" => "https://api.deepseek.com/v1",
         "groq" => "https://api.groq.com/openai/v1",
         "cerebras" => "https://api.cerebras.ai/v1",
