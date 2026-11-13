@@ -363,7 +363,7 @@ impl Store {
         let mut statement = connection.prepare(
             "SELECT id, kind, subject, content, confidence, importance, source, created_at, updated_at
              FROM memories WHERE (?1 IS NULL OR kind=?1)
-             ORDER BY importance DESC, updated_at DESC, id DESC LIMIT ?2"
+             ORDER BY importance DESC, MAX(COALESCE(last_accessed_at, updated_at), updated_at) DESC, id DESC LIMIT ?2"
         )?;
         let rows = statement.query_map(params![kind, limit.clamp(1, 200) as i64], |row| Ok(MemoryRecord {
             id: row.get(0)?, kind: row.get(1)?, subject: row.get(2)?, content: row.get(3)?,
