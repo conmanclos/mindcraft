@@ -1072,6 +1072,8 @@ struct SchematicBlock {
     material: String,
     #[serde(default)]
     axis: Option<String>,
+    #[serde(default)]
+    slab_top: Option<bool>,
 }
 
 /// Parse a compact JSON schematic with relative coordinates and an absolute
@@ -1116,6 +1118,13 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
         if axis.is_some() && !schematic_axis_supported(&material) {
             return Err((StatusCode::BAD_REQUEST, format!("schematic material '{material}' does not support an axis property")));
         }
+        let slab_top = block.slab_top;
+        if slab_top.is_some() && !material.ends_with("_slab") {
+            return Err((StatusCode::BAD_REQUEST, format!("schematic material '{material}' does not support a top/bottom slab state")));
+        }
+        if axis.is_some() && slab_top.is_some() {
+            return Err((StatusCode::BAD_REQUEST, "a schematic block cannot specify both axis and slab_top".into()));
+        }
         if matches!(rotation, 90 | 270) {
             axis = axis.map(|value| match value.as_str() {
                 "x" => "z".to_owned(),
@@ -1144,7 +1153,7 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
         if !seen.insert((x, y, z)) {
             return Err((StatusCode::BAD_REQUEST, "schematic cannot contain duplicate block coordinates".into()));
         }
-        blocks.push(BuildBlock { material, x, y, z, axis });
+        blocks.push(BuildBlock { material, x, y, z, axis, slab_top });
     }
     blocks.sort_by_key(|block| (block.y, block.x, block.z));
     Ok(blocks)
