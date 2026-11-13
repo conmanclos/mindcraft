@@ -1263,7 +1263,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 && head.is_air()
                                 && !is_hazardous_support(&format!("{feet:?}"))
                                 && !is_hazardous_support(&format!("{head:?}"))
-                                && !support.is_air()
+                                && support.is_collision_shape_full()
                                 && !is_hazardous_support(&format!("{support:?}"))
                         });
                         if waypoint_safe {
