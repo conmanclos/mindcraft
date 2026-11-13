@@ -243,8 +243,8 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
             "Enter the OpenAI-compatible API base URL.".into()
         });
     }
-    if setup.azure_api_version.trim().is_empty() || setup.azure_api_version.len() > 40
-        || !setup.azure_api_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.')) {
+    if setup.provider == "azure" && (setup.azure_api_version.trim().is_empty() || setup.azure_api_version.len() > 40
+        || !setup.azure_api_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))) {
         return Err("Azure API version must contain 1-40 ASCII letters, numbers, dots, or hyphens.".into());
     }
     if ["ollama", "openai-compatible", "azure"].contains(&setup.provider.as_str())
@@ -293,7 +293,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
             "ollama" if !setup.base_url.trim().is_empty() && valid_http_base_url(&setup.base_url) => setup.base_url.trim().to_owned(),
             provider => default_provider_base_url(provider).to_owned(),
         }),
-        ("MINDCRAFT_AZURE_API_VERSION", setup.azure_api_version.trim().to_owned()),
+        ("MINDCRAFT_AZURE_API_VERSION", if setup.azure_api_version.trim().is_empty() { "2024-10-21".into() } else { setup.azure_api_version.trim().to_owned() }),
         ("MINDCRAFT_MODE", setup.autonomy.clone()),
         ("MINDCRAFT_BIND", "127.0.0.1:8787".into()),
         ("MINDCRAFT_API_TOKEN", token),
