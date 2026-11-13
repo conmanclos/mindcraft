@@ -173,6 +173,34 @@ impl Store {
         Ok(())
     }
 
+    /// Persist a completed user/assistant turn atomically. This prevents a
+    /// provider timeout or database error from leaving an orphaned user prompt
+    /// that appears to have received a response in later conversation context.
+    pub fn append_exchange(&self, user: &str, assistant: &str) -> Result<()> {
+        for (role, content) in [("user", user), ("assistant", assistant)] {
+            if content.trim().is_empty() || content.len() > 12_000 {
+                anyhow::bail!("{role} conversation messages must contain 1-12000 bytes");
+            }
+        }
+        let mut connection = self.connection.lock()
+            .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "INSERT INTO conversation(role, content) VALUES ('user', ?1)",
+            [user],
+        )?;
+        transaction.execute(
+            "INSERT INTO conversation(role, content) VALUES ('assistant', ?1)",
+            [assistant],
+        )?;
+        transaction.execute(
+            "DELETE FROM conversation WHERE id <= (SELECT COALESCE(MAX(id), 0) - 10000 FROM conversation)",
+            [],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn recent_messages(&self, limit: usize) -> Result<Vec<(String, String)>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare("SELECT role, content FROM conversation ORDER BY id DESC LIMIT ?1")?;
