@@ -1421,12 +1421,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
+                        let merchant_position_state = state.merchant_position.clone();
                         let offers_state = state.merchant_offers.clone();
                         tokio::task::spawn_local(async move {
                             execute_trade(
                                 client,
                                 BlockPos::new(x, y, z),
                                 offer_index,
+                                merchant_position_state,
                                 offers_state,
                                 generation_state,
                                 generation,
@@ -3265,7 +3267,8 @@ async fn execute_trade(
     bot: Client,
     position: BlockPos,
     offer_index: Option<u8>,
-    offers_state: Option<Arc<Mutex<Option<Vec<TradeOfferSnapshot>>>>>,
+    merchant_position_state: Option<Arc<Mutex<Option<BlockPos>>>>,
+    offers_state: Option<Arc<Mutex<Option<(BlockPos, Vec<TradeOfferSnapshot>)>>>>,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
 ) -> bool {
@@ -3310,6 +3313,9 @@ async fn execute_trade(
             bot.chat("Close the current container before opening a merchant trade window.");
             return false;
         }
+        if let Some(position_state) = &merchant_position_state {
+            *position_state.lock().await = Some(position);
+        }
         if let Some(offers) = &offers_state {
             *offers.lock().await = None;
         }
@@ -3320,10 +3326,10 @@ async fn execute_trade(
         for _ in 0..60 {
             if cancelled() { return false; }
             bot.wait_ticks(1).await;
-            if let Some(snapshot) = offers_state.as_ref().and_then(|state| {
+            if let Some((offers_position, snapshot)) = offers_state.as_ref().and_then(|state| {
                 state.try_lock().ok().and_then(|guard| guard.clone())
             }) {
-                if !snapshot.is_empty() {
+                if offers_position == position && !snapshot.is_empty() {
                     offers = Some(snapshot);
                     break;
                 }
@@ -3358,12 +3364,16 @@ async fn execute_trade(
     }
 
     let Some(index) = offer_index else { return false; };
-    let Some(offers) = offers_state.as_ref().and_then(|state| {
+    let Some((offers_position, offers)) = offers_state.as_ref().and_then(|state| {
         state.try_lock().ok().and_then(|guard| guard.clone())
     }) else {
         bot.chat("No merchant offer list is available. Run trade x,y,z first to inspect this merchant.");
         return false;
     };
+    if offers_position != position {
+        bot.chat("The saved offer list belongs to a different merchant. Run trade x,y,z to inspect this merchant first.");
+        return false;
+    }
     let Some(offer) = offers.iter().find(|offer| offer.index == u32::from(index)).cloned() else {
         bot.chat(format!("Trade offer #{index} is not in the current merchant offer list."));
         return false;
