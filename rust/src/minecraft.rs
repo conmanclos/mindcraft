@@ -44,6 +44,7 @@ pub enum BotCommand {
     RememberHere(String),
     GoToRememberedPlace(String),
     LookAtPlayer(String),
+    GoToBed,
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1454,6 +1455,83 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if !cancelled() && client.exists() {
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
                             }
+                        });
+                    }
+                    BotCommand::GoToBed => {
+                        let dimension = if let Some(dimension) = &state.dimension {
+                            dimension.lock().await.clone()
+                        } else {
+                            String::new()
+                        };
+                        if dimension != "minecraft:overworld" {
+                            bot.chat("I won't interact with a bed outside the Overworld because beds explode in other dimensions.");
+                            continue;
+                        }
+                        let Ok(position) = bot.position() else { continue; };
+                        let origin = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
+                        let Ok(world) = bot.world() else {
+                            bot.chat("The loaded world is unavailable; I can't search for a bed.");
+                            continue;
+                        };
+                        let mut beds = {
+                            let world = world.read();
+                            let mut found = Vec::new();
+                            for dy in -4..=4 {
+                                for dx in -16..=16 {
+                                    for dz in -16..=16 {
+                                        let target = BlockPos::new(origin.x + dx, origin.y + dy, origin.z + dz);
+                                        let Some(block) = world.get_block_state(target) else { continue; };
+                                        let name = format!("{block:?}").to_ascii_lowercase();
+                                        if name.contains("bed") && !name.contains("bedrock") {
+                                            let distance = i64::from(dx) * i64::from(dx)
+                                                + i64::from(dy) * i64::from(dy)
+                                                + i64::from(dz) * i64::from(dz);
+                                            found.push((distance, target));
+                                        }
+                                    }
+                                }
+                            }
+                            found
+                        };
+                        beds.sort_unstable_by_key(|(distance, target)| (*distance, target.x, target.y, target.z));
+                        let Some((_, destination)) = beds.into_iter().next() else {
+                            bot.chat("No loaded bed was found within 16 horizontal and 4 vertical blocks.");
+                            continue;
+                        };
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            if !goto_cancellable(&client, ReachBlockPosGoal::new(destination, world.read().chunks.clone()), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat("Pathfinding to the nearest bed timed out or failed.");
+                                }
+                                return;
+                            }
+                            if !client.exists() { return; }
+                            let Ok(current) = client.position() else { return; };
+                            let dx = current.x - (destination.x as f64 + 0.5);
+                            let dy = current.y - (destination.y as f64 + 0.5);
+                            let dz = current.z - (destination.z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz > 20.25 {
+                                client.chat("I couldn't get within interaction reach of the bed.");
+                                return;
+                            }
+                            client.look_at(destination.center());
+                            client.wait_updates(1).await;
+                            if !matches!(client.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == destination) {
+                                client.chat("I reached the bed's area but couldn't get a clear line of sight.");
+                                return;
+                            }
+                            client.block_interact(destination);
+                            client.wait_ticks(3).await;
+                            client.chat("Interacted with the nearest Overworld bed. Sleeping depends on the server's time, nearby threats, and bed availability.");
                         });
                     }
                     BotCommand::LookAtPlayer(name) => {
