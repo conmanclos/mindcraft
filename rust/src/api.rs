@@ -1035,6 +1035,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "stop" | "stay" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
+        "entities" => {
+            let range = action.target.as_deref().unwrap_or("32").trim().parse::<u16>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "entities range must be an integer from 4 to 128 blocks".into()))?;
+            if !(4..=128).contains(&range) {
+                return Err((StatusCode::BAD_REQUEST, "entities range must be from 4 to 128 blocks".into()));
+            }
+            Ok(BotCommand::Entities(range))
+        }
         "nearby_blocks" => {
             let range = action.target.as_deref().unwrap_or("4").trim().parse::<u8>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "nearby_blocks range must be an integer from 1 to 8 blocks".into()))?;
