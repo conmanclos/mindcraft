@@ -2606,6 +2606,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if !matches!(client.hit_result(), HitResult::Block(hit) if !hit.miss && hit.block_pos == position) {
                                 client.chat("I don't have a clear line of sight to that container."); return;
                             }
+                            if !world.read().get_block_state(position).is_some_and(|block| is_storage_container_block(&block)) {
+                                client.chat("The target changed and is no longer a supported storage container; nothing was moved."); return;
+                            }
+                            if !world.read().get_block_state(position).is_some_and(|block| is_storage_container_block(&block)) {
+                                client.chat("The target changed and is no longer a supported storage container; nothing was moved.");
+                                return;
+                            }
                             match client.open_container_at(position).await {
                                 Ok(Some(container)) => {
                                     if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
@@ -3741,6 +3748,10 @@ async fn execute_craft(
                     return false;
                 }
             }
+            if !world.read().get_block_state(position).is_some_and(|block| is_crafting_table_block(&block)) {
+                bot.chat("The target changed and is no longer a crafting table; nothing was opened.");
+                return false;
+            }
             bot.open_container_at(position).await.ok().flatten()
         }
         None => bot.open_inventory().ok().flatten(),
@@ -4521,6 +4532,10 @@ async fn execute_container_view(
         bot.chat("I don't have a clear line of sight to that container.");
         return;
     }
+    if !world.read().get_block_state(position).is_some_and(|block| is_storage_container_block(&block)) {
+        bot.chat("The target changed and is no longer a supported storage container; nothing was opened.");
+        return;
+    }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
         bot.chat("I couldn't open a container at that coordinate.");
         return;
@@ -4612,6 +4627,10 @@ async fn execute_container_sort(
     if cancelled() { return; }
     if !matches!(bot.hit_result(), HitResult::Block(hit) if !hit.miss && hit.block_pos == position) {
         bot.chat("I don't have a clear line of sight to that storage container.");
+        return;
+    }
+    if !world.read().get_block_state(position).is_some_and(|block| is_storage_container_block(&block)) {
+        bot.chat("The target changed and is no longer a supported storage container; nothing was opened.");
         return;
     }
     match bot.open_container_at(position).await {
@@ -5350,6 +5369,14 @@ async fn execute_clear_furnace(
         bot.chat("I don't have a clear line of sight to that furnace.");
         return false;
     }
+    if !world.read().get_block_state(position).is_some_and(|block| is_furnace_block(&block)) {
+        bot.chat("The target changed and is no longer a furnace; nothing was opened.");
+        return false;
+    }
+    if !world.read().get_block_state(position).is_some_and(|block| is_furnace_block(&block)) {
+        bot.chat("The target changed and is no longer a furnace; nothing was opened.");
+        return false;
+    }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
         bot.chat("I couldn't open a furnace interface at that coordinate.");
         return false;
@@ -5490,6 +5517,10 @@ async fn execute_smelt_collect(
     if cancelled() { return false; }
     if !matches!(bot.hit_result(), HitResult::Block(hit) if !hit.miss && hit.block_pos == position) {
         if announce { bot.chat("I don't have a clear line of sight to that furnace."); }
+        return false;
+    }
+    if !world.read().get_block_state(position).is_some_and(|block| is_furnace_block(&block)) {
+        if announce { bot.chat("The target changed and is no longer a furnace; nothing was opened."); }
         return false;
     }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
