@@ -4,6 +4,8 @@ use azalea::{account::microsoft::MicrosoftAccountOpts, block::BlockStates, core:
 use std::{collections::{HashMap, HashSet}, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use tokio::sync::{broadcast, Mutex};
 
+const MAX_TRACKED_ONLINE_PLAYERS: usize = 256;
+
 #[derive(Debug, Clone)]
 pub struct BuildBlock {
     pub material: String,
@@ -775,7 +777,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::AddPlayer(info) | Event::UpdatePlayer(info) => {
             if let Some(status) = &state.status {
-                status.online_players.lock().await.insert(info.profile.name.clone());
+                let mut players = status.online_players.lock().await;
+                let name = info.profile.name.clone();
+                // A remote server controls tab-list events. Keep the roster
+                // bounded so a large or hostile player list cannot grow memory
+                // or inflate every AI prompt without limit.
+                if players.contains(&name) || players.len() < MAX_TRACKED_ONLINE_PLAYERS {
+                    players.insert(name);
+                }
             }
         }
         Event::RemovePlayer(info) => {
