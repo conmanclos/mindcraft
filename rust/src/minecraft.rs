@@ -575,7 +575,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 }
                 ClientboundGamePacket::MerchantOffers(packet) => {
                     let position = state.merchant_position.as_ref()
-                        .and_then(|position| position.try_lock().ok().and_then(|guard| *guard));
+                        .and_then(|position| position.try_lock().ok().and_then(|guard| guard.as_ref().cloned()));
                     if let (Some(position), Some(offers_state)) = (position, &state.merchant_offers) {
                         let offers = packet.offers.iter().enumerate().filter_map(|(index, offer)| {
                             let input_b = offer.cost_b.as_ref().map(|cost| (format!("{:?}", cost.item), cost.count));
@@ -3314,7 +3314,7 @@ async fn execute_trade(
             return false;
         }
         if let Some(position_state) = &merchant_position_state {
-            *position_state.lock().await = Some(position);
+            *position_state.lock().await = Some(position.clone());
         }
         if let Some(offers) = &offers_state {
             *offers.lock().await = None;
