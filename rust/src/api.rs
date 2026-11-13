@@ -145,7 +145,7 @@ fn default_memory_source() -> String { "user".into() }
 struct AgentClaimRequest { agent_id: String, role: String }
 
 #[derive(Deserialize)]
-struct CompleteTaskRequest { agent_id: String }
+struct CompleteTaskRequest { agent_id: String, verification_note: String }
 
 #[derive(Deserialize)]
 struct FailTaskRequest { agent_id: String, reason: String }
@@ -1518,9 +1518,12 @@ async fn complete_task(State(state): State<ApiState>, headers: HeaderMap, Path(t
     if !valid_agent_id(&request.agent_id) {
         return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
+    if request.verification_note.trim().is_empty() || request.verification_note.len() > 500 {
+        return Err((StatusCode::BAD_REQUEST, "verification_note must describe the observed in-game result in 1-500 bytes".into()));
+    }
     authorize_agent(&state, &headers, &request.agent_id).await
         .map_err(|code| (code, "unauthorized for this agent".into()))?;
-    let completed = state.store.complete_task(task_id, &request.agent_id)
+    let completed = state.store.complete_task_verified(task_id, &request.agent_id, &request.verification_note)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if !completed {
         return Err((StatusCode::CONFLICT, "task is not owned by this agent or is already complete".into()));
