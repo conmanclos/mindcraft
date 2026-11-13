@@ -819,12 +819,6 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Disconnect(reason) => {
             let username = bot.username();
             discard_pending_commands(&state, &username, "disconnect").await;
-            if let Some(status) = &state.status {
-                let mut connection = status.connection.lock().await;
-                connection.state = "reconnecting".into();
-                connection.last_error = Some(format!("{reason:?}"));
-                connection.last_disconnected_unix = Some(unix_timestamp());
-            }
             // Merchant container IDs and offers are connection-scoped. Never
             // reuse a stale menu snapshot after Azalea reconnects the client.
             if let Some(position) = &state.merchant_position { *position.lock().await = None; }
@@ -850,6 +844,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     status.connected_agents.load(Ordering::Relaxed)
                 };
                 status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                {
+                    let mut connection = status.connection.lock().await;
+                    if count > 0 {
+                        // One member of a multi-agent swarm may disconnect
+                        // while the rest remain online.
+                        connection.state = "connected".into();
+                        connection.last_error = None;
+                        connection.retry_in_seconds = None;
+                    } else {
+                        connection.state = "reconnecting".into();
+                        connection.last_error = Some(format!("{reason:?}"));
+                        connection.last_disconnected_unix = Some(unix_timestamp());
+                    }
+                }
                 // Remove the snapshot even if the connection flag was already
                 // false; a missed earlier transition must not leave a phantom
                 // team member visible to planning or task assignment.
