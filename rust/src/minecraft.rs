@@ -3413,18 +3413,26 @@ async fn execute_trade(
                 state.try_lock().ok().and_then(|guard| guard.clone())
             }) {
                 if offers_position == position && container_id > 0 && !snapshot.is_empty() {
-                    offers = Some(snapshot);
+                    offers = Some((container_id, snapshot));
                     break;
                 }
             }
         }
-        let Some(offers) = offers else {
+        let Some((container_id, offers)) = offers else {
             bot.chat("The merchant did not send a trade list. Check line of sight and whether the villager can trade.");
             return false;
         };
         let Ok(menu) = bot.menu() else { return false; };
         if !matches!(menu, azalea_inventory::Menu::Merchant { .. }) {
             bot.chat("The merchant trade window did not open; no trade was attempted.");
+            return false;
+        }
+        let Some(container) = bot.get_inventory().ok() else {
+            bot.chat("The merchant trade window is not accessible.");
+            return false;
+        };
+        if container.id() != container_id {
+            bot.chat("The received trade list does not match the open merchant window.");
             return false;
         }
         bot.chat(format!("Merchant offers at {},{},{}:", position.x, position.y, position.z));
