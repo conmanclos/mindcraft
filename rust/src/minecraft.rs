@@ -89,7 +89,7 @@ struct BotState {
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     dimension: Option<Arc<Mutex<String>>>,
     merchant_position: Option<Arc<Mutex<Option<BlockPos>>>>,
-    merchant_offers: Option<Arc<Mutex<Option<(BlockPos, Vec<TradeOfferSnapshot>)>>>>,
+    merchant_offers: Option<Arc<Mutex<Option<(BlockPos, i32, Vec<TradeOfferSnapshot>)>>>>,
     is_exploring: Option<Arc<AtomicBool>>,
     explore_radius: Option<Arc<AtomicUsize>>,
     explore_step: Option<Arc<AtomicUsize>>,
@@ -597,7 +597,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 out_of_stock: offer.out_of_stock,
                             })
                         }).collect();
-                        *offers_state.lock().await = Some((position, offers));
+                        *offers_state.lock().await = Some((position, packet.container_id, offers));
                     }
                 }
                 _ => {}
@@ -3346,7 +3346,7 @@ async fn execute_trade(
     position: BlockPos,
     offer_index: Option<u8>,
     merchant_position_state: Option<Arc<Mutex<Option<BlockPos>>>>,
-    offers_state: Option<Arc<Mutex<Option<(BlockPos, Vec<TradeOfferSnapshot>)>>>>,
+    offers_state: Option<Arc<Mutex<Option<(BlockPos, i32, Vec<TradeOfferSnapshot>)>>>>,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
 ) -> bool {
@@ -3409,10 +3409,10 @@ async fn execute_trade(
         for _ in 0..60 {
             if cancelled() { return false; }
             bot.wait_ticks(1).await;
-            if let Some((offers_position, snapshot)) = offers_state.as_ref().and_then(|state| {
+            if let Some((offers_position, container_id, snapshot)) = offers_state.as_ref().and_then(|state| {
                 state.try_lock().ok().and_then(|guard| guard.clone())
             }) {
-                if offers_position == position && !snapshot.is_empty() {
+                if offers_position == position && container_id > 0 && !snapshot.is_empty() {
                     offers = Some(snapshot);
                     break;
                 }
@@ -3447,7 +3447,7 @@ async fn execute_trade(
     }
 
     let Some(index) = offer_index else { return false; };
-    let Some((offers_position, offers)) = offers_state.as_ref().and_then(|state| {
+    let Some((offers_position, container_id, offers)) = offers_state.as_ref().and_then(|state| {
         state.try_lock().ok().and_then(|guard| guard.clone())
     }) else {
         bot.chat("No merchant offer list is available. Run trade x,y,z first to inspect this merchant.");
@@ -3487,6 +3487,10 @@ async fn execute_trade(
         bot.chat("I couldn't access the selected merchant offer.");
         return false;
     };
+    if container.id() != container_id {
+        bot.chat("The open merchant window does not match the saved offer packet. Nothing was traded.");
+        return false;
+    }
     let Some(slots) = container.slots() else {
         bot.chat("The merchant trade slots are unavailable.");
         return false;
