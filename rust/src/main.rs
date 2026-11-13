@@ -105,10 +105,15 @@ async fn api_request(
         bail!("CLI API commands require MINDCRAFT_API_TOKEN to be set to the token used by the running runtime");
     }
     let base = local_api_url(config)?;
-    let client = reqwest::Client::builder()
+    let mut client_builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(cert_path) = &config.tls_cert_path {
+        let certificate_pem = std::fs::read(cert_path)?;
+        let certificate = reqwest::Certificate::from_pem(&certificate_pem)?;
+        client_builder = client_builder.add_root_certificate(certificate);
+    }
+    let client = client_builder.build()?;
     let mut request = client.request(method, format!("{base}{path}"))
         .bearer_auth(&config.api_token);
     if let Some(body) = body {
