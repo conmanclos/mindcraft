@@ -5664,11 +5664,11 @@ async fn execute_build_mixed(
         return;
     }
     let Ok(menu) = bot.menu() else {
-        bot.chat("I can't inspect the player inventory before starting this schematic.");
+        bot.chat("I can't inspect the player inventory before starting this build.");
         return;
     };
     if menu.try_as_player().is_none() {
-        bot.chat("Close the open container before starting a schematic build.");
+        bot.chat("Close the open container before starting a build.");
         return;
     }
 
@@ -5725,7 +5725,7 @@ async fn execute_build_mixed(
             }
         }
         if total < required {
-            bot.chat(format!("The schematic needs {required} {material} blocks across inventory stacks, plus an empty hotbar slot for each stack moved from the main inventory. I made no inventory changes."));
+            bot.chat(format!("The build needs {required} {material} blocks across inventory stacks, plus an empty hotbar slot for each stack moved from the main inventory. I made no inventory changes."));
             return;
         }
         plans.push(MaterialPlan { material, slots, current: 0 });
@@ -5736,7 +5736,7 @@ async fn execute_build_mixed(
             let Some(source) = source else { continue; };
             if cancelled() { return; }
             let Ok(inventory) = bot.get_inventory() else {
-                bot.chat("I couldn't open the player inventory to prepare schematic materials.");
+                bot.chat("I couldn't open the player inventory to prepare build materials.");
                 return;
             };
             inventory.left_click(*source);
@@ -5763,7 +5763,7 @@ async fn execute_build_mixed(
                     inventory.left_click(*source);
                     bot.wait_updates(1).await;
                 }
-                bot.chat(format!("The server did not confirm the complete {} stack in the hotbar; the schematic was not started.", plan.material));
+                bot.chat(format!("The server did not confirm the complete {} stack in the hotbar; the build was not started.", plan.material));
                 return;
             }
         }
@@ -5779,7 +5779,7 @@ async fn execute_build_mixed(
     for (index, block) in blocks.iter().enumerate() {
         if cancelled() || !bot.exists() { return; }
         let Some(plan) = plans.iter_mut().find(|plan| plan.material == block.material) else {
-            bot.chat("A schematic material was not prepared; construction stopped before placement.");
+            bot.chat("A build material was not prepared; construction stopped before placement.");
             return;
         };
         while plan.current < plan.slots.len() && plan.slots[plan.current].1 == 0 {
@@ -5803,7 +5803,7 @@ async fn execute_build_mixed(
         let target = BlockPos::new(block.x, block.y, block.z);
         if !place_block_at(&bot, target, None, None, &generation_state, generation).await {
             if !cancelled() {
-                bot.chat(format!("Schematic stopped at block {} of {} ({} {} {}): placement was not confirmed. Check support, reach, line of sight, and material stock.", index + 1, blocks.len(), block.x, block.y, block.z));
+                bot.chat(format!("Build stopped at block {} of {} ({} {} {}): placement was not confirmed. Check support, reach, line of sight, and material stock.", index + 1, blocks.len(), block.x, block.y, block.z));
             }
             return;
         }
