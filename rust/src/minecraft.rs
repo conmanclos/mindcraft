@@ -323,10 +323,18 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
         || name.contains("grindstone") || name.contains("stonecutter") || name.contains("cauldron") { Some("utility workstation") }
     else if name.contains("composter") { Some("farming workstation") }
     else if name.contains("suspicioussand") || name.contains("suspiciousgravel") { Some("archaeology site") }
+    else if name.contains("trialspawner") { Some("trial chamber spawner") }
+    else if name.contains("vault") { Some("trial chamber vault") }
+    else if name.contains("mobspawner") || name.contains("spawner") { Some("dungeon spawner") }
+    else if name.contains("sculkshrieker") { Some("deep dark shrieker") }
+    else if name.contains("sculksensor") { Some("deep dark sensor") }
     else if name.contains("endportalframe") || name.contains("endgateway") || name.contains("netherportal")
-        || name.contains("beacon") || name.contains("lodestone") || name.contains("respawnanchor") { Some("structure landmark") }
+        || name.contains("beacon") || name.contains("lodestone") || name.contains("respawnanchor")
+        || name.contains("conduit") || name.contains("dragon_egg") || name.contains("dragonegg") { Some("structure landmark") }
     else if name.contains("bell") || name.contains("loom") || name.contains("cartographytable")
-        || name.contains("smithingtable") || name.contains("fletchingtable") || name.contains("lectern") { Some("village workstation") }
+        || name.contains("smithingtable") || name.contains("fletchingtable") || name.contains("lectern")
+        || name.contains("stonecutter") || name.contains("blastfurnace") || name.contains("smoker") { Some("village workstation") }
+    else if name.ends_with("bed") { Some("village bed") }
     else { None }
 }
 
