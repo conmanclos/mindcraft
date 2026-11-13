@@ -95,6 +95,7 @@ Edit `.env`:
 - `MINDCRAFT_MODEL=llama3.1`
 - `MINDCRAFT_BASE_URL=http://127.0.0.1:11434/v1` for Ollama, the local endpoint for LM Studio/vLLM, the Azure resource endpoint for Azure OpenAI, or a custom OpenAI-compatible endpoint
 - `MINDCRAFT_AZURE_API_VERSION=2024-10-21` for Azure OpenAI; set `MINDCRAFT_MODEL` to the Azure deployment name
+- For Replicate, set `MINDCRAFT_MODEL` to `owner/model` or `owner/model:version`; predictions are polled for up to two minutes
 - `MINDCRAFT_API_KEY=...` for hosted providers
 - `MINDCRAFT_MODE=assisted|balanced|autonomous`
 - `MINDCRAFT_BIND=127.0.0.1:8787`
