@@ -1,7 +1,7 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
 use azalea::{account::microsoft::MicrosoftAccountOpts, block::BlockStates, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage, MaxStackSize}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, registry::builtin::BlockKind, swarm::SwarmBuilder, BlockPos, WalkDirection};
-use std::{collections::{HashMap, HashSet}, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
+use std::{collections::{HashMap, HashSet}, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use tokio::sync::{broadcast, Mutex};
 
 #[derive(Debug, Clone)]
@@ -195,6 +195,11 @@ pub async fn connect(
     let mut reconnect_delay = Duration::from_secs(5);
     let mut authentication_retry_delay = Duration::from_secs(30);
     loop {
+        {
+            let mut connection = status.connection.lock().await;
+            connection.state = "connecting".into();
+            connection.retry_in_seconds = None;
+        }
         let mut connection_attempt_started = Instant::now();
         let accounts_to_join = if auth_mode == "microsoft" {
             let emails = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?
@@ -216,7 +221,13 @@ pub async fn connect(
                 match Account::microsoft_with_opts(email, auth_opts).await {
                     Ok(account) => authenticated.push(account),
                     Err(error) => {
-                        tracing::error!(account_index = index, %error, "Microsoft authentication failed; dashboard remains available and login will retry in 30 seconds");
+                        tracing::error!(account_index = index, %error, "Microsoft authentication failed; dashboard remains available and login will retry");
+                        {
+                            let mut connection = status.connection.lock().await;
+                            connection.state = "authentication_retry".into();
+                            connection.last_error = Some(format!("{error:#}"));
+                            connection.retry_in_seconds = Some(authentication_retry_delay.as_secs());
+                        }
                         authentication_failed = true;
                         break;
                     }
@@ -224,6 +235,10 @@ pub async fn connect(
             }
             if authentication_failed {
                 tracing::warn!(retry_seconds = authentication_retry_delay.as_secs(), "Microsoft authentication retry is backing off");
+                {
+                    let mut connection = status.connection.lock().await;
+                    connection.retry_in_seconds = Some(authentication_retry_delay.as_secs());
+                }
                 tokio::time::sleep(authentication_retry_delay).await;
                 authentication_retry_delay = (authentication_retry_delay * 2).min(Duration::from_secs(300));
                 continue;
@@ -269,6 +284,13 @@ pub async fn connect(
             reconnect_delay = Duration::from_secs(5);
         } else {
             reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(60));
+        }
+        {
+            let mut connection = status.connection.lock().await;
+            connection.state = "reconnecting".into();
+            connection.last_error = Some(format!("{result:?}"));
+            connection.reconnect_attempts = connection.reconnect_attempts.saturating_add(1);
+            connection.retry_in_seconds = Some(reconnect_delay.as_secs());
         }
         tracing::warn!(?result, attempt_seconds = attempt_duration.as_secs(), retry_seconds = reconnect_delay.as_secs(), "Azalea swarm exited; reconnecting with bounded backoff");
         tokio::time::sleep(reconnect_delay).await;
@@ -408,6 +430,12 @@ mod role_assignment_tests {
         assert_eq!(role_for_agent_index(6), "planner");
         assert_eq!(role_for_agent_index(7), "scout");
     }
+}
+
+fn unix_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 fn instant_before(duration: Duration) -> Instant {
