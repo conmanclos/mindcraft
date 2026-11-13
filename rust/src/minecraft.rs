@@ -683,6 +683,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if bot.exists() {
                 let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) else { return Ok(()); };
                 critical_health = !health.is_finite() || health <= 6.0;
+                if !health.is_finite() {
+                    tracing::warn!(username = %bot.username(), "health telemetry is invalid; suppressing gameplay actions until a valid snapshot arrives");
+                }
 
                 if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
