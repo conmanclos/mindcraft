@@ -6,10 +6,11 @@ mod reflex;
 mod store;
 
 use anyhow::{bail, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::{Parser, Subcommand};
 use reqwest::Method;
 use serde_json::{json, Value};
-use std::{net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::Arc};
+use std::{net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, path::PathBuf, sync::Arc};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -69,6 +70,20 @@ enum Command {
     },
     /// Submit a bounded mixed-material schematic to the native builder.
     Build { schematic_json: String },
+    /// Import a Sponge v2/v3 .schem file through the running native runtime.
+    BuildSponge {
+        file: PathBuf,
+        #[arg(long)]
+        origin: String,
+        #[arg(long, default_value_t = 0)]
+        rotation: u16,
+        #[arg(long)]
+        mirror_x: bool,
+        #[arg(long)]
+        mirror_z: bool,
+        #[arg(long)]
+        agent: Option<String>,
+    },
     /// Execute an explicitly approved action supplied as a JSON object.
     Execute {
         action_json: String,
@@ -129,6 +144,16 @@ async fn api_request(
         return Ok(Value::Null);
     }
     Ok(serde_json::from_str(&text)?)
+}
+
+fn parse_schematic_origin(value: &str) -> Result<[i32; 3]> {
+    let coordinates = value.split(',').map(str::trim).map(str::parse::<i32>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if coordinates.len() != 3 || coordinates[1] < -64 || coordinates[1] > 320
+        || coordinates.iter().any(|coordinate| coordinate.unsigned_abs() > 30_000_000) {
+        bail!("origin must be valid integer x,y,z world coordinates");
+    }
+    Ok([coordinates[0], coordinates[1], coordinates[2]])
 }
 
 fn valid_agent_id(value: &str) -> bool {
@@ -270,6 +295,26 @@ async fn main() -> Result<()> {
                 bail!("schematic_json must be an object containing origin and blocks");
             }
             print_json(&api_request(&config, Method::POST, "/build", Some(schematic)).await?)?;
+        }
+        Command::BuildSponge { file, origin, rotation, mirror_x, mirror_z, agent } => {
+            let metadata = std::fs::metadata(&file)?;
+            if metadata.len() == 0 || metadata.len() > 1_400_000 {
+                bail!("compressed Sponge schematic file must be 1 byte to 1.4 MB");
+            }
+            if rotation % 90 != 0 || rotation > 270 {
+                bail!("rotation must be 0, 90, 180, or 270 degrees");
+            }
+            let origin = parse_schematic_origin(&origin)?;
+            let bytes = std::fs::read(&file)?;
+            let request = json!({
+                "origin": origin,
+                "data_base64": BASE64_STANDARD.encode(bytes),
+                "rotation": rotation,
+                "mirror_x": mirror_x,
+                "mirror_z": mirror_z,
+                "agent": agent
+            });
+            print_json(&api_request(&config, Method::POST, "/build/sponge", Some(request)).await?)?;
         }
         Command::Execute { action_json, agent } => {
             let action: Value = serde_json::from_str(&action_json)?;
