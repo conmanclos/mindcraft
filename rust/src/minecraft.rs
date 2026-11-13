@@ -2486,7 +2486,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             bot.chat("I couldn't read my hunger level, so I won't consume food blindly.");
                             continue;
                         };
-                        if hunger.food >= 20 {
+                        let emergency_heal = bot.health().ok().is_some_and(|health| health <= 10.0);
+                        if hunger.food >= 20 && !emergency_heal {
                             bot.chat("My hunger is already full; I won't waste food.");
                             continue;
                         }
@@ -2494,11 +2495,31 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             bot.chat("I couldn't inspect my inventory to choose safe food.");
                             continue;
                         };
-                        let Some((slot, _)) = best_safe_food_slot(&menu) else {
-                            bot.chat("No recognized safe food is available in the hotbar. I won't consume an unknown item.");
+                        let mut food_slot = if emergency_heal {
+                            best_golden_apple_slot(&menu).map(|(slot, _)| slot)
+                        } else {
+                            None
+                        };
+                        if food_slot.is_none() && emergency_heal {
+                            food_slot = restock_one_food_stack_to_hotbar(&bot, true, false).await;
+                        }
+                        if food_slot.is_none() && hunger.food < 20 {
+                            food_slot = bot.menu().ok().and_then(|menu| {
+                                best_safe_food_slot(&menu).map(|(slot, _)| slot)
+                            });
+                            if food_slot.is_none() {
+                                food_slot = restock_one_food_stack_to_hotbar(&bot, false, true).await;
+                            }
+                        }
+                        let Some(slot) = food_slot else {
+                            bot.chat("No recognized safe food is available for this hunger/health state; I won't consume an unknown item.");
                             continue;
                         };
-                        let hotbar = menu.hotbar_slots_range();
+                        let Some(current_menu) = bot.menu().ok() else {
+                            bot.chat("The inventory closed before I could select the food item.");
+                            continue;
+                        };
+                        let hotbar = current_menu.hotbar_slots_range();
                         if !hotbar.contains(&slot) {
                             bot.chat("The selected food is not in the hotbar; no item was consumed.");
                             continue;
@@ -2513,7 +2534,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             menu.try_as_player()?;
                             let slots = menu.slots();
                             let item = slots.get(slot)?;
-                            (!item.is_empty() && safe_food_priority(&format!("{item:?}")).is_some()).then_some(())
+                            let compact: String = format!("{item:?}").chars()
+                                .filter(|character| character.is_ascii_alphanumeric())
+                                .flat_map(char::to_lowercase)
+                                .collect();
+                            (!item.is_empty()
+                                && safe_food_priority(&compact).is_some()
+                                && (emergency_heal || !compact.contains("goldenapple")))
+                                .then_some(())
                         }).is_some();
                         if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                             continue;
