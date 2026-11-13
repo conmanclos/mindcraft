@@ -51,6 +51,8 @@ enum Command {
         #[arg(long)]
         agent: Option<String>,
     },
+    /// Submit a bounded mixed-material schematic to the native builder.
+    Build { schematic_json: String },
     /// Execute an explicitly approved action supplied as a JSON object.
     Execute {
         action_json: String,
@@ -201,6 +203,13 @@ async fn main() -> Result<()> {
             let mut body = json!({"message": message});
             if let Some(agent) = agent { body["agent"] = json!(agent); }
             print_json(&api_request(&config, Method::POST, "/plan", Some(body)).await?)?;
+        }
+        Command::Build { schematic_json } => {
+            let schematic: Value = serde_json::from_str(&schematic_json)?;
+            if !schematic.is_object() {
+                bail!("schematic_json must be an object containing origin and blocks");
+            }
+            print_json(&api_request(&config, Method::POST, "/build", Some(schematic)).await?)?;
         }
         Command::Execute { action_json, agent } => {
             let action: Value = serde_json::from_str(&action_json)?;
