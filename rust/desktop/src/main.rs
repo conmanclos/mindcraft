@@ -31,7 +31,7 @@ struct RuntimeLaunch {
 #[serde(rename_all = "camelCase")]
 struct SavedSetup {
     server: String, username: String, accounts: String, auth: String, microsoft_email: String, trusted_players: String,
-    provider: String, model: String, base_url: String, autonomy: String,
+    provider: String, model: String, base_url: String, azure_api_version: String, autonomy: String,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +47,7 @@ struct Setup {
     model: String,
     api_key: String,
     base_url: String,
+    azure_api_version: String,
     autonomy: String,
 }
 
@@ -78,7 +79,7 @@ fn supported_provider(provider: &str) -> bool {
         "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
         | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
         | "xai" | "grok" | "qwen" | "huggingface" | "hyperbolic" | "novita"
-        | "mercury" | "lmstudio" | "vllm"
+        | "mercury" | "lmstudio" | "vllm" | "azure"
     )
 }
 
@@ -86,7 +87,7 @@ fn provider_requires_api_key(provider: &str) -> bool {
     matches!(provider,
         "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
         | "mistral" | "openrouter" | "xai" | "grok" | "qwen" | "huggingface"
-        | "hyperbolic" | "novita" | "mercury"
+        | "hyperbolic" | "novita" | "mercury" | "azure"
     )
 }
 
@@ -95,7 +96,7 @@ fn default_provider_base_url(provider: &str) -> &'static str {
         "ollama" => "http://127.0.0.1:11434/v1",
         "lmstudio" => "http://127.0.0.1:1234/v1",
         "vllm" => "http://127.0.0.1:8000/v1",
-        "openai-compatible" => "",
+        "openai-compatible" | "azure" => "",
         "deepseek" => "https://api.deepseek.com/v1",
         "groq" => "https://api.groq.com/openai/v1",
         "cerebras" => "https://api.cerebras.ai/v1",
@@ -197,6 +198,7 @@ fn load_setup(app: AppHandle) -> Result<Option<SavedSetup>, String> {
         provider: get("MINDCRAFT_PROVIDER"),
         model: get("MINDCRAFT_MODEL"),
         base_url: get("MINDCRAFT_BASE_URL"),
+        azure_api_version: get("MINDCRAFT_AZURE_API_VERSION"),
         autonomy: get("MINDCRAFT_MODE"),
     }))
 }
@@ -234,10 +236,18 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.model.trim().is_empty() {
         return Err("Enter an AI model name.".into());
     }
-    if setup.provider == "openai-compatible" && setup.base_url.trim().is_empty() {
-        return Err("Enter the OpenAI-compatible API base URL.".into());
+    if ["openai-compatible", "azure"].contains(&setup.provider.as_str()) && setup.base_url.trim().is_empty() {
+        return Err(if setup.provider == "azure" {
+            "Enter the Azure OpenAI resource endpoint URL.".into()
+        } else {
+            "Enter the OpenAI-compatible API base URL.".into()
+        });
     }
-    if ["ollama", "openai-compatible"].contains(&setup.provider.as_str())
+    if setup.azure_api_version.trim().is_empty() || setup.azure_api_version.len() > 40
+        || !setup.azure_api_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.')) {
+        return Err("Azure API version must contain 1-40 ASCII letters, numbers, dots, or hyphens.".into());
+    }
+    if ["ollama", "openai-compatible", "azure"].contains(&setup.provider.as_str())
         && !setup.base_url.trim().is_empty()
         && !valid_http_base_url(&setup.base_url) {
         return Err("Use HTTPS for remote AI endpoints; HTTP is allowed only for localhost/loopback URLs without credentials, query, or fragment.".into());
@@ -278,10 +288,12 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         ("MINDCRAFT_PROVIDER", setup.provider.clone()),
         ("MINDCRAFT_MODEL", setup.model.trim().to_owned()),
         ("MINDCRAFT_BASE_URL", match setup.provider.as_str() {
-            "openai-compatible" => if setup.base_url.trim().is_empty() { return Err("Enter the OpenAI-compatible API base URL.".into()); } else { setup.base_url.trim().to_owned() },
+            "openai-compatible" => setup.base_url.trim().to_owned(),
+            "azure" => setup.base_url.trim().to_owned(),
             "ollama" if !setup.base_url.trim().is_empty() && valid_http_base_url(&setup.base_url) => setup.base_url.trim().to_owned(),
             provider => default_provider_base_url(provider).to_owned(),
         }),
+        ("MINDCRAFT_AZURE_API_VERSION", setup.azure_api_version.trim().to_owned()),
         ("MINDCRAFT_MODE", setup.autonomy.clone()),
         ("MINDCRAFT_BIND", "127.0.0.1:8787".into()),
         ("MINDCRAFT_API_TOKEN", token),
@@ -342,7 +354,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
     for key in [
         "MINDCRAFT_MC_SERVER", "MINDCRAFT_MC_USERNAME", "MINDCRAFT_MC_ACCOUNTS",
         "MINDCRAFT_MC_AUTH", "MINDCRAFT_MICROSOFT_EMAIL", "MINDCRAFT_TRUSTED_PLAYERS", "MINDCRAFT_PROVIDER",
-        "MINDCRAFT_MODEL", "MINDCRAFT_API_KEY", "MINDCRAFT_BASE_URL", "MINDCRAFT_MODE",
+        "MINDCRAFT_MODEL", "MINDCRAFT_API_KEY", "MINDCRAFT_BASE_URL", "MINDCRAFT_AZURE_API_VERSION", "MINDCRAFT_MODE",
         "MINDCRAFT_BIND", "MINDCRAFT_API_TOKEN", "MINDCRAFT_DATABASE",
         "MINDCRAFT_AZALEA_AUTH_CACHE",
     ] {
