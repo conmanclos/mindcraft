@@ -61,6 +61,7 @@ pub enum BotCommand {
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>, Option<String>),
     ContainerDeposit(i32, i32, i32, Option<String>),
     ContainerSort(i32, i32, i32),
+    ContainerView(i32, i32, i32),
     Craft(String, Option<(i32, i32, i32)>, u8),
     Smelt(String, (i32, i32, i32), u8),
     SmeltCollect(String, (i32, i32, i32), u8),
@@ -2207,6 +2208,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                         });
                     }
+                    BotCommand::ContainerView(x, y, z) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_container_view(client, BlockPos::new(x, y, z), generation_state, generation).await;
+                        });
+                    }
                     BotCommand::ContainerSort(x, y, z) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
@@ -4098,6 +4113,90 @@ async fn execute_inventory_sort(
     } else {
         bot.chat("Inventory sorting ended with a mismatch. Inspect the main inventory before issuing another sort.");
     }
+}
+
+async fn execute_container_view(
+    bot: Client,
+    position: BlockPos,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return; }
+    let Ok(world) = bot.world() else {
+        bot.chat("I can't read the loaded world to reach that container.");
+        return;
+    };
+    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+        bot.chat("That container coordinate is not a loaded non-air block.");
+        return;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+        if !cancelled() { bot.chat("Pathfinding to the container timed out or failed."); }
+        return;
+    }
+    if cancelled() || !bot.exists() || !bot.is_goto_target_reached() {
+        if !cancelled() { bot.chat("I couldn't reach that container without breaking blocks."); }
+        return;
+    }
+    let Ok(own_position) = bot.position() else { return; };
+    let dx = own_position.x - (position.x as f64 + 0.5);
+    let dy = own_position.y - (position.y as f64 + 0.5);
+    let dz = own_position.z - (position.z as f64 + 0.5);
+    if dx * dx + dy * dy + dz * dz > 20.25 {
+        bot.chat("That container is outside the 4.5-block interaction reach.");
+        return;
+    }
+    bot.look_at(position.center());
+    bot.wait_updates(1).await;
+    if cancelled() { return; }
+    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+        bot.chat("I don't have a clear line of sight to that container.");
+        return;
+    }
+    let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
+        bot.chat("I couldn't open a container at that coordinate.");
+        return;
+    };
+    let Some(menu) = container.menu().ok().flatten() else {
+        bot.chat("The container menu closed before I could inspect it.");
+        drop(container);
+        return;
+    };
+    let container_slots = *menu.player_slots_range().start();
+    if !(9..=54).contains(&container_slots) || container_slots % 9 != 0 {
+        bot.chat("That menu is not a supported 9-, 27-, or 54-slot storage container.");
+        drop(container);
+        return;
+    }
+    let Some(slots) = container.slots() else {
+        bot.chat("I couldn't read the container contents.");
+        drop(container);
+        return;
+    };
+    if slots.len() < container_slots {
+        bot.chat("The container menu layout changed before inspection completed.");
+        drop(container);
+        return;
+    }
+    let mut counts: HashMap<String, u32> = HashMap::new();
+    for item in slots.iter().take(container_slots) {
+        if item.is_empty() { continue; }
+        *counts.entry(format!("{:?}", item.kind())).or_insert(0) += u32::from(item.count());
+    }
+    if cancelled() { drop(container); return; }
+    if counts.is_empty() {
+        bot.chat("The container is empty. No items were moved.");
+    } else {
+        let mut entries = counts.into_iter().collect::<Vec<_>>();
+        entries.sort_unstable_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        let summary = entries.into_iter().take(14).map(|(name, count)| format!("{name} x{count}"))
+            .collect::<Vec<_>>().join(", ");
+        bot.chat(truncate_utf16(&format!("Container contents at {}, {}, {}: {summary}. No items were moved.", position.x, position.y, position.z), 240));
+    }
+    drop(container);
 }
 
 async fn execute_container_sort(
