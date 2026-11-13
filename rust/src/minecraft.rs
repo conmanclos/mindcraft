@@ -1208,7 +1208,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     BotCommand::LocateEntity(query, range) => {
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            let needle = query.chars().filter(|character| character.is_ascii_alphanumeric())
+                            let entity_query = query.rsplit(':').next().unwrap_or(&query);
+                            let needle = entity_query.chars().filter(|character| character.is_ascii_alphanumeric())
                                 .flat_map(char::to_lowercase).collect::<String>();
                             let radius = f64::from(range);
                             let mut nearest: Option<(f64, String, String)> = None;
