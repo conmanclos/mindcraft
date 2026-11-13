@@ -778,11 +778,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     } else { false };
                     if should_snapshot {
                         if let (Ok(position), Ok(menu)) = (bot.position(), bot.menu()) {
-                            let inventory = menu.slots().iter().enumerate()
-                                .filter(|(_, item)| !item.is_empty())
-                                .map(|(slot, item)| {
-                                    let description: String = format!("{:?} x{}", item.kind(), item.count()).chars().take(80).collect();
-                                    format!("{slot}: {description}")
+                            // Container menus prepend their own slots before the
+                            // player's inventory. Read only the player-owned range so
+                            // chest/furnace contents are never misreported as carried items.
+                            let slots = menu.slots();
+                            let inventory = menu.player_slots_range()
+                                .filter_map(|slot| slots.get(slot))
+                                .filter(|item| !item.is_empty())
+                                .map(|item| {
+                                    let description: String = format!("{:?} x{}", item.kind(), item.count())
+                                        .chars().take(80).collect();
+                                    description
                                 })
                                 .collect::<Vec<_>>();
                             let dimension = if let Some(dimension) = &state.dimension {
