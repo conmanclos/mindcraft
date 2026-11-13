@@ -15,6 +15,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use std::{io::Read, time::Duration};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use flate2::read::GzDecoder;
+use fastnbt::ByteArray;
 
 #[derive(Clone, Serialize)]
 pub struct WorldSnapshot {
@@ -195,7 +196,7 @@ struct SpongeSchematicNbt {
     #[serde(rename = "Palette", default)]
     palette: Option<HashMap<String, i32>>,
     #[serde(rename = "BlockData", default)]
-    block_data: Option<Vec<i8>>,
+    block_data: Option<ByteArray>,
     #[serde(rename = "Blocks", default)]
     blocks: Option<SpongeBlocksNbt>,
 }
@@ -205,7 +206,7 @@ struct SpongeBlocksNbt {
     #[serde(rename = "Palette")]
     palette: HashMap<String, i32>,
     #[serde(rename = "Data")]
-    data: Vec<i8>,
+    data: ByteArray,
 }
 
 const MAX_SPONGE_BASE64_BYTES: usize = 1_900_000;
