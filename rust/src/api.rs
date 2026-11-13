@@ -585,7 +585,12 @@ fn decode_sponge_varints(data: &[i8], expected: usize) -> Result<Vec<u32>, (Stat
 }
 
 fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)> {
-    let block_state = state.split('[').next().unwrap_or(state);
+    if state.contains('[') || state.contains(']') {
+        return Err((StatusCode::NOT_IMPLEMENTED, format!(
+            "Sponge block state '{state}' includes orientation or behavior properties that the item-placement executor cannot preserve safely"
+        )));
+    }
+    let block_state = state;
     let (namespace, block) = block_state.split_once(':').unwrap_or(("minecraft", block_state));
     if namespace != "minecraft" {
         return Err((StatusCode::NOT_IMPLEMENTED, format!("Sponge schematic block namespace '{namespace}' is not supported")));
