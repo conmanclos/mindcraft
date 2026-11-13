@@ -73,6 +73,44 @@ fn valid_http_base_url(value: &str) -> bool {
     })
 }
 
+fn supported_provider(provider: &str) -> bool {
+    matches!(provider,
+        "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
+        | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
+        | "xai" | "qwen" | "huggingface" | "hyperbolic" | "novita"
+        | "mercury" | "lmstudio" | "vllm"
+    )
+}
+
+fn provider_requires_api_key(provider: &str) -> bool {
+    matches!(provider,
+        "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
+        | "mistral" | "openrouter" | "xai" | "qwen" | "huggingface"
+        | "hyperbolic" | "novita" | "mercury"
+    )
+}
+
+fn default_provider_base_url(provider: &str) -> &'static str {
+    match provider {
+        "ollama" => "http://127.0.0.1:11434/v1",
+        "lmstudio" => "http://127.0.0.1:1234/v1",
+        "vllm" => "http://127.0.0.1:8000/v1",
+        "openai-compatible" => "",
+        "deepseek" => "https://api.deepseek.com/v1",
+        "groq" => "https://api.groq.com/openai/v1",
+        "cerebras" => "https://api.cerebras.ai/v1",
+        "mistral" => "https://api.mistral.ai/v1",
+        "openrouter" => "https://openrouter.ai/api/v1",
+        "xai" => "https://api.x.ai/v1",
+        "qwen" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "huggingface" => "https://router.huggingface.co/v1",
+        "hyperbolic" => "https://api.hyperbolic.xyz/v1",
+        "novita" => "https://api.novita.ai/v3/openai",
+        "mercury" => "https://api.inceptionlabs.ai/v1",
+        _ => "https://api.openai.com/v1",
+    }
+}
+
 fn validate_trusted_players(raw: &str) -> Result<String, String> {
     let names = raw.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>();
     if names.len() > 32 {
@@ -190,7 +228,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         }
     }
     let trusted_players = validate_trusted_players(&setup.trusted_players)?;
-    if !["openai", "openai-compatible", "anthropic", "google", "ollama"].contains(&setup.provider.as_str()) {
+    if !supported_provider(&setup.provider) {
         return Err("Choose a supported AI provider.".into());
     }
     if setup.model.trim().is_empty() {
@@ -199,7 +237,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     if setup.provider == "openai-compatible" && setup.base_url.trim().is_empty() {
         return Err("Enter the OpenAI-compatible API base URL.".into());
     }
-    if ["ollama", "openai-compatible"].contains(&setup.provider.as_str())
+    if ["ollama", "openai-compatible", "lmstudio", "vllm"].contains(&setup.provider.as_str())
         && !setup.base_url.trim().is_empty()
         && !valid_http_base_url(&setup.base_url) {
         return Err("Use HTTPS for remote AI endpoints; HTTP is allowed only for localhost/loopback URLs without credentials, query, or fragment.".into());
@@ -210,7 +248,7 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
     let data = app_data(&app)?;
     let key_account = format!("ai-provider-api-key-{}", setup.provider);
     if setup.api_key.trim().is_empty() {
-        if ["openai", "anthropic", "google"].contains(&setup.provider.as_str()) {
+        if provider_requires_api_key(&setup.provider) {
             let entry = Entry::new("com.mindcraft.minecraft", &key_account)
                 .map_err(|error| format!("The operating system credential store is unavailable: {error}"))?;
             if entry.get_password().is_err() {
@@ -240,10 +278,9 @@ fn save_setup(app: AppHandle, setup: Setup) -> Result<(), String> {
         ("MINDCRAFT_PROVIDER", setup.provider.clone()),
         ("MINDCRAFT_MODEL", setup.model.trim().to_owned()),
         ("MINDCRAFT_BASE_URL", match setup.provider.as_str() {
-            "openai" => "https://api.openai.com/v1".into(),
-            "ollama" => if setup.base_url.trim().is_empty() { "http://127.0.0.1:11434/v1".into() } else { setup.base_url.trim().to_owned() },
             "openai-compatible" => if setup.base_url.trim().is_empty() { return Err("Enter the OpenAI-compatible API base URL.".into()); } else { setup.base_url.trim().to_owned() },
-            _ => "https://api.openai.com/v1".into(),
+            "ollama" | "lmstudio" | "vllm" if !setup.base_url.trim().is_empty() && valid_http_base_url(&setup.base_url) => setup.base_url.trim().to_owned(),
+            provider => default_provider_base_url(provider).to_owned(),
         }),
         ("MINDCRAFT_MODE", setup.autonomy.clone()),
         ("MINDCRAFT_BIND", "127.0.0.1:8787".into()),
