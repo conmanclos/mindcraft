@@ -3968,7 +3968,7 @@ async fn execute_smelt_collect(
     }
     if !ready {
         if announce {
-            if announce { bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched.")); }
+            bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched."));
         }
         drop(container);
         return false;
