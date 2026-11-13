@@ -285,7 +285,7 @@ impl Brain {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
         while tokio::time::Instant::now() < deadline {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            prediction = self.http.get(&get_url)
+            prediction = self.http.get(get_url.as_str())
                 .bearer_auth(&self.config.api_key)
                 .timeout(std::time::Duration::from_secs(20))
                 .send().await?.error_for_status()?.json().await?;
