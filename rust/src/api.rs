@@ -1045,6 +1045,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             Ok(BotCommand::LookAtPlayer(name.to_owned()))
         }
+        "saved_places" => Ok(BotCommand::SavedPlaces),
         "remember_here" | "go_to_remembered_place" => {
             let name = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a saved-place name".into()))?;
             let name = name.trim();
