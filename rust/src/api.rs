@@ -151,7 +151,8 @@ async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next)
         if constant_time_equal(token, &state.config.api_token) {
             true
         } else {
-            let tokens = state.status.agent_tokens.lock().await;
+            let mut tokens = state.status.agent_tokens.lock().await;
+            tokens.retain(|_, credential| now < credential.expires_at);
             tokens.values().any(|credential| agent_credential_matches(credential, token, now))
         }
     } else {
