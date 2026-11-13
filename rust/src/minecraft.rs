@@ -121,6 +121,7 @@ struct BotState {
     is_exploring: Option<Arc<AtomicBool>>,
     explore_radius: Option<Arc<AtomicUsize>>,
     explore_step: Option<Arc<AtomicUsize>>,
+    explore_origin: Option<Arc<Mutex<Option<BlockPos>>>>,
     last_explore_repath: Option<Arc<Mutex<Instant>>>,
     mine_generation: Option<Arc<AtomicUsize>>,
     trusted_chat_players: Option<Arc<HashSet<String>>>,
@@ -698,6 +699,7 @@ fn make_state(
         is_exploring: Some(Arc::new(AtomicBool::new(false))),
         explore_radius: Some(Arc::new(AtomicUsize::new(32))),
         explore_step: Some(Arc::new(AtomicUsize::new(0))),
+        explore_origin: Some(Arc::new(Mutex::new(None))),
         last_explore_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(20))))),
         mine_generation: Some(Arc::new(AtomicUsize::new(0))),
         trusted_chat_players: Some(trusted_chat_players),
@@ -1295,10 +1297,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     let step = state.explore_step.as_ref().map(|value| value.fetch_add(1, Ordering::Relaxed)).unwrap_or(0);
                     let base_radius = state.explore_radius.as_ref().map(|value| value.load(Ordering::Relaxed)).unwrap_or(32).clamp(8, 128) as i32;
                     let (dx, dz) = exploration_offset(base_radius, step);
+                    let spiral_origin = if let Some(origin) = &state.explore_origin {
+                        *origin.lock().await
+                    } else {
+                        None
+                    };
                     if let Ok(position) = bot.position() {
                         let poi = nearby_point_of_interest(bot, 8);
+                        let origin_x = spiral_origin.map(|origin| origin.x).unwrap_or_else(|| position.x.floor() as i32);
+                        let origin_z = spiral_origin.map(|origin| origin.z).unwrap_or_else(|| position.z.floor() as i32);
                         let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
-                            BlockPos::new(position.x.floor() as i32 + dx, position.y.floor() as i32, position.z.floor() as i32 + dz)
+                            BlockPos::new(origin_x + dx, position.y.floor() as i32, origin_z + dz)
                         });
                         let waypoint_safe = bot.world().ok().is_some_and(|world| {
                             let world = world.read();
@@ -2564,6 +2573,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         if let Some(radius_state) = &state.explore_radius { radius_state.store(radius as usize, Ordering::Relaxed); }
                         if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
+                        if let Some(origin) = &state.explore_origin {
+                            *origin.lock().await = bot.position().ok().map(|position| {
+                                BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32)
+                            });
+                        }
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
                         if let Some(last) = &state.last_explore_repath { *last.lock().await = instant_before(Duration::from_secs(20)); }
                     }
