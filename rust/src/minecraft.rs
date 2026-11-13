@@ -1101,20 +1101,30 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else { false }
                     } else { false };
                     if should_eat {
-                        let food_candidate = bot.menu().ok().and_then(|menu| {
-                            if health <= 10.0 {
-                                best_golden_apple_slot(&menu).or_else(|| {
-                                    if hunger.food <= 12 { best_safe_food_slot(&menu) } else { None }
-                                })
-                            } else {
-                                best_safe_food_slot(&menu)
+                        let mut food_slot = None;
+                        if health <= 10.0 {
+                            food_slot = bot.menu().ok().and_then(|menu| {
+                                best_golden_apple_slot(&menu).map(|(slot, _)| slot)
+                            });
+                            if food_slot.is_none() {
+                                food_slot = restock_one_food_stack_to_hotbar(&bot, true, false).await;
                             }
-                        });
-                        let food_slot = if let Some((slot, _)) = food_candidate {
-                            Some(slot)
+                            if food_slot.is_none() && hunger.food <= 12 {
+                                food_slot = bot.menu().ok().and_then(|menu| {
+                                    best_safe_food_slot(&menu).map(|(slot, _)| slot)
+                                });
+                                if food_slot.is_none() {
+                                    food_slot = restock_one_food_stack_to_hotbar(&bot, false, true).await;
+                                }
+                            }
                         } else {
-                            restock_one_food_stack_to_hotbar(&bot, health <= 10.0, hunger.food <= 12).await
-                        };
+                            food_slot = bot.menu().ok().and_then(|menu| {
+                                best_safe_food_slot(&menu).map(|(slot, _)| slot)
+                            });
+                            if food_slot.is_none() {
+                                food_slot = restock_one_food_stack_to_hotbar(&bot, false, true).await;
+                            }
+                        }
                         if let Some(slot) = food_slot {
                             let hotbar = bot.menu().ok().and_then(|menu| {
                                 menu.try_as_player()?;
