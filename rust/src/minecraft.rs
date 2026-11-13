@@ -3409,12 +3409,12 @@ async fn execute_trade(
         return false;
     };
     let input_a_matches = slots.get(0).is_some_and(|item| {
-        !item.is_empty() && item.count() as i32 >= offer.input_a_count
+        !item.is_empty() && item.count() as i32 == offer.input_a_count
             && item_name_matches(&format!("{:?}", item.kind()), &offer.input_a)
     });
     let input_b_matches = match (&offer.input_b, slots.get(1)) {
         (Some((name, count)), Some(item)) => !item.is_empty()
-            && item.count() as i32 >= *count
+            && item.count() as i32 == *count
             && item_name_matches(&format!("{:?}", item.kind()), name),
         (None, Some(item)) => item.is_empty(),
         (None, None) => true,
