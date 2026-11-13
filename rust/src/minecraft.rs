@@ -1216,7 +1216,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let tab_list = client.tab_list();
                             let players = client.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true);
                             for player in players {
-                                if player.uuid() == client.uuid() { continue; }
+                                if !player.exists() || player.uuid() == client.uuid() { continue; }
                                 let Some(profile) = tab_list.get(&player.uuid()) else { continue; };
                                 let name = profile.profile.name.as_str();
                                 let compact_name = name.chars().filter(|character| character.is_ascii_alphanumeric())
@@ -1236,6 +1236,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 azalea::ecs::prelude::Without<azalea::entity::metadata::Player>,
                             )>(|_: ()| true);
                             for entity in mobs {
+                                if !entity.exists() { continue; }
                                 let distance = entity.distance_to_client();
                                 if distance > radius { continue; }
                                 let kind = format!("{:?}", entity.kind());
@@ -1265,7 +1266,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let mut lines = Vec::new();
                             let players = client.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true);
                             for player in players {
-                                if player.uuid() == client.uuid() || player.distance_to_client() > radius { continue; }
+                                if !player.exists() || player.uuid() == client.uuid() || player.distance_to_client() > radius { continue; }
                                 let name = tab_list.get(&player.uuid())
                                     .map(|profile| profile.profile.name.as_str())
                                     .unwrap_or("unknown");
