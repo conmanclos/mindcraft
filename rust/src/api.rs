@@ -1036,6 +1036,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
         "go_to_surface" => Ok(BotCommand::GoToSurface),
+        "look_at_player" => {
+            let name = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a player name".into()))?;
+            let name = name.trim();
+            if name.is_empty() || name.len() > 16 || !name.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+                return Err((StatusCode::BAD_REQUEST, "look_at_player requires a 1-16 character Minecraft username".into()));
+            }
+            Ok(BotCommand::LookAtPlayer(name.to_owned()))
+        }
         "remember_here" | "go_to_remembered_place" => {
             let name = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a saved-place name".into()))?;
             let name = name.trim();
