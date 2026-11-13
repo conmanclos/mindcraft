@@ -54,6 +54,7 @@ pub enum BotCommand {
     Craft(String, Option<(i32, i32, i32)>, u8),
     Smelt(String, (i32, i32, i32), u8),
     SmeltCollect(String, (i32, i32, i32), u8),
+    ClearFurnace(i32, i32, i32),
     SmeltQueue(Vec<SmeltJob>),
 }
 
@@ -1587,6 +1588,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
+                        });
+                    }
+                    BotCommand::ClearFurnace(x, y, z) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_clear_furnace(client, BlockPos::new(x, y, z), generation_state, generation).await;
                         });
                     }
                     BotCommand::SmeltCollect(input, (x, y, z), count) => {
@@ -4070,6 +4085,118 @@ async fn execute_trade(
         bot.chat(format!("Trade #{index} was not confirmed in inventory. I did not repeat it; check the merchant and inventory before retrying."));
         false
     }
+}
+
+async fn execute_clear_furnace(
+    bot: Client,
+    position: BlockPos,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return false; }
+    let Ok(world) = bot.world() else {
+        bot.chat("The world is unavailable; I cannot reach that furnace.");
+        return false;
+    };
+    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+        bot.chat("That coordinate is not a loaded non-air furnace block.");
+        return false;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+        if !cancelled() { bot.chat("Pathfinding to the furnace timed out or failed."); }
+        return false;
+    }
+    if cancelled() || !bot.exists() || !bot.is_goto_target_reached() {
+        if !cancelled() { bot.chat("I couldn't reach the furnace without breaking blocks."); }
+        return false;
+    }
+    let Ok(own_position) = bot.position() else { return false; };
+    let dx = own_position.x - (position.x as f64 + 0.5);
+    let dy = own_position.y - (position.y as f64 + 0.5);
+    let dz = own_position.z - (position.z as f64 + 0.5);
+    if dx * dx + dy * dy + dz * dz > 20.25 {
+        bot.chat("The furnace is outside the 4.5-block interaction reach.");
+        return false;
+    }
+    bot.look_at(position.center());
+    bot.wait_updates(1).await;
+    if cancelled() { return false; }
+    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+        bot.chat("I don't have a clear line of sight to that furnace.");
+        return false;
+    }
+    let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
+        bot.chat("I couldn't open a furnace interface at that coordinate.");
+        return false;
+    };
+    let Some(menu) = container.menu().ok().flatten() else {
+        bot.chat("The furnace interface closed before I could inspect it.");
+        drop(container);
+        return false;
+    };
+    if !matches!(
+        &menu,
+        azalea_inventory::Menu::Furnace { .. }
+            | azalea_inventory::Menu::BlastFurnace { .. }
+            | azalea_inventory::Menu::Smoker { .. }
+    ) {
+        bot.chat("That block is not a supported furnace, blast furnace, or smoker. Nothing was moved.");
+        drop(container);
+        return false;
+    }
+    let Some(initial_slots) = container.slots() else {
+        bot.chat("I couldn't read the furnace slots. Nothing was moved.");
+        drop(container);
+        return false;
+    };
+    if initial_slots.len() < 3 {
+        bot.chat("The furnace menu did not expose its three expected slots. Nothing was moved.");
+        drop(container);
+        return false;
+    }
+    let slot_names = (0..3).map(|slot| {
+        initial_slots.get(slot).filter(|item| !item.is_empty())
+            .map(|item| format!("{}x {:?}", item.count(), item.kind()))
+    }).collect::<Vec<_>>();
+    if slot_names.iter().all(Option::is_none) {
+        bot.chat("The furnace is already empty.");
+        drop(container);
+        return true;
+    }
+    // Empty the output first, then input and fuel. Every shift-click is checked
+    // against the live slot; stop immediately if inventory capacity or a server
+    // rejection leaves any source item behind.
+    for slot in [2usize, 0, 1] {
+        if cancelled() { drop(container); return false; }
+        let Some(item) = container.slots().and_then(|slots| slots.get(slot).cloned()) else {
+            bot.chat("The furnace slot list changed while clearing; remaining contents were left untouched.");
+            drop(container);
+            return false;
+        };
+        if item.is_empty() { continue; }
+        container.shift_click(slot);
+        bot.wait_ticks(2).await;
+        let cleared = container.slots()
+            .and_then(|slots| slots.get(slot).map(|item| item.is_empty()))
+            .unwrap_or(false);
+        if !cleared {
+            bot.chat(format!("Stopped clearing at furnace slot {slot}; the item was not confirmed moved. Check player inventory capacity."));
+            drop(container);
+            return false;
+        }
+    }
+    let empty = container.slots().is_some_and(|slots| (0..3).all(|slot| slots.get(slot).is_some_and(|item| item.is_empty())));
+    if empty {
+        let contents = slot_names.into_iter().flatten().collect::<Vec<_>>().join(", ");
+        bot.chat(format!("Furnace cleared. Moved to inventory: {contents}."));
+    } else {
+        bot.chat("The furnace was only partially cleared; inspect its remaining slots before retrying.");
+    }
+    drop(container);
+    empty
 }
 
 async fn execute_smelt_collect(
