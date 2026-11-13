@@ -27,6 +27,7 @@ pub enum BotCommand {
     Stop,
     Jump,
     UseItem,
+    Eat,
     AttackCrosshair,
     Follow(String),
     Look(i32, i32, i32),
@@ -1342,6 +1343,50 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         bot.start_use_item();
+                    }
+                    BotCommand::Eat => {
+                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let Ok(hunger) = bot.hunger() else {
+                            bot.chat("I couldn't read my hunger level, so I won't consume food blindly.");
+                            continue;
+                        };
+                        if hunger.food >= 20 {
+                            bot.chat("My hunger is already full; I won't waste food.");
+                            continue;
+                        }
+                        let Ok(menu) = bot.menu() else {
+                            bot.chat("I couldn't inspect my inventory to choose safe food.");
+                            continue;
+                        };
+                        let Some((slot, _)) = best_safe_food_slot(&menu) else {
+                            bot.chat("No recognized safe food is available in the hotbar. I won't consume an unknown item.");
+                            continue;
+                        };
+                        let hotbar = menu.hotbar_slots_range();
+                        if !hotbar.contains(&slot) {
+                            bot.chat("The selected food is not in the hotbar; no item was consumed.");
+                            continue;
+                        }
+                        let hotbar_index = (slot - *hotbar.start()) as u8;
+                        bot.set_selected_hotbar_slot(hotbar_index);
+                        bot.wait_updates(1).await;
+                        let still_safe_food = bot.menu().ok().and_then(|menu| {
+                            menu.try_as_player()?;
+                            let slots = menu.slots();
+                            let item = slots.get(slot)?;
+                            (!item.is_empty() && safe_food_priority(&format!("{item:?}")).is_some()).then_some(())
+                        }).is_some();
+                        if bot.selected_hotbar_slot().ok() == Some(hotbar_index) && still_safe_food {
+                            bot.start_use_item();
+                            bot.chat("Eating a recognized safe food item from my hotbar.");
+                        } else {
+                            bot.chat("The server did not confirm the safe food selection; nothing was consumed.");
+                        }
                     }
                     BotCommand::Equip(slot) => {
                         if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
