@@ -20,6 +20,37 @@ use std::os::unix::fs::PermissionsExt;
 
 struct RuntimeProcess(Mutex<Option<Child>>);
 
+fn terminate_child(child: &mut Child) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as libc::pid_t;
+        let result = unsafe { libc::kill(pid, libc::SIGTERM) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error.to_string());
+            }
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => return Ok(()),
+                Ok(None) => thread::sleep(Duration::from_millis(100)),
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
+
+    if let Err(error) = child.kill() {
+        if child.try_wait().ok().flatten().is_some() {
+            return Ok(());
+        }
+        return Err(error.to_string());
+    }
+    child.wait().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeLaunch {
@@ -411,8 +442,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
 
         if Instant::now() >= deadline {
             if let Some(mut running) = child.take() {
-                let _ = running.kill();
-                let _ = running.wait();
+                let _ = terminate_child(&mut running);
             }
             return Err(format!(
                 "The Rust runtime did not become healthy within 15 seconds. Its startup log is at {}.",
@@ -427,8 +457,7 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
 fn stop_runtime(process: State<'_, RuntimeProcess>) -> Result<(), String> {
     let mut child = process.0.lock().map_err(|_| "Runtime process lock is unavailable".to_string())?;
     if let Some(mut running) = child.take() {
-        running.kill().map_err(|e| e.to_string())?;
-        let _ = running.wait();
+        terminate_child(&mut running)?;
     }
     Ok(())
 }
@@ -472,8 +501,7 @@ fn main() {
                 if let Some(process) = app.try_state::<RuntimeProcess>() {
                     if let Ok(mut child) = process.0.lock() {
                         if let Some(mut running) = child.take() {
-                            let _ = running.kill();
-                            let _ = running.wait();
+                            let _ = terminate_child(&mut running);
                         }
                     }
                 }
