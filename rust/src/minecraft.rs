@@ -122,6 +122,7 @@ struct BotState {
     explore_radius: Option<Arc<AtomicUsize>>,
     explore_step: Option<Arc<AtomicUsize>>,
     explore_origin: Option<Arc<Mutex<Option<BlockPos>>>>,
+    visited_pois: Option<Arc<Mutex<HashSet<(i32, i32, i32)>>>>,
     last_explore_repath: Option<Arc<Mutex<Instant>>>,
     mine_generation: Option<Arc<AtomicUsize>>,
     trusted_chat_players: Option<Arc<HashSet<String>>>,
@@ -700,6 +701,7 @@ fn make_state(
         explore_radius: Some(Arc::new(AtomicUsize::new(32))),
         explore_step: Some(Arc::new(AtomicUsize::new(0))),
         explore_origin: Some(Arc::new(Mutex::new(None))),
+        visited_pois: Some(Arc::new(Mutex::new(HashSet::new()))),
         last_explore_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(20))))),
         mine_generation: Some(Arc::new(AtomicUsize::new(0))),
         trusted_chat_players: Some(trusted_chat_players),
@@ -1303,7 +1305,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         None
                     };
                     if let Ok(position) = bot.position() {
-                        let poi = nearby_point_of_interest(bot, 8);
+                        let poi_candidate = nearby_point_of_interest(bot, 8);
+                        let poi = if let Some((poi_position, _, _)) = poi_candidate {
+                            let key = (poi_position.x, poi_position.y, poi_position.z);
+                            let already_visited = if let Some(visited) = &state.visited_pois {
+                                visited.lock().await.contains(&key)
+                            } else {
+                                false
+                            };
+                            (!already_visited).then_some(poi_candidate).flatten()
+                        } else {
+                            None
+                        };
                         let origin_x = spiral_origin.map(|origin| origin.x).unwrap_or_else(|| position.x.floor() as i32);
                         let origin_z = spiral_origin.map(|origin| origin.z).unwrap_or_else(|| position.z.floor() as i32);
                         let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
@@ -1321,6 +1334,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 && support.is_collision_shape_full()
                                 && !is_hazardous_support(&format!("{support:?}"))
                         });
+                        if let Some((poi_position, _, _)) = poi {
+                            if let Some(visited) = &state.visited_pois {
+                                let mut visited = visited.lock().await;
+                                if visited.len() >= 1024 { visited.clear(); }
+                                visited.insert((poi_position.x, poi_position.y, poi_position.z));
+                            }
+                        }
                         if waypoint_safe {
                             if let Some((poi_position, _, kind)) = poi {
                                 if let Some(store) = &state.store {
@@ -1336,7 +1356,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                             bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
                         } else {
-                            tracing::debug!(username = %bot.username(), ?destination, "skipping exploration waypoint outside loaded chunks");
+                            tracing::debug!(username = %bot.username(), ?destination, "skipping exploration waypoint outside loaded chunks or safe footing");
                         }
                     }
                 }
@@ -2578,6 +2598,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32)
                             });
                         }
+                        if let Some(visited) = &state.visited_pois { visited.lock().await.clear(); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(true, Ordering::Relaxed); }
                         if let Some(last) = &state.last_explore_repath { *last.lock().await = instant_before(Duration::from_secs(20)); }
                     }
