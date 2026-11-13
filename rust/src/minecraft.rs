@@ -37,6 +37,7 @@ pub enum BotCommand {
     Locate(String, u16),
     NearbyBlocks(u8),
     Craftable,
+    CraftPlan(String),
     Entities(u16),
     LocateEntity(String, u16),
     GoToSurface,
@@ -1681,6 +1682,44 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 let summary = lines.into_iter().take(24).collect::<Vec<_>>().join("; ");
                                 client.chat(truncate_utf16(&format!("Nearby entities within {range} blocks: {summary}"), 240));
                             }
+                        });
+                    }
+                    BotCommand::CraftPlan(recipe) => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let Ok(menu) = client.menu() else {
+                                client.chat("I couldn't inspect my inventory to calculate a crafting plan.");
+                                return;
+                            };
+                            if menu.try_as_player().is_none() {
+                                client.chat("Close the open container before asking for a crafting plan.");
+                                return;
+                            }
+                            let Some((requires_table, output, ingredients)) = recipe_spec(&recipe) else {
+                                client.chat(format!("'{recipe}' is not in the supported Rust recipe catalog."));
+                                return;
+                            };
+                            let slots = menu.slots();
+                            let player_slots = menu.player_slots_range().collect::<Vec<_>>();
+                            let mut requirements: HashMap<&'static str, u16> = HashMap::new();
+                            for (_, selector) in ingredients {
+                                *requirements.entry(selector).or_insert(0) += 1;
+                            }
+                            let mut lines = Vec::new();
+                            let mut complete = true;
+                            for (selector, required) in requirements {
+                                let available = player_slots.iter().filter_map(|slot| slots.get(*slot))
+                                    .filter(|item| !item.is_empty()
+                                        && item_name_matches(&format!("{:?}", item.kind()), selector))
+                                    .map(|item| u16::from(item.count()))
+                                    .sum::<u16>();
+                                if available < required { complete = false; }
+                                lines.push(format!("{selector}: {available}/{required}"));
+                            }
+                            lines.sort();
+                            let table = if requires_table { " Requires a crafting table." } else { " Uses the 2x2 player crafting grid." };
+                            let status = if complete { "All direct ingredients are available." } else { "Missing ingredients are shown by their current/required counts." };
+                            client.chat(truncate_utf16(&format!("Craft plan for {output}: {}. {status}{table}", lines.join("; ")), 240));
                         });
                     }
                     BotCommand::Craftable => {
