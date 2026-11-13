@@ -1087,8 +1087,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         }
                     }
                 }
-                // Autonomous survival may eat only recognized food already in the hotbar.
-                // Never consume arbitrary held items, potions, or items from an open container.
+                // Autonomous survival may eat recognized hotbar food or move one
+                // recognized main-inventory food stack into an empty hotbar slot first.
+                // It never replaces another item or consumes arbitrary held items/potions.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
                     && (hunger.food <= 12 || health <= 10.0)
                 {
@@ -1100,35 +1101,50 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         } else { false }
                     } else { false };
                     if should_eat {
-                        if let Ok(menu) = bot.menu() {
-                            let food_candidate = if health <= 10.0 {
+                        let food_candidate = bot.menu().ok().and_then(|menu| {
+                            if health <= 10.0 {
                                 best_golden_apple_slot(&menu).or_else(|| {
                                     if hunger.food <= 12 { best_safe_food_slot(&menu) } else { None }
                                 })
                             } else {
                                 best_safe_food_slot(&menu)
-                            };
-                            if let Some((slot, _)) = food_candidate {
-                                let hotbar = menu.hotbar_slots_range();
-                                if hotbar.contains(&slot) {
-                                    let hotbar_index = (slot - *hotbar.start()) as u8;
-                                    bot.set_selected_hotbar_slot(hotbar_index);
-                                    // Azalea applies hotbar selection on the next ECS Update.
-                                    // Wait for that update so the right-click cannot consume
-                                    // whatever item happened to be selected previously.
-                                    bot.wait_updates(1).await;
-                                    let still_safe_food = bot.menu().ok().and_then(|menu| {
-                                        menu.try_as_player()?;
-                                        let slots = menu.slots();
-                                        let item = slots.get(slot)?;
-                                        (!item.is_empty() && safe_food_priority(&format!("{item:?}")).is_some()).then_some(())
-                                    }).is_some();
-                                    if bot.selected_hotbar_slot().ok() == Some(hotbar_index) && still_safe_food {
-                                        bot.start_use_item();
-                                        tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
-                                    } else {
-                                        tracing::warn!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous food reflex skipped because the selected slot or item was no longer safe");
-                                    }
+                            }
+                        });
+                        let food_slot = if let Some((slot, _)) = food_candidate {
+                            Some(slot)
+                        } else {
+                            restock_one_food_stack_to_hotbar(&bot, health <= 10.0).await
+                        };
+                        if let Some(slot) = food_slot {
+                            let hotbar = bot.menu().ok().and_then(|menu| {
+                                menu.try_as_player()?;
+                                let range = menu.hotbar_slots_range();
+                                range.contains(&slot).then_some((slot - *range.start()) as u8)
+                            });
+                            if let Some(hotbar_index) = hotbar {
+                                bot.set_selected_hotbar_slot(hotbar_index);
+                                // Azalea applies hotbar selection on the next ECS Update.
+                                // Wait for that update so the right-click cannot consume
+                                // whatever item happened to be selected previously.
+                                bot.wait_updates(1).await;
+                                let still_safe_food = bot.menu().ok().and_then(|menu| {
+                                    menu.try_as_player()?;
+                                    let slots = menu.slots();
+                                    let item = slots.get(slot)?;
+                                    let compact: String = format!("{item:?}").chars()
+                                        .filter(|character| character.is_ascii_alphanumeric())
+                                        .flat_map(char::to_lowercase)
+                                        .collect();
+                                    (!item.is_empty()
+                                        && safe_food_priority(&compact).is_some()
+                                        && (health <= 10.0 || !compact.contains("goldenapple")))
+                                        .then_some(())
+                                }).is_some();
+                                if bot.selected_hotbar_slot().ok() == Some(hotbar_index) && still_safe_food {
+                                    bot.start_use_item();
+                                    tracing::info!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous safe-food reflex started eating");
+                                } else {
+                                    tracing::warn!(username = %bot.username(), hotbar_slot = hotbar_index, "autonomous food reflex skipped because the selected slot or item was no longer safe");
                                 }
                             }
                         }
