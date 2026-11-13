@@ -3,6 +3,24 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use std::{collections::HashSet, path::Path, sync::Mutex};
 
+const MAX_GOAL_BYTES: usize = 4_000;
+const MAX_TASKS_PER_GOAL: usize = 12;
+const MAX_TASK_DESCRIPTION_BYTES: usize = 500;
+const MAX_MEMORY_SUBJECT_BYTES: usize = 200;
+const MAX_MEMORY_CONTENT_BYTES: usize = 4_000;
+
+fn validate_task(role: &str, description: &str) -> Result<()> {
+    const ALLOWED_ROLES: [&str; 6] = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
+    if !ALLOWED_ROLES.contains(&role) {
+        anyhow::bail!("unsupported agent role '{role}'");
+    }
+    if description.trim().is_empty() || description.len() > MAX_TASK_DESCRIPTION_BYTES {
+        anyhow::bail!("agent task descriptions must contain 1-500 bytes");
+    }
+    Ok(())
+}
+
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Goal {
     pub id: i64,
@@ -49,8 +67,12 @@ impl Store {
             std::fs::create_dir_all(parent)?;
         }
         let connection = Connection::open(path)?;
+        connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.execute_batch(
             "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA wal_autocheckpoint=1000;
+             PRAGMA temp_store=MEMORY;
              PRAGMA foreign_keys=ON;
              CREATE TABLE IF NOT EXISTS conversation (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +146,12 @@ impl Store {
     }
 
     pub fn append_message(&self, role: &str, content: &str) -> Result<()> {
+        if !["user", "assistant", "system"].contains(&role) {
+            anyhow::bail!("conversation role must be user, assistant, or system");
+        }
+        if content.trim().is_empty() || content.len() > 12_000 {
+            anyhow::bail!("conversation messages must contain 1-12000 bytes");
+        }
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute("INSERT INTO conversation(role, content) VALUES (?1, ?2)", params![role, content])?;
         connection.execute(
@@ -179,6 +207,18 @@ impl Store {
         importance: i32,
         source: &str,
     ) -> Result<i64> {
+        if !["semantic", "episodic", "preference", "world"].contains(&kind) {
+            anyhow::bail!("memory kind must be semantic, episodic, preference, or world");
+        }
+        if subject.trim().is_empty() || subject.len() > MAX_MEMORY_SUBJECT_BYTES {
+            anyhow::bail!("memory subjects must contain 1-200 bytes");
+        }
+        if content.trim().is_empty() || content.len() > MAX_MEMORY_CONTENT_BYTES {
+            anyhow::bail!("memory content must contain 1-4000 bytes");
+        }
+        if source.trim().is_empty() || source.len() > 80 {
+            anyhow::bail!("memory source must contain 1-80 bytes");
+        }
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source, updated_at, last_accessed_at)
@@ -328,6 +368,7 @@ impl Store {
     }
 
     pub fn add_task(&self, goal_id: i64, role: &str, description: &str, priority: i32) -> Result<i64> {
+        validate_task(role, description)?;
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         connection.execute(
             "INSERT INTO agent_tasks(goal_id, role, description, priority) VALUES (?1, ?2, ?3, ?4)",
