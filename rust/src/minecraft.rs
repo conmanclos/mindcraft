@@ -776,6 +776,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             tracing::warn!(username = %bot.username(), reason = ?reason, "Minecraft agent disconnected; Azalea will reconnect this client");
         }
         Event::Tick => {
+            // Never dispatch queued gameplay commands through a disconnected client.
+            if !bot.exists() {
+                return Ok(());
+            }
             let mut critical_health = false;
             if bot.exists() {
                 let (health, hunger) = match (bot.health(), bot.hunger()) {
