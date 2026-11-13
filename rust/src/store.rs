@@ -24,19 +24,22 @@ fn prune_terminal_goal_history(
             && tasks + incoming_tasks as i64 <= MAX_TASK_RECORDS {
             return Ok(());
         }
-        let removed = transaction.execute(
-            "DELETE FROM goals WHERE id = (
-                SELECT id FROM goals
-                WHERE status IN ('complete','failed','cancelled')
-                ORDER BY created_at ASC, id ASC LIMIT 1
-            )",
+        let oldest_terminal: Option<i64> = transaction.query_row(
+            "SELECT id FROM goals
+             WHERE status IN ('complete','failed','cancelled')
+             ORDER BY created_at ASC, id ASC LIMIT 1",
             [],
-        )?;
-        if removed == 0 {
+            |row| row.get(0),
+        ).optional()?;
+        let Some(goal_id) = oldest_terminal else {
             anyhow::bail!(
                 "goal/task history is at its bounded capacity ({MAX_GOAL_RECORDS} goals, {MAX_TASK_RECORDS} tasks) and no completed goal can be safely pruned"
             );
-        }
+        };
+        // Delete tasks explicitly as well as the goal so pruning remains safe
+        // for databases created by older schema revisions without ON DELETE CASCADE.
+        transaction.execute("DELETE FROM agent_tasks WHERE goal_id=?1", [goal_id])?;
+        transaction.execute("DELETE FROM goals WHERE id=?1", [goal_id])?;
     }
 }
 
