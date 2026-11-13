@@ -598,9 +598,17 @@ async fn maybe_dispatch_specialist_task(bot: &Client, state: &BotState) {
     let client = bot.clone();
     tokio::task::spawn_local(async move {
         // Keep SQLite access and lease checks off the 20 Hz Minecraft tick path.
-        if store.has_review_task(&client.username()).unwrap_or(true) {
-            busy.store(false, Ordering::Release);
-            return;
+        match store.has_review_task(&client.username()) {
+            Ok(true) => {
+                busy.store(false, Ordering::Release);
+                return;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                tracing::error!(username = %client.username(), %error, "could not inspect pending specialist review state");
+                busy.store(false, Ordering::Release);
+                return;
+            }
         }
         if let Err(error) = run_specialist_task(&client, brain, status, store, role).await {
             tracing::warn!(username = %client.username(), %error, "autonomous specialist task worker could not dispatch work");
