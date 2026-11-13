@@ -12,6 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
+fastnbt = "2.5"
+flate2 = "1.1"
 axum = { version = "0.7", features = ["macros"] }
 azalea = "=0.16.0+mc26.1"
 azalea-inventory = "=0.16.0+mc26.1"
