@@ -1036,6 +1036,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
         "go_to_surface" => Ok(BotCommand::GoToSurface),
+        "go_to_bed" => Ok(BotCommand::GoToBed),
         "look_at_player" => {
             let name = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a player name".into()))?;
             let name = name.trim();
