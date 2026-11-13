@@ -1035,6 +1035,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "stop" | "stay" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
+        "go_to_surface" => Ok(BotCommand::GoToSurface),
         "locate_entity" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use entity_name[@range] syntax".into()))?;
             let (name, range) = match raw.rsplit_once('@') {
