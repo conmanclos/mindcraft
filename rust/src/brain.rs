@@ -280,7 +280,10 @@ impl Brain {
             .ok_or_else(|| anyhow!("Replicate did not return a prediction status URL"))?;
         let parsed = reqwest::Url::parse(&get_url)?;
         if parsed.scheme() != "https" || parsed.host_str() != Some("api.replicate.com")
-            || !parsed.username().is_empty() || parsed.password().is_some() {
+            || parsed.port_or_known_default() != Some(443)
+            || !parsed.path().starts_with("/v1/predictions/")
+            || !parsed.username().is_empty() || parsed.password().is_some()
+            || parsed.query().is_some() || parsed.fragment().is_some() {
             bail!("Replicate returned an unsafe prediction status URL");
         }
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
