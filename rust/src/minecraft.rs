@@ -748,9 +748,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         }
         Event::ConnectionFailed(error) => {
             if let Some(status) = &state.status {
-                let mut connection = status.connection.lock().await;
-                connection.state = "reconnecting".into();
-                connection.last_error = Some(format!("{error:?}"));
+                if status.connected_agents.load(Ordering::Relaxed) == 0 {
+                    let mut connection = status.connection.lock().await;
+                    connection.state = "reconnecting".into();
+                    connection.last_error = Some(format!("{error:?}"));
+                }
             }
             tracing::warn!(username = %bot.username(), error = ?error, "Minecraft connection attempt failed; Azalea will retry");
         }
