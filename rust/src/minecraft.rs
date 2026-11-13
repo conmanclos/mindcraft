@@ -43,6 +43,7 @@ pub enum BotCommand {
     MoveAway(u8),
     RememberHere(String),
     GoToRememberedPlace(String),
+    SavedPlaces,
     LookAtPlayer(String),
     GoToBed,
     Place(i32, i32, i32),
@@ -1159,6 +1160,24 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("Pathfinding stopped before reaching the surface.");
                             }
                         });
+                    }
+                    BotCommand::SavedPlaces => {
+                        let Some(store) = state.store.clone() else {
+                            bot.chat("Persistent memory is unavailable; I can't list saved places.");
+                            continue;
+                        };
+                        match store.list_memories(Some("world"), 200) {
+                            Ok(memories) => {
+                                let names = memories.into_iter().map(|memory| memory.subject)
+                                    .collect::<Vec<_>>();
+                                if names.is_empty() {
+                                    bot.chat("No saved places are stored yet.");
+                                } else {
+                                    bot.chat(truncate_utf16(&format!("Saved places: {}", names.join(", ")), 240));
+                                }
+                            }
+                            Err(error) => bot.chat(format!("I couldn't list saved places: {error}")),
+                        }
                     }
                     BotCommand::RememberHere(name) => {
                         let Some(store) = state.store.clone() else {
