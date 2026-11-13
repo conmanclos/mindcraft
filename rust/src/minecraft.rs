@@ -1544,7 +1544,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 }
                                 return;
                             }
-                            if !client.exists() { return; }
+                            if !client.exists()
+                                || generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                return;
+                            }
                             let Ok(current) = client.position() else { return; };
                             let dx = current.x - (destination.x as f64 + 0.5);
                             let dy = current.y - (destination.y as f64 + 0.5);
@@ -1555,8 +1558,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                             client.look_at(destination.center());
                             client.wait_updates(1).await;
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                return;
+                            }
                             if !matches!(client.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == destination) {
                                 client.chat("I reached the bed's area but couldn't get a clear line of sight.");
+                                return;
+                            }
+                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 return;
                             }
                             client.block_interact(destination);
