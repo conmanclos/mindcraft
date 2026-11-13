@@ -1032,7 +1032,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             Ok(BotCommand::Say(text))
         }
-        "stop" => Ok(BotCommand::Stop),
+        "stop" | "stay" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
         "locate" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use block_name[@range] syntax, for example diamond_ore@128".into()))?;
