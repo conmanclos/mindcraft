@@ -1579,7 +1579,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            execute_smelt_collect(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
+                            execute_smelt_collect(client, input, BlockPos::new(x, y, z), count, generation_state, generation, true).await;
                         });
                     }
                     BotCommand::SmeltQueue(jobs) => {
@@ -3903,6 +3903,7 @@ async fn execute_smelt_collect(
     count: u8,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
+    announce_not_ready: bool,
 ) -> bool {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
@@ -3979,7 +3980,9 @@ async fn execute_smelt_collect(
         bot.wait_ticks(1).await;
     }
     if !ready {
-        bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched."));
+        if announce_not_ready {
+            bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched."));
+        }
         drop(container);
         return false;
     }
@@ -4234,7 +4237,9 @@ async fn execute_smelt(
         if cancelled() { return false; }
         if !bot.exists() { return false; }
         if container.menu().ok().flatten().is_none() {
-            bot.chat("The furnace menu closed before smelting finished; the input and fuel remain server-side.");
+            bot.chat("The furnace menu closed before smelting finished; I scheduled background recovery for the completed batch.");
+            drop(container);
+            schedule_smelt_followup(bot.clone(), input.clone(), position, count);
             return false;
         }
         output_ready = container.slots()
@@ -4255,7 +4260,9 @@ async fn execute_smelt(
         }
     }
     if !output_ready {
-        bot.chat(format!("The batch of {input} is still in the furnace or exceeded its wait limit. I left the furnace contents untouched; check it and collect {result_name} when ready."));
+        bot.chat(format!("The batch of {input} exceeded its foreground wait limit. I left the furnace contents untouched and scheduled background collection of {count} {result_name}."));
+        drop(container);
+        schedule_smelt_followup(bot.clone(), input.clone(), position, count);
         return false;
     }
 
@@ -4275,6 +4282,37 @@ async fn execute_smelt(
         bot.chat(format!("The {result_name} is ready, but the furnace output slot did not clear. Check inventory capacity and the furnace."));
     }
     output_cleared
+}
+
+/// Continue checking a furnace after the foreground action times out or its
+/// menu closes. The retry path reopens the same loaded furnace and only takes
+/// output after the server reports the complete expected batch.
+fn schedule_smelt_followup(bot: Client, input: String, position: BlockPos, count: u8) {
+    tokio::task::spawn_local(async move {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10 * 60);
+        loop {
+            if !bot.exists() || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(15)).await;
+            if !bot.exists() || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            if execute_smelt_collect(
+                bot.clone(),
+                input.clone(),
+                position,
+                count,
+                None,
+                0,
+                false,
+            ).await {
+                tracing::info!(username = %bot.username(), input = %input, count, "background furnace recovery collected the complete output batch");
+                break;
+            }
+        }
+        tracing::debug!(username = %bot.username(), input = %input, count, "background furnace recovery finished without collecting a complete output batch");
+    });
 }
 
 fn required_smelt_fuel(input_count: u8, capacity_per_item: u8) -> Option<u8> {
