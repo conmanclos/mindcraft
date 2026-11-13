@@ -22,6 +22,7 @@ pub struct WorldSnapshot {
     pub agent: String,
     pub role: String,
     pub dimension: String,
+    pub biome: Option<String>,
     pub position: [f64; 3],
     pub health: f32,
     pub food: u32,
