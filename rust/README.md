@@ -38,6 +38,7 @@ cargo run -- build-sponge starter.schem --origin 100,64,100 --rotation 90 --agen
 cargo run -- execute '{"action":"smelt_collect","target":"raw_iron*8@12,64,20","risk":"high","reason":"Recover the completed furnace output"}'
 cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
 cargo run -- execute '{"action":"inventory_compact","risk":"high","reason":"User approved stack compaction"}'
+cargo run -- execute '{"action":"hotbar_restock","target":"iron_ingot","risk":"low","reason":"Move iron ingots into empty hotbar slots"}'
 cargo run -- execute '{"action":"container_sort","target":"12,64,20","risk":"high","reason":"User approved sorting this storage container"}'
 cargo run -- execute '{"action":"trade","target":"12,64,20","risk":"high","reason":"User approved merchant inspection"}'
 cargo run -- execute '{"action":"trade","target":"12,64,20,0","risk":"high","reason":"User approved this exact offer"}'
