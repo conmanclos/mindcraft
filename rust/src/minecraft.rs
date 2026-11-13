@@ -11,6 +11,7 @@ pub struct BuildBlock {
     pub y: i32,
     pub z: i32,
     pub axis: Option<String>,
+    pub slab_top: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -2455,7 +2456,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let generation_state = state.mine_generation.clone();
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            if place_block_at(&client, position, None, &generation_state, generation).await {
+                            if place_block_at(&client, position, None, None, &generation_state, generation).await {
                                 client.chat(format!("Placed a block at {}, {}, {}.", x, y, z));
                             } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                 client.chat("Placement was not confirmed. I need an air target, a reachable full-collision support face, line of sight, and a placeable selected block.");
@@ -4460,6 +4461,7 @@ async fn place_block_at(
     bot: &Client,
     target: BlockPos,
     axis: Option<&str>,
+    slab_top: Option<bool>,
     generation_state: &Option<Arc<AtomicUsize>>,
     generation: usize,
 ) -> bool {
@@ -4470,18 +4472,22 @@ async fn place_block_at(
     if !world.read().get_block_state(target).is_some_and(|block| block.is_air()) {
         return false;
     }
-    let supports = match axis {
-        Some("y") => vec![
+    let supports = match (axis, slab_top) {
+        (Some("y"), None) | (None, Some(false)) => vec![
             (target.down(1), Direction::Up),
             (target.up(1), Direction::Down),
         ],
-        Some("x") => vec![
+        (Some("x"), None) => vec![
             (target.west(1), Direction::East),
             (target.east(1), Direction::West),
         ],
-        Some("z") => vec![
+        (Some("z"), None) => vec![
             (target.north(1), Direction::South),
             (target.south(1), Direction::North),
+        ],
+        (None, Some(true)) => vec![
+            (target.up(1), Direction::Down),
+            (target.down(1), Direction::Up),
         ],
         _ => vec![
             (target.down(1), Direction::Up),
@@ -4530,6 +4536,12 @@ async fn place_block_at(
                                 .flat_map(char::to_lowercase)
                                 .collect();
                             if !compact.contains(&format!("axis{expected_axis}")) {
+                                return false;
+                            }
+                        }
+                        if let Some(expected_top) = slab_top {
+                            let expected = if expected_top { "typetop" } else { "typebottom" };
+                            if !compact.contains(expected) {
                                 return false;
                             }
                         }
@@ -4919,7 +4931,7 @@ async fn execute_build(
     for (index, (x, y, z)) in positions.iter().copied().enumerate() {
         if cancelled() || !bot.exists() { return; }
         let target = BlockPos::new(x, y, z);
-        if !place_block_at(&bot, target, block.axis.as_deref(), &generation_state, generation).await {
+        if !place_block_at(&bot, target, block.axis.as_deref(), block.slab_top, &generation_state, generation).await {
             if !cancelled() {
                 bot.chat(format!("Build stopped at block {} of {} ( {}, {}, {} ): placement was not confirmed. Check support, reach, line of sight, and the selected block stack.", index + 1, positions.len(), x, y, z));
             }
@@ -5848,7 +5860,7 @@ async fn execute_build_mixed(
             selected_slot = Some(slot);
         }
         let target = BlockPos::new(block.x, block.y, block.z);
-        if !place_block_at(&bot, target, None, &generation_state, generation).await {
+        if !place_block_at(&bot, target, None, None, &generation_state, generation).await {
             if !cancelled() {
                 bot.chat(format!("Schematic stopped at block {} of {} ({} {} {}): placement was not confirmed. Check support, reach, line of sight, and material stock.", index + 1, blocks.len(), block.x, block.y, block.z));
             }
