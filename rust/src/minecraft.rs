@@ -3890,30 +3890,30 @@ async fn execute_smelt_collect(
     count: u8,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
-    announce_not_ready: bool,
+    announce: bool,
 ) -> bool {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     let Some(result_name) = smelt_spec(&input) else {
-        bot.chat(format!("I don't know a safe output mapping for {input}; no furnace was opened."));
+        if announce { bot.chat(format!("I don't know a safe output mapping for {input}; no furnace was opened.")); }
         return false;
     };
     if cancelled() { return false; }
     let Ok(world) = bot.world() else {
-        bot.chat("The world is unavailable; I cannot reach that furnace.");
+        if announce { bot.chat("The world is unavailable; I cannot reach that furnace."); }
         return false;
     };
     if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
-        bot.chat("That furnace coordinate is not a loaded non-air block.");
+        if announce { bot.chat("That furnace coordinate is not a loaded non-air block."); }
         return false;
     }
     let chunk_storage = world.read().chunks.clone();
     if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
-        if !cancelled() { bot.chat("Pathfinding to the furnace timed out or failed."); }
+        if announce && !cancelled() { bot.chat("Pathfinding to the furnace timed out or failed."); }
         return false;
     }
     if cancelled() || !bot.exists() || !bot.is_goto_target_reached() {
-        if !cancelled() { bot.chat("I couldn't reach that furnace without breaking blocks."); }
+        if announce && !cancelled() { bot.chat("I couldn't reach that furnace without breaking blocks."); }
         return false;
     }
     let Ok(own_position) = bot.position() else { return false; };
@@ -3921,22 +3921,22 @@ async fn execute_smelt_collect(
     let dy = own_position.y - (position.y as f64 + 0.5);
     let dz = own_position.z - (position.z as f64 + 0.5);
     if dx * dx + dy * dy + dz * dz > 20.25 {
-        bot.chat("The furnace is outside the 4.5-block interaction reach.");
+        if announce { bot.chat("The furnace is outside the 4.5-block interaction reach."); }
         return false;
     }
     bot.look_at(position.center());
     bot.wait_updates(1).await;
     if cancelled() { return false; }
     if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
-        bot.chat("I don't have a clear line of sight to that furnace.");
+        if announce { bot.chat("I don't have a clear line of sight to that furnace."); }
         return false;
     }
     let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
-        bot.chat("I couldn't open a furnace interface at that coordinate.");
+        if announce { bot.chat("I couldn't open a furnace interface at that coordinate."); }
         return false;
     };
     let Some(menu) = container.menu().ok().flatten() else {
-        bot.chat("The furnace interface closed before I could inspect its output.");
+        if announce { bot.chat("The furnace interface closed before I could inspect its output."); }
         drop(container);
         return false;
     };
@@ -3946,7 +3946,7 @@ async fn execute_smelt_collect(
             | azalea_inventory::Menu::BlastFurnace { .. }
             | azalea_inventory::Menu::Smoker { .. }
     ) {
-        bot.chat("That block is not a supported furnace, blast furnace, or smoker. Nothing was collected.");
+        if announce { bot.chat("That block is not a supported furnace, blast furnace, or smoker. Nothing was collected."); }
         drop(container);
         return false;
     }
@@ -3954,7 +3954,7 @@ async fn execute_smelt_collect(
     for _ in 0..100 {
         if cancelled() { drop(container); return false; }
         if container.menu().ok().flatten().is_none() {
-            bot.chat("The furnace closed before a complete matching output was ready.");
+            if announce { bot.chat("The furnace closed before a complete matching output was ready."); }
             drop(container);
             return false;
         }
@@ -3967,8 +3967,8 @@ async fn execute_smelt_collect(
         bot.wait_ticks(1).await;
     }
     if !ready {
-        if announce_not_ready {
-            bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched."));
+        if announce {
+            if announce { bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched.")); }
         }
         drop(container);
         return false;
@@ -3984,9 +3984,9 @@ async fn execute_smelt_collect(
         if output_cleared { break; }
     }
     if output_cleared {
-        bot.chat(format!("Collected and server-confirmed the ready {result_name} output from the furnace."));
+        if announce { bot.chat(format!("Collected and server-confirmed the ready {result_name} output from the furnace.")); }
     } else {
-        bot.chat(format!("The {result_name} output did not clear. It remains in the furnace; check inventory capacity."));
+        if announce { bot.chat(format!("The {result_name} output did not clear. It remains in the furnace; check inventory capacity.")); }
     }
     drop(container);
     output_cleared
@@ -4286,6 +4286,7 @@ fn schedule_smelt_followup(
         let cancelled = || generation_state.as_ref()
             .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10 * 60);
+        let mut collected = false;
         loop {
             if cancelled() || !bot.exists() || tokio::time::Instant::now() >= deadline {
                 break;
@@ -4303,11 +4304,17 @@ fn schedule_smelt_followup(
                 generation,
                 false,
             ).await {
-                tracing::info!(username = %bot.username(), input = %input, count, "background furnace recovery collected the complete output batch");
+                collected = true;
                 break;
             }
         }
-        tracing::debug!(username = %bot.username(), input = %input, count, "background furnace recovery finished without collecting a complete output batch");
+        if collected {
+            bot.chat(format!("Background recovery collected the complete batch of {count} {} from the furnace.", smelt_spec(&input).unwrap_or("items")));
+            tracing::info!(username = %bot.username(), input = %input, count, "background furnace recovery collected the complete output batch");
+        } else if !cancelled() && bot.exists() {
+            bot.chat(format!("Background furnace recovery stopped without collecting the full {count}-item batch. Use smelt_collect at the original furnace coordinate when it is ready."));
+        }
+        tracing::debug!(username = %bot.username(), input = %input, count, "background furnace recovery finished");
     });
 }
 
