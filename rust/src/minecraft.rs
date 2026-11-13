@@ -2221,6 +2221,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "golden_carrot" => Some((true, "golden_carrot", &[(1, "gold_nugget"), (2, "gold_nugget"), (3, "gold_nugget"), (4, "gold_nugget"), (5, "carrot"), (6, "gold_nugget"), (7, "gold_nugget"), (8, "gold_nugget"), (9, "gold_nugget")])),
         "pumpkin_pie" => Some((true, "pumpkin_pie", &[(1, "sugar"), (4, "pumpkin"), (7, "egg")])),
         "cookie" => Some((true, "cookie", &[(1, "wheat"), (2, "cocoa_beans"), (3, "wheat")])),
+        "netherite_ingot" => Some((true, "netherite_ingot", &[(1, "netherite_scrap"), (2, "netherite_scrap"), (3, "netherite_scrap"), (4, "netherite_scrap"), (5, "gold_ingot"), (6, "gold_ingot"), (7, "gold_ingot"), (8, "gold_ingot")])),
         "iron_block" => Some((true, "iron_block", &[(1, "iron_ingot"), (2, "iron_ingot"), (3, "iron_ingot"), (4, "iron_ingot"), (5, "iron_ingot"), (6, "iron_ingot"), (7, "iron_ingot"), (8, "iron_ingot"), (9, "iron_ingot")])),
         "gold_block" => Some((true, "gold_block", &[(1, "gold_ingot"), (2, "gold_ingot"), (3, "gold_ingot"), (4, "gold_ingot"), (5, "gold_ingot"), (6, "gold_ingot"), (7, "gold_ingot"), (8, "gold_ingot"), (9, "gold_ingot")])),
         "diamond_block" => Some((true, "diamond_block", &[(1, "diamond"), (2, "diamond"), (3, "diamond"), (4, "diamond"), (5, "diamond"), (6, "diamond"), (7, "diamond"), (8, "diamond"), (9, "diamond")])),
