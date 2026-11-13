@@ -629,7 +629,7 @@ fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (S
                     axis = Some(value.to_owned());
                 }
                 // These explicit false values match the default placement state.
-                "waterlogged" | "lit" | "open" | "powered" | "triggered" | "extended" | "snowy"
+                "waterlogged" | "open" | "powered" | "triggered" | "extended" | "snowy"
                     if value == "false" => {}
                 _ => {
                     return Err((StatusCode::NOT_IMPLEMENTED, format!(
