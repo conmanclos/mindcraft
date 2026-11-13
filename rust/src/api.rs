@@ -40,6 +40,7 @@ pub struct RuntimeStatus {
     pub command_tx: Mutex<Option<broadcast::Sender<AgentCommand>>>,
     pub world: Mutex<Option<WorldSnapshot>>,
     pub agents: Mutex<HashMap<String, WorldSnapshot>>,
+    pub online_players: Mutex<HashSet<String>>,
     pub agent_tokens: Mutex<HashMap<String, AgentCredential>>,
 }
 
@@ -51,6 +52,7 @@ impl Default for RuntimeStatus {
             command_tx: Mutex::new(None),
             world: Mutex::new(None),
             agents: Mutex::new(HashMap::new()),
+            online_players: Mutex::new(HashSet::new()),
             agent_tokens: Mutex::new(HashMap::new()),
         }
     }
@@ -209,6 +211,7 @@ struct StatusResponse {
     model: String,
     world: Option<WorldSnapshot>,
     agents: Vec<WorldSnapshot>,
+    online_players: Vec<String>,
 }
 
 pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, status: Arc<RuntimeStatus>) -> anyhow::Result<()> {
@@ -268,6 +271,8 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
     let world = state.status.world.lock().await.clone();
     let mut agents: Vec<WorldSnapshot> = state.status.agents.lock().await.values().cloned().collect();
     agents.sort_by(|left, right| left.agent.cmp(&right.agent));
+    let mut online_players = state.status.online_players.lock().await.iter().cloned().collect::<Vec<_>>();
+    online_players.sort_unstable_by_key(|name| name.to_ascii_lowercase());
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
@@ -279,6 +284,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
         model: state.config.model.clone(),
         world,
         agents,
+        online_players,
     }))
 }
 
