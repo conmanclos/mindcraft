@@ -2648,6 +2648,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
                             let total = jobs.len();
+                            let mut started_jobs = Vec::new();
                             // Load every distinct furnace before waiting for any output. Each
                             // furnace keeps smelting on the server while the bot visits the next.
                             for (index, job) in jobs.iter().enumerate() {
@@ -2655,31 +2656,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     return;
                                 }
                                 client.chat(format!("Preparing parallel furnace job {} of {} at {}, {}, {}.", index + 1, total, job.x, job.y, job.z));
-                                let started = execute_smelt(
-                                    client.clone(),
-                                    job.input.clone(),
-                                    BlockPos::new(job.x, job.y, job.z),
-                                    job.count,
-                                    generation_state.clone(),
-                                    generation,
-                                    false,
-                                ).await;
-                                if !started {
-                                    if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                        client.chat(format!("Furnace queue stopped while preparing job {} of {}; later furnaces were left untouched.", index + 1, total));
-                                    }
-                                    return;
-                                }
-                            }
-
-                            let mut collected_jobs = 0usize;
-                            let mut pending_jobs = Vec::new();
-                            for (index, job) in jobs.iter().enumerate() {
-                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    return;
-                                }
                                 let position = BlockPos::new(job.x, job.y, job.z);
-                                let collected = execute_smelt_collect(
+                                let started = execute_smelt(
                                     client.clone(),
                                     job.input.clone(),
                                     position,
@@ -2688,11 +2666,39 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     generation,
                                     false,
                                 ).await;
+                                if !started {
+                                    if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                        client.chat(format!("Furnace queue stopped while preparing job {} of {}; later furnaces were left untouched. I will still collect the {} furnace(s) already started.", index + 1, total, started_jobs.len()));
+                                    }
+                                    break;
+                                }
+                                started_jobs.push((job.input.clone(), position, job.count, index + 1));
+                            }
+                            if started_jobs.is_empty() {
+                                return;
+                            }
+
+                            let started_total = started_jobs.len();
+                            let mut collected_jobs = 0usize;
+                            let mut pending_jobs = Vec::new();
+                            for (job_number, (input, position, count, original_index)) in started_jobs.iter().enumerate() {
+                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    return;
+                                }
+                                let collected = execute_smelt_collect(
+                                    client.clone(),
+                                    input.clone(),
+                                    *position,
+                                    *count,
+                                    generation_state.clone(),
+                                    generation,
+                                    false,
+                                ).await;
                                 if collected {
                                     collected_jobs += 1;
-                                    client.chat(format!("Collected furnace queue job {} of {} after its complete output was server-confirmed.", index + 1, total));
+                                    client.chat(format!("Collected furnace queue job {} of {} after its complete output was server-confirmed.", original_index, total));
                                 } else {
-                                    pending_jobs.push((job.input.clone(), position, job.count, index + 1));
+                                    pending_jobs.push((input.clone(), *position, *count, *original_index));
                                 }
                             }
 
@@ -2735,11 +2741,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     }
                                     if !recovery_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
                                         && recovery_client.exists() {
-                                        recovery_client.chat(format!("Furnace queue recovery finished: {collected_jobs} of {total} batches were collected."));
+                                        recovery_client.chat(format!("Furnace queue recovery finished: {collected_jobs} of {started_total} started batches were collected."));
                                     }
                                 });
                             } else {
-                                client.chat(format!("Furnace queue finished: all {collected_jobs} parallel batches were collected."));
+                                client.chat(format!("Furnace queue finished: all {collected_jobs} of {started_total} started parallel batches were collected."));
                             }
                         });
                     }
