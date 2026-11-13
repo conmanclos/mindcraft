@@ -91,7 +91,7 @@ Edit `.env`:
 - `MINDCRAFT_MC_AUTH=offline|microsoft`
 - `MINDCRAFT_MICROSOFT_EMAIL=you@example.com,teammate@example.com` when using Microsoft device-code authentication (one email per bot username)
 - `MINDCRAFT_TRUSTED_PLAYERS=YourName,FriendName` to allow only those server-chat users to trigger autonomous gameplay actions (empty by default)
-- `MINDCRAFT_PROVIDER=ollama` (or `openai`, `anthropic`, `google`, `deepseek`, `groq`, `cerebras`, `mistral`, `openrouter`, `xai`, `qwen`, `huggingface`, `hyperbolic`, `novita`, `mercury`, `lmstudio`, `vllm`, `openai-compatible`)
+- `MINDCRAFT_PROVIDER=ollama` (or `openai`, `azure`, `anthropic`, `google`, `deepseek`, `groq`, `cerebras`, `mistral`, `openrouter`, `xai`/`grok`, `qwen`, `huggingface`, `hyperbolic`, `novita`, `mercury`, `lmstudio`, `vllm`, `openai-compatible`)
 - `MINDCRAFT_MODEL=llama3.1`
 - `MINDCRAFT_BASE_URL=http://127.0.0.1:11434/v1` for Ollama, the local endpoint for LM Studio/vLLM, the Azure resource endpoint for Azure OpenAI, or a custom OpenAI-compatible endpoint
 - `MINDCRAFT_AZURE_API_VERSION=2024-10-21` for Azure OpenAI; set `MINDCRAFT_MODEL` to the Azure deployment name
