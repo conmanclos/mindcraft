@@ -612,7 +612,6 @@ fn schematic_axis_supported(block: &str) -> bool {
                 | "quartz_pillar"
                 | "purpur_pillar"
                 | "chain"
-                | "mushroom_stem"
         )
 }
 
