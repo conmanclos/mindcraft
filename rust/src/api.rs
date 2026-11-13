@@ -1402,6 +1402,15 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "optimize_armor" => Ok(BotCommand::OptimizeArmor),
         "inventory_sort" => Ok(BotCommand::InventorySort),
         "inventory_compact" => Ok(BotCommand::InventoryCompact),
+        "hotbar_restock" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be an item name or supported selector such as iron_ingot, planks, log, or food".into()))?;
+            let selector = raw.trim().strip_prefix("minecraft:").unwrap_or(raw.trim()).to_ascii_lowercase();
+            if selector.is_empty() || selector.len() > 64
+                || !selector.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+                return Err((StatusCode::BAD_REQUEST, "hotbar_restock requires a 1-64 character item name or selector".into()));
+            }
+            Ok(BotCommand::HotbarRestock(selector))
+        },
         "trade" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z to inspect a nearby merchant or x,y,z,index to execute one offer".into()))?;
             let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
