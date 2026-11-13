@@ -390,7 +390,15 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
                     BlockPos::new(poi.x, poi.y + 1, poi.z),
                 ];
                 let Some(approach) = approaches.into_iter().find(|candidate| {
-                    world.get_block_state(*candidate).is_some_and(|state| state.is_air())
+                    let Some(feet) = world.get_block_state(*candidate) else { return false; };
+                    let Some(head) = world.get_block_state(candidate.up(1)) else { return false; };
+                    let Some(support) = world.get_block_state(candidate.down(1)) else { return false; };
+                    feet.is_air()
+                        && head.is_air()
+                        && !is_hazardous_support(&format!("{feet:?}"))
+                        && !is_hazardous_support(&format!("{head:?}"))
+                        && !support.is_air()
+                        && !is_hazardous_support(&format!("{support:?}"))
                 }) else { continue; };
                 if best.as_ref().is_none_or(|(best_score, _, _, _)| score < *best_score) {
                     best = Some((score, poi, approach, kind));
