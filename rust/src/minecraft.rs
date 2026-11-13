@@ -2282,6 +2282,7 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "respawn_anchor" => Some((true, "respawn_anchor", &[(1, "crying_obsidian"), (2, "glowstone"), (3, "crying_obsidian"), (4, "crying_obsidian"), (5, "glowstone"), (6, "crying_obsidian"), (7, "crying_obsidian"), (8, "glowstone"), (9, "crying_obsidian")])),
         "shulker_box" => Some((true, "shulker_box", &[(2, "shulker_shell"), (5, "chest"), (8, "shulker_shell")])),
         "tinted_glass" => Some((true, "tinted_glass", &[(2, "amethyst_shard"), (4, "amethyst_shard"), (5, "glass"), (6, "amethyst_shard"), (8, "amethyst_shard")])),
+        "soul_campfire" => Some((true, "soul_campfire", &[(2, "stick"), (4, "stick"), (5, "soul_soil"), (6, "stick"), (7, "log"), (8, "log"), (9, "log")])),
         "smithing_table" => Some((true, "smithing_table", &[(1, "iron_ingot"), (2, "iron_ingot"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         "beehive" => Some((true, "beehive", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "honeycomb"), (5, "honeycomb"), (6, "honeycomb"), (7, "planks"), (8, "planks"), (9, "planks")])),
         "honeycomb_block" => Some((false, "honeycomb_block", &[(1, "honeycomb"), (2, "honeycomb"), (3, "honeycomb"), (4, "honeycomb")])),
