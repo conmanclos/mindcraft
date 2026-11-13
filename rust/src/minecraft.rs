@@ -1041,7 +1041,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.stop_pathfinding();
                         bot.walk(WalkDirection::None);
                         if !bot.has_attack_cooldown() {
-                            if let HitResult::Entity(hit)) = bot.hit_result() {
+                            if let HitResult::Entity(hit) = bot.hit_result() {
                                 let target = bot.entity_ref_for(hit.entity);
                                 if let (Ok(target_position), Ok(own_position)) = (target.position(), bot.position()) {
                                     let dx = target_position.x - own_position.x;
