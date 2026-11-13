@@ -595,6 +595,27 @@ fn decode_sponge_varints(data: &[i8], expected: usize) -> Result<Vec<u32>, (Stat
     Ok(output)
 }
 
+fn schematic_axis_supported(block: &str) -> bool {
+    block.ends_with("_log")
+        || block.ends_with("_wood")
+        || block.ends_with("_stem")
+        || block.ends_with("_hyphae")
+        || matches!(
+            block,
+            "bamboo_block"
+                | "stripped_bamboo_block"
+                | "basalt"
+                | "polished_basalt"
+                | "smooth_basalt"
+                | "bone_block"
+                | "hay_block"
+                | "quartz_pillar"
+                | "purpur_pillar"
+                | "chain"
+                | "mushroom_stem"
+        )
+}
+
 fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (StatusCode, String)> {
     let (block_state, axis) = if let Some((block_state, raw_properties)) = state.split_once('[') {
         let properties = raw_properties.strip_suffix(']')
@@ -627,6 +648,9 @@ fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (S
     if !block.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
         || block.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains an invalid block-state identifier".into()));
+    }
+    if axis.is_some() && !schematic_axis_supported(block) {
+        return Err((StatusCode::NOT_IMPLEMENTED, format!("Sponge block '{block}' does not support the axis property in the current placement executor")));
     }
     if matches!(block, "air" | "cave_air" | "void_air") {
         return Ok(None);
@@ -1079,6 +1103,9 @@ fn parse_schematic_spec(raw: &str) -> Result<Vec<BuildBlock>, (StatusCode, Strin
         let mut axis = block.axis.map(|value| value.trim().to_ascii_lowercase());
         if axis.as_deref().is_some_and(|value| !matches!(value, "x" | "y" | "z")) {
             return Err((StatusCode::BAD_REQUEST, "schematic axis must be x, y, or z".into()));
+        }
+        if axis.is_some() && !schematic_axis_supported(&material) {
+            return Err((StatusCode::BAD_REQUEST, format!("schematic material '{material}' does not support an axis property")));
         }
         if matches!(rotation, 90 | 270) {
             axis = axis.map(|value| match value.as_str() {
