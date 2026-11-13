@@ -4262,7 +4262,7 @@ async fn execute_smelt(
     if !output_ready {
         bot.chat(format!("The batch of {input} exceeded its foreground wait limit. I left the furnace contents untouched and scheduled background collection of {count} {result_name}."));
         drop(container);
-        schedule_smelt_followup(bot.clone(), input.clone(), position, count);
+        schedule_smelt_followup(bot.clone(), input.clone(), position, count, generation_state.clone(), generation);
         return false;
     }
 
