@@ -501,8 +501,12 @@ async fn run_specialist_task(
         )).unwrap_or_else(|| "Current game telemetry is not available yet; use only information you can verify.".into());
         let memory_context = store.relevant_memory_context(&task.description, 2_000)?;
         let task_role = task.role.clone();
+        let retry_context = task.last_error.as_deref().map(|reason| format!(
+            "This task has already had {} execution attempt(s). The previous reported failure was: {}. Treat that as a constraint, inspect the fresh world/inventory state, and choose a materially safer recovery action rather than blindly repeating the same failed step.",
+            task.attempts, reason
+        )).unwrap_or_else(|| format!("This is execution attempt {}.", task.attempts));
         let prompt = format!(
-            "You are the {task_role} specialist controlling Minecraft teammate {agent_id}. Work on this single queued task: {}. {world_context} {memory_context} Choose exactly one immediate action supported by the Rust runtime. This worker controls only its assigned bot, so never choose smelt_parallel; use smelt_queue for sequential furnace work on this bot. Do not claim the task is complete, do not invent world observations, and do not issue an action that requires explicit approval. If the task cannot be safely advanced with one supported action, explain that in a say action. The action will be placed in a human review queue after dispatch; the player will verify the actual game result.",
+            "You are the {task_role} specialist controlling Minecraft teammate {agent_id}. Work on this single queued task: {}. {retry_context} {world_context} {memory_context} Choose exactly one immediate action supported by the Rust runtime. This worker controls only its assigned bot, so never choose smelt_parallel; use smelt_queue for sequential furnace work on this bot. Do not claim the task is complete, do not invent world observations, and do not issue an action that requires explicit approval. If the task cannot be safely advanced with one supported action, explain that in a say action. The action will be placed in a human review queue after dispatch; the player will verify the actual game result.",
             task.description
         );
         let planning = brain.plan(&prompt);
