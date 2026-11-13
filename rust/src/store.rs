@@ -67,12 +67,18 @@ impl Store {
             std::fs::create_dir_all(parent)?;
         }
         let connection = Connection::open(path)?;
+        #[cfg(unix)]
+        if path != Path::new(":memory:") {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
              PRAGMA wal_autocheckpoint=1000;
              PRAGMA temp_store=MEMORY;
+             PRAGMA secure_delete=ON;
              PRAGMA foreign_keys=ON;
              CREATE TABLE IF NOT EXISTS conversation (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
