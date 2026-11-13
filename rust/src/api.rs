@@ -80,6 +80,15 @@ struct RateWindow {
 const API_RATE_LIMIT: u32 = 180;
 const API_RATE_WINDOW: Duration = Duration::from_secs(60);
 
+fn rate_limit_bucket_key(provided: Option<&str>, authenticated: bool) -> String {
+    if !authenticated {
+        return "anonymous".to_owned();
+    }
+    let mut hasher = DefaultHasher::new();
+    provided.unwrap_or_default().hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 fn consume_rate_window(window: &mut RateWindow, now: Instant) -> bool {
     if now.duration_since(window.started) >= API_RATE_WINDOW {
         window.started = now;
@@ -114,13 +123,7 @@ async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next)
     // All missing, malformed, expired, and invalid credentials share one
     // anonymous bucket. The authenticated key remains a one-way hash so raw
     // bearer tokens are never retained in the limiter map.
-    let key = if authenticated {
-        let mut hasher = DefaultHasher::new();
-        provided.unwrap_or_default().hash(&mut hasher);
-        format!("{:016x}", hasher.finish())
-    } else {
-        "anonymous".to_owned()
-    };
+    let key = rate_limit_bucket_key(provided, authenticated);
 
     let mut windows = state.rate_limits.lock().await;
     windows.retain(|_, window| now.duration_since(window.started) < API_RATE_WINDOW * 2);
@@ -1581,6 +1584,17 @@ mod tests {
             reason: "test".into(),
             risk: "low".into(),
         }
+    }
+
+    #[test]
+    fn unauthenticated_requests_share_one_rate_limit_bucket() {
+        assert_eq!(rate_limit_bucket_key(None, false), "anonymous");
+        assert_eq!(rate_limit_bucket_key(Some("Bearer invalid-a"), false), "anonymous");
+        assert_eq!(rate_limit_bucket_key(Some("Bearer invalid-b"), false), "anonymous");
+        assert_ne!(
+            rate_limit_bucket_key(Some("master-token"), true),
+            rate_limit_bucket_key(Some("agent-token"), true)
+        );
     }
 
     #[test]
