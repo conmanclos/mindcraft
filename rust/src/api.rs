@@ -487,6 +487,9 @@ fn decode_sponge_varints(data: &[i8], expected: usize) -> Result<Vec<u32>, (Stat
             let byte = *bytes.get(cursor)
                 .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic BlockData ended inside a VarInt".into()))?;
             cursor += 1;
+            if shift == 28 && byte & 0xf0 != 0 {
+                return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains an overflowing 32-bit palette VarInt".into()));
+            }
             value |= u32::from(byte & 0x7f) << shift;
             if byte & 0x80 == 0 {
                 complete = true;
@@ -521,15 +524,26 @@ fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)
     if matches!(block, "water" | "lava" | "bubble_column" | "fire" | "soul_fire" | "nether_portal" | "end_portal" | "end_gateway") {
         return Err((StatusCode::NOT_IMPLEMENTED, format!("Sponge schematic block '{block}' requires fluid, fire, or portal-state placement and cannot be reproduced by the current item-placement executor")));
     }
-    let item = match block {
-        "wall_torch" => "torch",
-        "redstone_wall_torch" => "redstone_torch",
-        "wall_sign" => "oak_sign",
-        "wall_hanging_sign" => "oak_hanging_sign",
-        "wall_banner" => "white_banner",
-        other => other,
+    let item = if block == "wall_torch" {
+        "torch".to_owned()
+    } else if block == "redstone_wall_torch" {
+        "redstone_torch".to_owned()
+    } else if block == "wall_sign" {
+        "oak_sign".to_owned()
+    } else if let Some(prefix) = block.strip_suffix("_wall_sign") {
+        format!("{prefix}_sign")
+    } else if block == "wall_hanging_sign" {
+        "oak_hanging_sign".to_owned()
+    } else if let Some(prefix) = block.strip_suffix("_wall_hanging_sign") {
+        format!("{prefix}_hanging_sign")
+    } else if block == "wall_banner" {
+        "white_banner".to_owned()
+    } else if let Some(prefix) = block.strip_suffix("_wall_banner") {
+        format!("{prefix}_banner")
+    } else {
+        block.to_owned()
     };
-    Ok(Some(item.to_owned()))
+    Ok(Some(item))
 }
 
 fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (StatusCode, String)> {
