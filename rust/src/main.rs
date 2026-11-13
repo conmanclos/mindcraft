@@ -83,14 +83,16 @@ enum Command {
     RetryGoal { goal_id: i64 },
 }
 
-fn local_api_url(bind: SocketAddr) -> Result<String> {
+fn local_api_url(config: &config::Config) -> Result<String> {
+    let bind = config.bind;
     let ip = match bind.ip() {
         IpAddr::V4(address) if address.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
         IpAddr::V6(address) if address.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
         address if address.is_loopback() => address,
         _ => bail!("CLI API commands are restricted to loopback-bound runtimes; use the authenticated dashboard for a non-loopback bind"),
     };
-    Ok(format!("http://{}/api", SocketAddr::new(ip, bind.port())))
+    let scheme = if config.tls_cert_path.is_some() { "https" } else { "http" };
+    Ok(format!("{scheme}://{}/api", SocketAddr::new(ip, bind.port())))
 }
 
 async fn api_request(
@@ -102,7 +104,7 @@ async fn api_request(
     if config.api_token_was_generated {
         bail!("CLI API commands require MINDCRAFT_API_TOKEN to be set to the token used by the running runtime");
     }
-    let base = local_api_url(config.bind)?;
+    let base = local_api_url(config)?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::none())
