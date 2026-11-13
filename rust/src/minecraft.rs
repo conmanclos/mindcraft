@@ -3325,9 +3325,11 @@ async fn execute_enter_portal(
         bot.chat("That block is not an active Nether portal, End portal, or End gateway. I will not attempt to enter it.");
         return false;
     }
-    let starting_dimension = dimension_state.as_ref()
-        .map(|dimension| dimension.lock().await.clone())
-        .unwrap_or_else(|| "unknown".into());
+    let starting_dimension = if let Some(dimension) = &dimension_state {
+        dimension.lock().await.clone()
+    } else {
+        "unknown".into()
+    };
     bot.chat(format!("Approaching the verified portal at {},{},{}.", position.x, position.y, position.z));
     if !goto_cancellable(&bot, BlockPosGoal(position), &generation_state, generation).await {
         bot.chat("Portal approach was cancelled or could not be completed.");
@@ -3339,9 +3341,11 @@ async fn execute_enter_portal(
     for _ in 0..600 {
         if cancelled() { return false; }
         bot.wait_ticks(1).await;
-        let current_dimension = dimension_state.as_ref()
-            .map(|dimension| dimension.blocking_lock().clone())
-            .unwrap_or_else(|| starting_dimension.clone());
+        let current_dimension = if let Some(dimension) = &dimension_state {
+            dimension.lock().await.clone()
+        } else {
+            starting_dimension.clone()
+        };
         let Ok(current_position) = bot.position() else { continue; };
         let dimension_changed = current_dimension != starting_dimension;
         let teleported_in_dimension = current_position.distance_to(portal_position) > 16.0;
