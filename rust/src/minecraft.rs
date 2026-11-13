@@ -4878,7 +4878,28 @@ async fn execute_hotbar_restock(
         });
         let source_empty = verified_menu.slot(source_slot).is_some_and(|item| item.is_empty());
         if !target_matches || !source_empty {
-            bot.chat(format!("The server did not confirm moving {source_kind} into the hotbar. Restocking stopped; inspect both slots before retrying."));
+            // If the source slot is still empty, a stack may remain on the
+            // cursor after a partial/late destination update. Try to return
+            // that cursor stack to its original slot before stopping.
+            if source_empty {
+                inventory.left_click(source_slot);
+                bot.wait_updates(2).await;
+                let restored = bot.menu().ok().and_then(|menu| {
+                    menu.try_as_player()?;
+                    menu.slot(source_slot).map(|item| {
+                        !item.is_empty()
+                            && item.count() == source_count
+                            && item_name_matches(&format!("{:?}", item.kind()), &selector)
+                    })
+                }).unwrap_or(false);
+                if restored {
+                    bot.chat(format!("The server did not confirm moving {source_kind} into the hotbar; I returned the stack to its original slot and stopped."));
+                } else {
+                    bot.chat(format!("The server did not confirm moving {source_kind} into the hotbar or restoring its original slot. Inspect the cursor and both slots before retrying."));
+                }
+            } else {
+                bot.chat(format!("The server did not confirm moving {source_kind} into the hotbar. Restocking stopped; inspect both slots before retrying."));
+            }
             return;
         }
         moved_stacks += 1;
