@@ -343,7 +343,7 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
 
 /// Search only nearby loaded blocks, and only choose a POI with an adjacent
 /// loaded air block that can serve as a safe navigation destination.
-fn nearby_point_of_interest(bot: &Client, radius: i32, visited: &HashSet<(i32, i32, i32)>) -> Option<(BlockPos, BlockPos, &'static str)> {
+fn nearby_point_of_interest(bot: &Client, radius: i32, visited: &HashSet<(i32, i32, i32)>, origin_x: i32, origin_z: i32, max_radius: i32) -> Option<(BlockPos, BlockPos, &'static str)> {
     let position = bot.position().ok()?;
     let center = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
     let world = bot.world().ok()?;
@@ -404,6 +404,11 @@ fn nearby_point_of_interest(bot: &Client, radius: i32, visited: &HashSet<(i32, i
                         && support.is_collision_shape_full()
                         && !is_hazardous_support(&format!("{support:?}"))
                 }) else { continue; };
+                let dx = i64::from(approach.x) - i64::from(origin_x);
+                let dz = i64::from(approach.z) - i64::from(origin_z);
+                if dx * dx + dz * dz > i64::from(max_radius) * i64::from(max_radius) {
+                    continue;
+                }
                 if best.as_ref().is_none_or(|(best_score, _, _, _)| score < *best_score) {
                     best = Some((score, poi, approach, kind));
                 }
@@ -1342,12 +1347,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         // Run a wider loaded-chunk POI sweep every fourth waypoint;
                         // the other passes stay local to keep routine scanning bounded.
                         let poi_radius = if step % 4 == 0 { 16 } else { 8 };
-                        let poi = nearby_point_of_interest(bot, poi_radius, &visited_snapshot)
-                            .filter(|(_, approach, _)| {
-                                let dx = i64::from(approach.x) - i64::from(origin_x);
-                                let dz = i64::from(approach.z) - i64::from(origin_z);
-                                dx * dx + dz * dz <= i64::from(base_radius) * i64::from(base_radius)
-                            });
+                        let poi = nearby_point_of_interest(
+                            bot,
+                            poi_radius.min(base_radius),
+                            &visited_snapshot,
+                            origin_x,
+                            origin_z,
+                            base_radius,
+                        );
                         let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
                             BlockPos::new(origin_x + dx, position.y.floor() as i32, origin_z + dz)
                         });
