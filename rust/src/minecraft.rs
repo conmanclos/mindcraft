@@ -873,19 +873,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let username = bot.username();
                 discard_pending_commands(&state, &username, "offline tick").await;
                 if let Some(status) = &state.status {
-                    let connection_was_connected = {
-                        let mut connection = status.connection.lock().await;
-                        let was_connected = connection.state == "connected";
-                        if was_connected {
-                            connection.state = "reconnecting".into();
-                            connection.last_error = Some("Minecraft client is no longer present in the active ECS world".into());
-                            connection.last_disconnected_unix = Some(unix_timestamp());
-                        }
-                        was_connected
-                    };
+                    let snapshot_removed = status.agents.lock().await.remove(&username).is_some();
                     let was_connected = state.connected.as_ref()
                         .is_some_and(|connected| connected.swap(false, Ordering::Relaxed));
-                    if connection_was_connected || was_connected {
+                    if snapshot_removed || was_connected {
                         let count = if was_connected {
                             status.connected_agents.fetch_update(
                                 Ordering::Relaxed,
@@ -896,7 +887,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             status.connected_agents.load(Ordering::Relaxed)
                         };
                         status.minecraft_connected.store(count > 0, Ordering::Relaxed);
-                        status.agents.lock().await.remove(&username);
+                        {
+                            let mut connection = status.connection.lock().await;
+                            if count > 0 {
+                                connection.state = "connected".into();
+                                connection.last_error = None;
+                                connection.retry_in_seconds = None;
+                            } else {
+                                connection.state = "reconnecting".into();
+                                connection.last_error = Some("Minecraft client is no longer present in the active ECS world".into());
+                                connection.last_disconnected_unix = Some(unix_timestamp());
+                            }
+                        }
                         if count == 0 { status.online_players.lock().await.clear(); }
                         if state.is_primary { *status.world.lock().await = None; }
                     }
