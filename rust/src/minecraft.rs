@@ -497,8 +497,17 @@ async fn run_specialist_task(
         }
         let still_healthy = status.agents.lock().await.get(&agent_id)
             .is_some_and(|snapshot| snapshot.health.is_finite() && snapshot.health > 6.0);
-        if !still_healthy {
-            anyhow::bail!("current health telemetry is missing or critical; specialist action withheld");
+        if !still_healthy || !bot.exists() {
+            if store.release_task(task.id, &agent_id)? {
+                if bot.exists() {
+                    bot.chat(format!(
+                        "Specialist task #{} is paused because this bot is disconnected or its survival state is unsafe. The task is back in the queue without consuming an attempt.",
+                        task.id
+                    ));
+                }
+                return Ok(());
+            }
+            anyhow::bail!("bot is disconnected or survival telemetry is unsafe, and the task lease could not be released");
         }
         if let Err(reason) = brain.authorize_action(&action, false) {
             if !store.release_task(task.id, &agent_id)? {
