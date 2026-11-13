@@ -76,7 +76,7 @@ pub enum BotCommand {
 #[derive(Debug, Clone)]
 fn is_hazardous_support(debug_name: &str) -> bool {
     let name = debug_name.to_ascii_lowercase();
-    ["water", "lava", "magma", "cactus", "fire", "powder_snow", "sweet_berry_bush", "pointed_dripstone"]
+    ["water", "lava", "magma", "cactus", "fire", "powder_snow", "sweet_berry_bush", "wither_rose", "pointed_dripstone"]
         .iter().any(|hazard| name.contains(hazard))
 }
 
