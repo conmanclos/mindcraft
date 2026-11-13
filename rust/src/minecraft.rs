@@ -7155,8 +7155,12 @@ fn best_golden_apple_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> 
     let slots = menu.slots();
     menu.hotbar_slots_range().filter_map(|slot| {
         let item = slots.get(slot)?;
-        (!item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), "golden_apple"))
-            .then_some((slot, 10))
+        if item.is_empty() { return None; }
+        let compact: String = format!("{item:?}").chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        compact.contains("goldenapple").then_some((slot, 10))
     }).next()
 }
 
