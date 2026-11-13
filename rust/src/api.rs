@@ -30,6 +30,29 @@ pub struct WorldSnapshot {
     pub inventory: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionDiagnostics {
+    pub state: String,
+    pub last_error: Option<String>,
+    pub reconnect_attempts: u64,
+    pub retry_in_seconds: Option<u64>,
+    pub last_connected_unix: Option<u64>,
+    pub last_disconnected_unix: Option<u64>,
+}
+
+impl Default for ConnectionDiagnostics {
+    fn default() -> Self {
+        Self {
+            state: "not_configured".into(),
+            last_error: None,
+            reconnect_attempts: 0,
+            retry_in_seconds: None,
+            last_connected_unix: None,
+            last_disconnected_unix: None,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AgentCredential {
     token: String,
@@ -46,6 +69,7 @@ pub struct RuntimeStatus {
     pub agents: Mutex<HashMap<String, WorldSnapshot>>,
     pub online_players: Mutex<HashSet<String>>,
     pub agent_tokens: Mutex<HashMap<String, AgentCredential>>,
+    pub connection: Mutex<ConnectionDiagnostics>,
 }
 
 impl Default for RuntimeStatus {
@@ -58,6 +82,7 @@ impl Default for RuntimeStatus {
             agents: Mutex::new(HashMap::new()),
             online_players: Mutex::new(HashSet::new()),
             agent_tokens: Mutex::new(HashMap::new()),
+            connection: Mutex::new(ConnectionDiagnostics::default()),
         }
     }
 }
@@ -285,6 +310,7 @@ struct StatusResponse {
     world: Option<WorldSnapshot>,
     agents: Vec<WorldSnapshot>,
     online_players: Vec<String>,
+    connection: ConnectionDiagnostics,
 }
 
 pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, status: Arc<RuntimeStatus>) -> anyhow::Result<()> {
@@ -356,6 +382,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
     agents.sort_by(|left, right| left.agent.cmp(&right.agent));
     let mut online_players = state.status.online_players.lock().await.iter().cloned().collect::<Vec<_>>();
     online_players.sort_unstable_by_key(|name| name.to_ascii_lowercase());
+    let connection = state.status.connection.lock().await.clone();
     Ok(Json(StatusResponse {
         name: "Mindcraft Native",
         version: env!("CARGO_PKG_VERSION"),
@@ -368,6 +395,7 @@ async fn status_handler(State(state): State<ApiState>, headers: HeaderMap) -> Re
         world,
         agents,
         online_players,
+        connection,
     }))
 }
 
