@@ -3521,7 +3521,7 @@ async fn execute_trade(
     };
     let before = count_output(&slots);
     if cancelled() { return false; }
-    container.shift_click(2);
+    container.shift_click(2usize);
     bot.wait_ticks(3).await;
     if cancelled() { return false; }
     let after_slots = container.slots().unwrap_or_default();
