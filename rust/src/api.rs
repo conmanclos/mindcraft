@@ -1034,6 +1034,38 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "stop" => Ok(BotCommand::Stop),
         "jump" => Ok(BotCommand::Jump),
+        "collect" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use block_name[*count][@range] syntax, for example oak_log*8@64".into()))?;
+            let (raw_block, range) = match raw.split_once('@') {
+                Some((block, range)) if !range.contains('@') => {
+                    let range = range.trim().parse::<u16>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "collect range must be an integer from 8 to 512 blocks".into()))?;
+                    if !(8..=512).contains(&range) {
+                        return Err((StatusCode::BAD_REQUEST, "collect range must be from 8 to 512 blocks".into()));
+                    }
+                    (block.trim(), range)
+                }
+                Some(_) => return Err((StatusCode::BAD_REQUEST, "collect accepts at most one @range suffix".into())),
+                None => (raw.trim(), 128),
+            };
+            let (block_name, count) = match raw_block.split_once('*') {
+                Some((block, count)) if !count.contains('*') => {
+                    let count = count.trim().parse::<u8>()
+                        .map_err(|_| (StatusCode::BAD_REQUEST, "collect count must be an integer from 1 to 64".into()))?;
+                    if !(1..=64).contains(&count) {
+                        return Err((StatusCode::BAD_REQUEST, "collect count must be from 1 to 64".into()));
+                    }
+                    (block.trim(), count)
+                }
+                Some(_) => return Err((StatusCode::BAD_REQUEST, "collect accepts one *count suffix".into())),
+                None => (raw_block.trim(), 1),
+            };
+            if block_name.is_empty() || block_name.len() > 64
+                || !block_name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':')) {
+                return Err((StatusCode::BAD_REQUEST, "collect block name must be a Minecraft block ID such as oak_log or minecraft:oak_log".into()));
+            }
+            Ok(BotCommand::Collect(block_name.to_ascii_lowercase(), count, range))
+        }
         "explore" => {
             let radius = action.target.as_deref().unwrap_or("32").parse::<u16>()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "explore radius must be an integer from 8 to 128 blocks".into()))?;
