@@ -1080,6 +1080,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 }
             }
             let mut queued = Vec::new();
+            let mut overflow_dropped = 0usize;
             if let Some(receiver) = &state.commands {
                 let mut receiver = receiver.lock().await;
                 loop {
@@ -1089,7 +1090,17 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 Some(target) => target.eq_ignore_ascii_case(&bot.username()),
                                 None => state.is_primary,
                             };
-                            if matches_target { queued.push(envelope.command); }
+                            if matches_target {
+                                // Each new gameplay action invalidates the previous
+                                // action generation. Keep only a small recent window
+                                // so a burst cannot spawn 128 cancelled executor tasks
+                                // in a single Minecraft tick.
+                                if queued.len() >= 8 {
+                                    queued.remove(0);
+                                    overflow_dropped = overflow_dropped.saturating_add(1);
+                                }
+                                queued.push(envelope.command);
+                            }
                         }
                         Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
                             tracing::warn!(username = %bot.username(), skipped, "Minecraft command receiver lagged; older queued commands were dropped");
@@ -1097,6 +1108,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         Err(broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed) => break,
                     }
                 }
+            }
+            if overflow_dropped > 0 {
+                tracing::warn!(username = %bot.username(), overflow_dropped, "coalesced an oversized command burst to the eight most recent commands");
             }
             if critical_health {
                 if let Some(target) = &state.follow_target { *target.lock().await = None; }
