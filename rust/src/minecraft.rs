@@ -2124,8 +2124,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if craftable.is_empty() {
                                 client.chat("No allowlisted recipes can be crafted from the current inventory.");
                             } else {
-                                let summary = craftable.into_iter().take(18).collect::<Vec<_>>().join(", ");
-                                client.chat(truncate_utf16(&format!("Craftable from inventory: {summary}"), 240));
+                                let mut page = "Craftable from inventory:".to_owned();
+                                for recipe in craftable {
+                                    let separator = if page.ends_with(':') { " " } else { ", " };
+                                    let addition = format!("{separator}{recipe}");
+                                    if page.encode_utf16().count() + addition.encode_utf16().count() > 220 {
+                                        client.chat(page);
+                                        client.wait_ticks(10).await;
+                                        if !client.exists() { return; }
+                                        page = "Craftable (continued):".to_owned();
+                                    }
+                                    page.push_str(&addition);
+                                }
+                                if page != "Craftable (continued):" {
+                                    client.chat(page);
+                                }
                             }
                         });
                     }
