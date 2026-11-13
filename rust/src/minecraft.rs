@@ -3323,13 +3323,20 @@ async fn execute_inventory_compact(
             }
             let target_after = live.slot(target_slot).map(|item| item.count()).unwrap_or(0);
             let source_after = live.slot(source_slot).map(|item| item.count()).unwrap_or(0);
+            let target_identity_ok = live.slot(target_slot)
+                .and_then(|item| item.as_present())
+                .is_some_and(|item| target_data.is_same_item_and_components(item));
+            let source_identity_ok = source_after == 0 || live.slot(source_slot)
+                .and_then(|item| item.as_present())
+                .is_some_and(|item| target_data.is_same_item_and_components(item));
             let actual_moved = target_after.saturating_sub(target_before).max(0) as u32;
             if target_after > target_before && source_after < source_before {
                 moved_items = moved_items.saturating_add(actual_moved);
                 merged_stacks += 1;
                 target_count = target_after;
             }
-            if target_after != target_before + amount || source_after != source_before - amount {
+            if !target_identity_ok || !source_identity_ok
+                || target_after != target_before + amount || source_after != source_before - amount {
                 bot.chat(format!("The server accepted a partial inventory merge ({actual_moved} item(s)); compaction stopped without repeating the transfer."));
                 return;
             }
