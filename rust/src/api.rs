@@ -2102,6 +2102,8 @@ mod tests {
             minecraft_auth: auth.into(), microsoft_email: None,
             trusted_chat_players: Vec::new(),
             database: std::path::PathBuf::from(":memory:"),
+            tls_cert_path: None,
+            tls_key_path: None,
         }
     }
 
