@@ -1251,7 +1251,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let summary = entries.into_iter().take(20)
                                 .map(|(name, count)| format!("{name}: {count}"))
                                 .collect::<Vec<_>>().join("; ");
-                            client.chat(format!("Nearby blocks within {range} blocks (loaded blocks only): {summary}"));
+                            client.chat(truncate_utf16(&format!("Nearby blocks within {range} blocks (loaded blocks only): {summary}"), 240));
                         });
                     }
                     BotCommand::Locate(block_name, range) => {
