@@ -96,6 +96,7 @@ impl Brain {
         match self.config.provider.as_str() {
             "anthropic" => self.anthropic(&system, prompt).await,
             "google" => self.google(&system, prompt).await,
+            "azure" => self.azure_openai(&system, prompt).await,
             "openai" | "openai-compatible" | "ollama" | "deepseek" | "groq"
             | "cerebras" | "mistral" | "openrouter" | "xai" | "grok" | "qwen"
             | "huggingface" | "hyperbolic" | "novita" | "mercury"
@@ -203,6 +204,32 @@ impl Brain {
         let value: Value = request.send().await?.error_for_status()?.json().await?;
         value.pointer("/choices/0/message/content").and_then(Value::as_str)
             .map(str::to_owned).ok_or_else(|| anyhow!("provider response did not contain choices[0].message.content"))
+    }
+
+    async fn azure_openai(&self, system: &str, prompt: &str) -> Result<String> {
+        if self.config.api_key.is_empty() {
+            bail!("MINDCRAFT_API_KEY is required for Azure OpenAI");
+        }
+        let deployment = self.config.model.trim();
+        if deployment.is_empty() || !deployment.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+        }) {
+            bail!("For Azure OpenAI, MINDCRAFT_MODEL must be the deployment name using only letters, numbers, dots, hyphens, or underscores");
+        }
+        let base = self.config.base_url.trim_end_matches('/');
+        let url = format!(
+            "{base}/openai/deployments/{deployment}/chat/completions?api-version={}",
+            self.config.azure_api_version
+        );
+        let value: Value = self.http.post(url)
+            .header("api-key", &self.config.api_key)
+            .json(&json!({
+                "messages": [{"role":"system","content":system},{"role":"user","content":prompt}],
+                "temperature": 0.35
+            }))
+            .send().await?.error_for_status()?.json().await?;
+        value.pointer("/choices/0/message/content").and_then(Value::as_str)
+            .map(str::to_owned).ok_or_else(|| anyhow!("Azure OpenAI response did not contain choices[0].message.content"))
     }
 
     async fn anthropic(&self, system: &str, prompt: &str) -> Result<String> {
