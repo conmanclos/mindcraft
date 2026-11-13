@@ -50,6 +50,7 @@ pub enum BotCommand {
     ContainerSort(i32, i32, i32),
     Craft(String, Option<(i32, i32, i32)>, u8),
     Smelt(String, (i32, i32, i32), u8),
+    SmeltCollect(String, (i32, i32, i32), u8),
     SmeltQueue(Vec<SmeltJob>),
 }
 
@@ -3873,6 +3874,112 @@ async fn execute_trade(
         bot.chat(format!("Trade #{index} was not confirmed in inventory. I did not repeat it; check the merchant and inventory before retrying."));
         false
     }
+}
+
+async fn execute_smelt_collect(
+    bot: Client,
+    input: String,
+    position: BlockPos,
+    count: u8,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    let Some(result_name) = smelt_spec(&input) else {
+        bot.chat(format!("I don't know a safe output mapping for {input}; no furnace was opened."));
+        return false;
+    };
+    if cancelled() { return false; }
+    let Ok(world) = bot.world() else {
+        bot.chat("The world is unavailable; I cannot reach that furnace.");
+        return false;
+    };
+    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+        bot.chat("That furnace coordinate is not a loaded non-air block.");
+        return false;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(&bot, ReachBlockPosGoal::new(position, chunk_storage), &generation_state, generation).await {
+        if !cancelled() { bot.chat("Pathfinding to the furnace timed out or failed."); }
+        return false;
+    }
+    if cancelled() || !bot.exists() || !bot.is_goto_target_reached() {
+        if !cancelled() { bot.chat("I couldn't reach that furnace without breaking blocks."); }
+        return false;
+    }
+    let Ok(own_position) = bot.position() else { return false; };
+    let dx = own_position.x - (position.x as f64 + 0.5);
+    let dy = own_position.y - (position.y as f64 + 0.5);
+    let dz = own_position.z - (position.z as f64 + 0.5);
+    if dx * dx + dy * dy + dz * dz > 20.25 {
+        bot.chat("The furnace is outside the 4.5-block interaction reach.");
+        return false;
+    }
+    bot.look_at(position.center());
+    bot.wait_updates(1).await;
+    if cancelled() { return false; }
+    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+        bot.chat("I don't have a clear line of sight to that furnace.");
+        return false;
+    }
+    let Some(container) = bot.open_container_at(position).await.ok().flatten() else {
+        bot.chat("I couldn't open a furnace interface at that coordinate.");
+        return false;
+    };
+    let Some(menu) = container.menu().ok().flatten() else {
+        bot.chat("The furnace interface closed before I could inspect its output.");
+        drop(container);
+        return false;
+    };
+    if !matches!(
+        &menu,
+        azalea_inventory::Menu::Furnace { .. }
+            | azalea_inventory::Menu::BlastFurnace { .. }
+            | azalea_inventory::Menu::Smoker { .. }
+    ) {
+        bot.chat("That block is not a supported furnace, blast furnace, or smoker. Nothing was collected.");
+        drop(container);
+        return false;
+    }
+    let mut ready = false;
+    for _ in 0..100 {
+        if cancelled() { drop(container); return false; }
+        if container.menu().ok().flatten().is_none() {
+            bot.chat("The furnace closed before a complete matching output was ready.");
+            drop(container);
+            return false;
+        }
+        ready = container.slots().and_then(|slots| slots.get(2).map(|item| {
+            !item.is_empty()
+                && item.count() >= count
+                && item_name_matches(&format!("{:?}", item.kind()), result_name)
+        })).unwrap_or(false);
+        if ready { break; }
+        bot.wait_ticks(1).await;
+    }
+    if !ready {
+        bot.chat(format!("No complete batch of {count} {result_name} is ready in that furnace; I left all slots untouched."));
+        drop(container);
+        return false;
+    }
+    if cancelled() { drop(container); return false; }
+    container.shift_click(2usize);
+    let mut output_cleared = false;
+    for _ in 0..10 {
+        bot.wait_ticks(1).await;
+        output_cleared = container.slots()
+            .and_then(|slots| slots.get(2).map(|item| item.is_empty()))
+            .unwrap_or(false);
+        if output_cleared { break; }
+    }
+    if output_cleared {
+        bot.chat(format!("Collected and server-confirmed the ready {result_name} output from the furnace."));
+    } else {
+        bot.chat(format!("The {result_name} output did not clear. It remains in the furnace; check inventory capacity."));
+    }
+    drop(container);
+    output_cleared
 }
 
 async fn execute_smelt(
