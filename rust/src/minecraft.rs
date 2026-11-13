@@ -4177,13 +4177,32 @@ async fn execute_clear_furnace(
             return false;
         };
         if item.is_empty() { continue; }
+        let item_kind = format!("{:?}", item.kind());
+        let item_count = u32::from(item.count());
+        let Some(player_slots) = container.menu().ok().flatten()
+            .map(|menu| menu.player_slots_range().collect::<Vec<_>>()) else {
+            bot.chat("The furnace menu changed before I could verify the destination inventory.");
+            drop(container);
+            return false;
+        };
+        let count_matching = |slots: &[azalea_inventory::ItemStack]| -> u32 {
+            player_slots.iter().filter_map(|player_slot| slots.get(*player_slot))
+                .filter(|stack| !stack.is_empty() && format!("{:?}", stack.kind()) == item_kind)
+                .map(|stack| u32::from(stack.count()))
+                .sum()
+        };
+        let before_count = container.slots().map(|slots| count_matching(&slots)).unwrap_or(0);
         container.shift_click(slot);
         bot.wait_ticks(2).await;
-        let cleared = container.slots()
-            .and_then(|slots| slots.get(slot).map(|item| item.is_empty()))
-            .unwrap_or(false);
-        if !cleared {
-            bot.chat(format!("Stopped clearing at furnace slot {slot}; the item was not confirmed moved. Check player inventory capacity."));
+        let Some(after_slots) = container.slots() else {
+            bot.chat("The furnace menu closed during transfer; inspect inventory and furnace before retrying.");
+            drop(container);
+            return false;
+        };
+        let source_empty = after_slots.get(slot).is_some_and(|stack| stack.is_empty());
+        let destination_count = count_matching(&after_slots);
+        if !source_empty || destination_count < before_count.saturating_add(item_count) {
+            bot.chat(format!("Stopped clearing at furnace slot {slot}; the source and destination inventory counts did not both confirm the full transfer. Check inventory capacity before retrying."));
             drop(container);
             return false;
         }
