@@ -208,7 +208,7 @@ struct SpongeBlocksNbt {
     data: Vec<i8>,
 }
 
-const MAX_SPONGE_BASE64_BYTES: usize = 2_000_000;
+const MAX_SPONGE_BASE64_BYTES: usize = 1_900_000;
 const MAX_SPONGE_NBT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Serialize)]
@@ -291,7 +291,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/tasks/:task_id/fail", post(fail_task))
         .with_state(state.clone())
         .layer(middleware::from_fn_with_state(state, rate_limit))
-        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(DefaultBodyLimit::max(2_100_000))
         .layer(CorsLayer::new()
             .allow_origin([HeaderValue::from_static("tauri://localhost"), HeaderValue::from_static("http://tauri.localhost")])
             .allow_methods([Method::GET, Method::POST, Method::DELETE])
@@ -525,7 +525,7 @@ fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)
 
 fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (StatusCode, String)> {
     if encoded.is_empty() || encoded.len() > MAX_SPONGE_BASE64_BYTES {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic Base64 payload must be 1-2,000,000 bytes".into()));
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic Base64 payload must be 1-1,900,000 bytes".into()));
     }
     let compressed = BASE64_STANDARD.decode(encoded)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Sponge schematic data_base64 is not valid standard Base64".into()))?;
