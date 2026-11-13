@@ -93,20 +93,37 @@ fn consume_rate_window(window: &mut RateWindow, now: Instant) -> bool {
 }
 
 async fn rate_limit(State(state): State<ApiState>, request: Request, next: Next) -> Response {
-    let credential = request.headers().get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok()).unwrap_or("anonymous");
-    let mut hasher = DefaultHasher::new();
-    credential.hash(&mut hasher);
-    let key = format!("{:016x}", hasher.finish());
+    // Only authenticated credentials receive individual buckets. Otherwise an
+    // unauthenticated caller can fill the bounded map with arbitrary bearer
+    // strings and deny service to the real dashboard token.
     let now = Instant::now();
+    let provided = request.headers().get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let authenticated = if let Some(token) = provided {
+        if constant_time_equal(token, &state.config.api_token) {
+            true
+        } else {
+            let tokens = state.status.agent_tokens.lock().await;
+            tokens.values().any(|credential| agent_credential_matches(credential, token, now))
+        }
+    } else {
+        false
+    };
+
+    // All missing, malformed, expired, and invalid credentials share one
+    // anonymous bucket. The authenticated key remains a one-way hash so raw
+    // bearer tokens are never retained in the limiter map.
+    let key = if authenticated {
+        let mut hasher = DefaultHasher::new();
+        provided.unwrap_or_default().hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    } else {
+        "anonymous".to_owned()
+    };
+
     let mut windows = state.rate_limits.lock().await;
     windows.retain(|_, window| now.duration_since(window.started) < API_RATE_WINDOW * 2);
-    if windows.len() >= 4096 && !windows.contains_key(&key) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(serde_json::json!({"error":"API rate-limit capacity is full; retry shortly"})),
-        ).into_response();
-    }
     let window = windows.entry(key).or_insert(RateWindow { started: now, requests: 0 });
     if !consume_rate_window(window, now) {
         return (
