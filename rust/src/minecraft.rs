@@ -4447,7 +4447,7 @@ async fn execute_inventory_sort(
     let key_for_slot = |slot: usize| -> String {
         snapshot.get(slot).map(|item| {
             if item.is_empty() { String::new() } else {
-                format!("{:?}", item.kind()).chars()
+                format!("{:?}#{}:{item:?}", item.kind(), item.count()).chars()
                     .filter(|character| character.is_ascii_alphanumeric())
                     .flat_map(char::to_lowercase)
                     .collect()
@@ -4504,7 +4504,7 @@ async fn execute_inventory_sort(
         let live_key = |slot: usize| -> String {
             live_slots.get(slot).map(|item| {
                 if item.is_empty() { String::new() } else {
-                    format!("{:?}", item.kind()).chars()
+                    format!("{:?}#{}:{item:?}", item.kind(), item.count()).chars()
                         .filter(|character| character.is_ascii_alphanumeric())
                         .flat_map(char::to_lowercase)
                         .collect()
@@ -4530,7 +4530,7 @@ async fn execute_inventory_sort(
     }
     let final_keys = slots.iter().map(|slot| {
         final_menu.slot(*slot).map(|item| if item.is_empty() { String::new() } else {
-            format!("{:?}", item.kind()).chars()
+            format!("{:?}#{}:{item:?}", item.kind(), item.count()).chars()
                 .filter(|character| character.is_ascii_alphanumeric())
                 .flat_map(char::to_lowercase)
                 .collect()
