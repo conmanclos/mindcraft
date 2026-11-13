@@ -936,6 +936,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 // only when it is close and the server raycast confirms that exact target.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
                     && !critical_health
+                    && health > 10.0
+                    && hunger.food > 6
                     && !bot.has_attack_cooldown()
                 {
                     let should_check_combat = if let Some(last) = &state.last_auto_combat {
@@ -971,6 +973,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 // Explicitly approved optimize_armor actions handle intentional upgrades.
                 if state.brain.as_ref().is_some_and(|brain| brain.is_autonomous())
                     && !critical_health
+                    && health > 10.0
+                    && hunger.food > 12
                 {
                     let should_equip = if let Some(last) = &state.last_auto_armor {
                         let mut last = last.lock().await;
