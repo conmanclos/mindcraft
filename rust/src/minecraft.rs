@@ -1332,6 +1332,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         None
                     };
                     if let Ok(position) = bot.position() {
+                        let origin_x = spiral_origin.map(|origin| origin.x).unwrap_or_else(|| position.x.floor() as i32);
+                        let origin_z = spiral_origin.map(|origin| origin.z).unwrap_or_else(|| position.z.floor() as i32);
                         let visited_snapshot = if let Some(visited) = &state.visited_pois {
                             visited.lock().await.clone()
                         } else {
@@ -1340,9 +1342,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         // Run a wider loaded-chunk POI sweep every fourth waypoint;
                         // the other passes stay local to keep routine scanning bounded.
                         let poi_radius = if step % 4 == 0 { 16 } else { 8 };
-                        let poi = nearby_point_of_interest(bot, poi_radius, &visited_snapshot);
-                        let origin_x = spiral_origin.map(|origin| origin.x).unwrap_or_else(|| position.x.floor() as i32);
-                        let origin_z = spiral_origin.map(|origin| origin.z).unwrap_or_else(|| position.z.floor() as i32);
+                        let poi = nearby_point_of_interest(bot, poi_radius, &visited_snapshot)
+                            .filter(|(_, approach, _)| {
+                                let dx = i64::from(approach.x) - i64::from(origin_x);
+                                let dz = i64::from(approach.z) - i64::from(origin_z);
+                                dx * dx + dz * dz <= i64::from(base_radius) * i64::from(base_radius)
+                            });
                         let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
                             BlockPos::new(origin_x + dx, position.y.floor() as i32, origin_z + dz)
                         });
