@@ -4744,7 +4744,7 @@ async fn execute_build(
 ) {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
-    if positions.is_empty() || positions.len() > 64 {
+    if positions.is_empty() || positions.len() > 256 {
         bot.chat("A build plan must contain between 1 and 64 block positions.");
         return;
     }
@@ -5609,8 +5609,8 @@ async fn execute_build_mixed(
 ) {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
-    if blocks.is_empty() || blocks.len() > 64 {
-        bot.chat("A custom schematic must contain between 1 and 64 blocks.");
+    if blocks.is_empty() || blocks.len() > 256 {
+        bot.chat("A custom schematic must contain between 1 and 256 blocks.");
         return;
     }
     let Ok(menu) = bot.menu() else {
