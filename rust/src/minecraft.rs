@@ -211,6 +211,7 @@ pub async fn connect(
         *status.command_tx.lock().await = None;
         *status.world.lock().await = None;
         status.agents.lock().await.clear();
+        status.online_players.lock().await.clear();
         tracing::warn!("Azalea swarm exited: {result:?}; reconnecting in 5 seconds");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
@@ -518,6 +519,16 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::ConnectionFailed(error) => {
             tracing::warn!(username = %bot.username(), error = ?error, "Minecraft connection attempt failed; Azalea will retry");
         }
+        Event::AddPlayer(info) | Event::UpdatePlayer(info) => {
+            if let Some(status) = &state.status {
+                status.online_players.lock().await.insert(info.profile.name.clone());
+            }
+        }
+        Event::RemovePlayer(info) => {
+            if let Some(status) = &state.status {
+                status.online_players.lock().await.remove(&info.profile.name);
+            }
+        }
         Event::Packet(packet) => {
             let dimension_name = match packet.as_ref() {
                 ClientboundGamePacket::Login(login) => Some(login.common.dimension.to_string()),
@@ -540,6 +551,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let count = previous.saturating_sub(1);
                         status.minecraft_connected.store(count > 0, Ordering::Relaxed);
                         status.agents.lock().await.remove(&bot.username());
+                        if count == 0 { status.online_players.lock().await.clear(); }
                         if state.is_primary { *status.world.lock().await = None; }
                     }
                 }
