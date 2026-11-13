@@ -69,6 +69,10 @@ struct ApiState {
     store: Arc<Store>,
     status: Arc<RuntimeStatus>,
     rate_limits: Arc<Mutex<HashMap<String, RateWindow>>>,
+    // Chat history is a single ordered conversation. Serialize chat turns so
+    // concurrent dashboard requests cannot splice one user's prompt into
+    // another request's context or interleave assistant responses.
+    chat_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Clone, Copy)]
@@ -290,6 +294,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         store,
         status,
         rate_limits: Arc::new(Mutex::new(HashMap::new())),
+        chat_lock: Arc::new(Mutex::new(())),
     };
     let app = Router::new()
         .route("/", get(dashboard))
@@ -371,8 +376,9 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     if request.message.trim().is_empty() || request.message.len() > 12_000 {
         return Err((StatusCode::BAD_REQUEST, "message must contain 1-12000 bytes".into()));
     }
-    state.store.append_message("user", &request.message)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Keep the conversation snapshot stable for the full provider round trip.
+    // Failed or timed-out generations are not persisted as half-finished turns.
+    let _chat_turn = state.chat_lock.lock().await;
     let context = state.store.recent_context(12, 6_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let world = state.status.world.lock().await.clone();
@@ -382,10 +388,12 @@ async fn chat(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
     let player_context = format!("\nPlayers currently listed online: {}.", if online_players.is_empty() { "none".to_owned() } else { online_players.join(", ") });
     let memory_context = state.store.relevant_memory_context(&request.message, 4_000)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let prompt = format!("Recent conversation:\n{context}{world_context}{player_context}\n{memory_context}\n\nRespond to the latest user message.");
+    let prompt = format!("Recent conversation:\n{context}{world_context}{player_context}\n{memory_context}\n\nLatest user message:\n{}", request.message);
     let reply = tokio::time::timeout(Duration::from_secs(50), state.brain.reply(&prompt))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "AI provider timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    state.store.append_message("user", &request.message)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     state.store.append_message("assistant", &reply)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(ChatResponse { reply }))
