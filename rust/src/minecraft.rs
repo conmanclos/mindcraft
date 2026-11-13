@@ -1088,7 +1088,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         };
                         let origin_x = position.x.floor() as i32;
                         let origin_z = position.z.floor() as i32;
-                        let start_y = (position.y.floor() as i32).saturating_add(1);
+                        let start_y = (position.y.floor() as i32).saturating_sub(1);
                         let Ok(world) = bot.world() else {
                             bot.chat("The loaded world is unavailable; I can't find the surface.");
                             continue;
