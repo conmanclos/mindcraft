@@ -279,7 +279,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/plan", post(plan))
         .route("/api/execute", post(execute))
         .route("/api/build", post(build_schematic))
-        .route("/api/build/sponge", post(build_sponge_schematic).layer(DefaultBodyLimit::max(16 * 1024)))
+        .route("/api/build/sponge", post(build_sponge_schematic).layer(DefaultBodyLimit::max(2_100_000)))
         .route("/api/memory", get(memory_list).post(memory_upsert))
         .route("/api/memory/:memory_id", axum::routing::delete(memory_delete))
         .route("/api/goals", get(list_goals).post(create_goal))
