@@ -79,7 +79,7 @@ fn supported_provider(provider: &str) -> bool {
         "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
         | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
         | "xai" | "grok" | "qwen" | "huggingface" | "hyperbolic" | "novita"
-        | "mercury" | "lmstudio" | "vllm" | "azure"
+        | "mercury" | "lmstudio" | "vllm" | "azure" | "replicate"
     )
 }
 
@@ -87,7 +87,7 @@ fn provider_requires_api_key(provider: &str) -> bool {
     matches!(provider,
         "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
         | "mistral" | "openrouter" | "xai" | "grok" | "qwen" | "huggingface"
-        | "hyperbolic" | "novita" | "mercury" | "azure"
+        | "hyperbolic" | "novita" | "mercury" | "azure" | "replicate"
     )
 }
 
@@ -97,6 +97,7 @@ fn default_provider_base_url(provider: &str) -> &'static str {
         "lmstudio" => "http://127.0.0.1:1234/v1",
         "vllm" => "http://127.0.0.1:8000/v1",
         "openai-compatible" | "azure" => "",
+        "replicate" => "https://api.replicate.com/v1",
         "deepseek" => "https://api.deepseek.com/v1",
         "groq" => "https://api.groq.com/openai/v1",
         "cerebras" => "https://api.cerebras.ai/v1",
