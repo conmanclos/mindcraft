@@ -383,8 +383,8 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         state.status.world.lock().await.clone()
     };
     let world_context = world.map(|world| format!(
-        "\nCurrent Minecraft state for {} in dimension {}: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
-        world.agent, world.dimension, world.position, world.health, world.food, world.saturation, world.inventory
+        "\nCurrent Minecraft state for {} in dimension {}, biome {}: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
+        world.agent, world.dimension, world.biome.as_deref().unwrap_or("unknown"), world.position, world.health, world.food, world.saturation, world.inventory
     )).unwrap_or_default();
     let connected_agents = state.status.agents.lock().await.values()
         .map(|agent| format!("{} ({})", agent.agent, agent.role))
