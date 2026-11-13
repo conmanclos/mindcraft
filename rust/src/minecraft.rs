@@ -328,6 +328,10 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
     else if name.contains("suspicioussand") || name.contains("suspiciousgravel") { Some("archaeology site") }
     else if name.contains("trialspawner") { Some("trial chamber spawner") }
     else if name.contains("vault") { Some("trial chamber vault") }
+    else if name.contains("reinforceddeepslate") { Some("ancient city landmark") }
+    else if name.contains("buddingamethyst") { Some("amethyst geode") }
+    else if name.contains("decoratedpot") { Some("archaeology landmark") }
+    else if name.contains("beehive") || name.contains("beenest") { Some("apiary") }
     else if name.contains("mobspawner") || name.contains("spawner") { Some("dungeon spawner") }
     else if name.contains("sculkshrieker") { Some("deep dark shrieker") }
     else if name.contains("sculksensor") { Some("deep dark sensor") }
@@ -377,8 +381,9 @@ fn nearby_point_of_interest(bot: &Client, radius: i32, visited: &HashSet<(i32, i
                 // avoid routing an autonomous scout directly toward hostile
                 // spawners or deep-dark shriekers.
                 let structure_weight = match kind {
-                    "structure landmark" | "trial chamber vault" => 0.75,
-                    "village workstation" | "village bed" => 0.85,
+                    "structure landmark" | "trial chamber vault" | "ancient city landmark"
+                    | "amethyst geode" | "archaeology landmark" => 0.75,
+                    "village workstation" | "village bed" | "apiary" => 0.85,
                     "trial chamber spawner" | "dungeon spawner" | "deep dark shrieker" => 1.5,
                     "deep dark sensor" => 1.2,
                     _ => 1.0,
