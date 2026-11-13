@@ -2134,7 +2134,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                         if !client.exists() { return; }
                                         page = "Craftable (continued):".to_owned();
                                     }
-                                    page.push_str(&addition);
+                                    let separator = if page.ends_with(':') { " " } else { ", " };
+                                    page.push_str(&format!("{separator}{recipe}"));
                                 }
                                 if page != "Craftable (continued):" {
                                     client.chat(page);
