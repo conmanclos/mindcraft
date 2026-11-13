@@ -1358,13 +1358,6 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 && support.is_collision_shape_full()
                                 && !is_hazardous_support(&format!("{support:?}"))
                         });
-                        if let Some((poi_position, _, _)) = poi {
-                            if let Some(visited) = &state.visited_pois {
-                                let mut visited = visited.lock().await;
-                                if visited.len() >= 1024 { visited.clear(); }
-                                visited.insert((poi_position.x, poi_position.y, poi_position.z));
-                            }
-                        }
                         if waypoint_safe {
                             if let Some((poi_position, _, kind)) = poi {
                                 if let Some(store) = &state.store {
@@ -1379,7 +1372,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 tracing::info!(username = %bot.username(), ?destination, "exploration spiral waypoint selected");
                             }
                             bot.start_goto_with_opts(BlockPosGoal(destination), PathfinderOpts::new().allow_mining(false));
+                            if let Some((poi_position, _, _)) = poi {
+                                if let Some(visited) = &state.visited_pois {
+                                    let mut visited = visited.lock().await;
+                                    if visited.len() >= 1024 { visited.clear(); }
+                                    visited.insert((poi_position.x, poi_position.y, poi_position.z));
+                                }
+                            }
                         } else {
+                            if let Some((poi_position, _, _)) = poi {
+                                if let Some(visited) = &state.visited_pois {
+                                    let mut visited = visited.lock().await;
+                                    if visited.len() >= 1024 { visited.clear(); }
+                                    visited.insert((poi_position.x, poi_position.y, poi_position.z));
+                                }
+                            }
                             tracing::debug!(username = %bot.username(), ?destination, "skipping exploration waypoint outside loaded chunks or safe footing");
                         }
                     }
