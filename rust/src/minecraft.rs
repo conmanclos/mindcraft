@@ -2673,48 +2673,73 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
 
                             let mut collected_jobs = 0usize;
+                            let mut pending_jobs = Vec::new();
                             for (index, job) in jobs.iter().enumerate() {
                                 if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
                                     return;
                                 }
                                 let position = BlockPos::new(job.x, job.y, job.z);
-                                let deadline = tokio::time::Instant::now() + Duration::from_secs(10 * 60);
-                                let mut collected = false;
-                                while !collected && tokio::time::Instant::now() < deadline {
-                                    if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
-                                        || !client.exists() {
-                                        return;
-                                    }
-                                    collected = execute_smelt_collect(
-                                        client.clone(),
-                                        job.input.clone(),
-                                        position,
-                                        job.count,
-                                        generation_state.clone(),
-                                        generation,
-                                        false,
-                                    ).await;
-                                    if !collected {
-                                        tokio::time::sleep(Duration::from_secs(5)).await;
-                                    }
-                                }
+                                let collected = execute_smelt_collect(
+                                    client.clone(),
+                                    job.input.clone(),
+                                    position,
+                                    job.count,
+                                    generation_state.clone(),
+                                    generation,
+                                    false,
+                                ).await;
                                 if collected {
                                     collected_jobs += 1;
                                     client.chat(format!("Collected furnace queue job {} of {} after its complete output was server-confirmed.", index + 1, total));
                                 } else {
-                                    schedule_smelt_followup(
-                                        client.clone(),
-                                        job.input.clone(),
-                                        position,
-                                        job.count,
-                                        generation_state.clone(),
-                                        generation,
-                                    );
-                                    client.chat(format!("Furnace queue job {} of {} is still running or unavailable; background recovery will continue checking it.", index + 1, total));
+                                    pending_jobs.push((job.input.clone(), position, job.count, index + 1));
                                 }
                             }
-                            if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                client.chat(format!("Furnace queue finished: {collected_jobs} of {total} complete batches collected; any remaining jobs have background recovery scheduled."));
+
+                            let pending_count = pending_jobs.len();
+                            if pending_count > 0 {
+                                client.chat(format!("{pending_count} furnace queue job(s) are still smelting; sequential background recovery will check them without opening multiple furnace menus at once."));
+                                let recovery_client = client.clone();
+                                let recovery_state = generation_state.clone();
+                                tokio::task::spawn_local(async move {
+                                    for (input, position, count, job_number) in pending_jobs {
+                                        let deadline = tokio::time::Instant::now() + Duration::from_secs(10 * 60);
+                                        let mut collected = false;
+                                        while !collected && tokio::time::Instant::now() < deadline {
+                                            if recovery_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+                                                || !recovery_client.exists() {
+                                                return;
+                                            }
+                                            tokio::time::sleep(Duration::from_secs(15)).await;
+                                            if recovery_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+                                                || !recovery_client.exists() {
+                                                return;
+                                            }
+                                            collected = execute_smelt_collect(
+                                                recovery_client.clone(),
+                                                input.clone(),
+                                                position,
+                                                count,
+                                                recovery_state.clone(),
+                                                generation,
+                                                false,
+                                            ).await;
+                                        }
+                                        if collected {
+                                            collected_jobs += 1;
+                                            recovery_client.chat(format!("Background recovery collected furnace queue job {job_number} of {total}."));
+                                        } else if !recovery_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+                                            && recovery_client.exists() {
+                                            recovery_client.chat(format!("Furnace queue job {job_number} of {total} remains uncollected after recovery; use smelt_collect at {}, {}, {} when it is ready.", position.x, position.y, position.z));
+                                        }
+                                    }
+                                    if !recovery_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation)
+                                        && recovery_client.exists() {
+                                        recovery_client.chat(format!("Furnace queue recovery finished: {collected_jobs} of {total} batches were collected."));
+                                    }
+                                });
+                            } else {
+                                client.chat(format!("Furnace queue finished: all {collected_jobs} parallel batches were collected."));
                             }
                         });
                     }
