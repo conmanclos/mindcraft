@@ -53,7 +53,7 @@ fn prune_memory_history(transaction: &Transaction<'_>, incoming_records: usize) 
             "DELETE FROM memories WHERE id IN (
                SELECT id FROM memories
                ORDER BY importance ASC,
-                        COALESCE(last_accessed_at, updated_at) ASC,
+                        MAX(COALESCE(last_accessed_at, updated_at), updated_at) ASC,
                         updated_at ASC, id ASC
                LIMIT 1
              )",
