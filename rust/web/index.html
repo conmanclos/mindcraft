@@ -91,7 +91,7 @@ async function connect(){
   if(!token)throw Error("Enter the API token printed in the terminal.");
   const s=await api("/api/status");
   $("mc").textContent=String(s.connected_agents);
-  $("agentRoster").textContent=(s.agents||[]).map(a=>a.agent+" · "+(a.role||"teammate")+" · "+(a.dimension||"unknown dimension")+" · "+a.health+"/20 HP · "+a.food+"/20 food · "+a.position.map(v=>v.toFixed(1)).join(", ")+"\n"+(a.inventory||[]).join(" | ")).join("\n\n")||"No connected agents yet.";
+  $("agentRoster").textContent=((s.agents||[]).map(a=>a.agent+" · "+(a.role||"teammate")+" · "+(a.dimension||"unknown dimension")+" · "+a.health+"/20 HP · "+a.food+"/20 food · "+a.position.map(v=>v.toFixed(1)).join(", ")+"\n"+(a.inventory||[]).join(" | ")).join("\n\n")||"No connected agents yet.")+"\nPlayers online: "+((s.online_players||[]).join(", ")||"none");
   $("mode").textContent=s.autonomy;
   $("provider").textContent=s.provider;
   $("model").textContent=s.model;
