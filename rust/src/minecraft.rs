@@ -3423,7 +3423,7 @@ async fn execute_trade(
             if let Some((offers_position, container_id, snapshot)) = offers_state.as_ref().and_then(|state| {
                 state.try_lock().ok().and_then(|guard| guard.clone())
             }) {
-                if offers_position == position && container_id > 0 && !snapshot.is_empty() {
+                if offers_position == position && container_id > 0 {
                     offers = Some((container_id, snapshot));
                     break;
                 }
@@ -3444,6 +3444,10 @@ async fn execute_trade(
         };
         if container.id() != container_id {
             bot.chat("The received trade list does not match the open merchant window.");
+            return false;
+        }
+        if offers.is_empty() {
+            bot.chat("This merchant has no available simple trades that can be verified safely; component-specific offers are intentionally not executed.");
             return false;
         }
         bot.chat(format!("Merchant offers at {},{},{}:", position.x, position.y, position.z));
