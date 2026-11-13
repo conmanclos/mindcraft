@@ -469,7 +469,9 @@ mod tests {
             minecraft_accounts: vec!["test".into()],
             minecraft_auth: "offline".into(), microsoft_email: None,
             trusted_chat_players: Vec::new(),
-            database: PathBuf::from(":memory:")
+            database: PathBuf::from(":memory:"),
+            tls_cert_path: None,
+            tls_key_path: None
         })).unwrap()
     }
 
