@@ -1036,6 +1036,14 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         "jump" => Ok(BotCommand::Jump),
         "craftable" => Ok(BotCommand::Craftable),
         "go_to_surface" => Ok(BotCommand::GoToSurface),
+        "move_away" => {
+            let distance = action.target.as_deref().unwrap_or("8").trim().parse::<u8>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "move_away distance must be an integer from 1 to 32 blocks".into()))?;
+            if !(1..=32).contains(&distance) {
+                return Err((StatusCode::BAD_REQUEST, "move_away distance must be from 1 to 32 blocks".into()));
+            }
+            Ok(BotCommand::MoveAway(distance))
+        }
         "locate_entity" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must use entity_name[@range] syntax".into()))?;
             let (name, range) = match raw.rsplit_once('@') {
