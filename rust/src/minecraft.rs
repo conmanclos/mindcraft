@@ -1158,11 +1158,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 world.find_blocks(origin, &states).take(512).collect::<Vec<_>>()
                             };
                             let radius_squared = i64::from(range) * i64::from(range);
-                            let max_attempts = (usize::from(count) * 3).min(32);
+                            let max_attempts = (usize::from(count) * 2).min(128);
+                            let deadline = tokio::time::Instant::now() + Duration::from_secs(15 * 60);
                             let mut attempts = 0usize;
                             let mut mined = 0u8;
                             for target in candidates {
-                                if cancelled() || !client.exists() || mined >= count || attempts >= max_attempts {
+                                if cancelled() || !client.exists() || mined >= count || attempts >= max_attempts
+                                    || tokio::time::Instant::now() >= deadline {
                                     break;
                                 }
                                 let dx = i64::from(target.x - origin.x);
