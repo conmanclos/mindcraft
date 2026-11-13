@@ -36,6 +36,7 @@ pub enum BotCommand {
     Collect(String, u8, u16),
     Locate(String, u16),
     NearbyBlocks(u8),
+    Craftable,
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1199,6 +1200,53 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                             if !cancelled() && client.exists() {
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
+                            }
+                        });
+                    }
+                    BotCommand::Craftable => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let Ok(menu) = client.menu() else {
+                                client.chat("I couldn't inspect my inventory to calculate craftable recipes.");
+                                return;
+                            };
+                            if menu.try_as_player().is_none() {
+                                client.chat("Close the open container before asking what I can craft.");
+                                return;
+                            }
+                            let slots = menu.slots();
+                            let player_slots = menu.player_slots_range().collect::<Vec<_>>();
+                            let mut craftable = Vec::new();
+                            for recipe in CRAFTABLE_RECIPE_NAMES {
+                                let Some((requires_table, output, ingredients)) = recipe_spec(recipe) else { continue; };
+                                let mut requirements: HashMap<&'static str, u16> = HashMap::new();
+                                for (_, selector) in ingredients {
+                                    *requirements.entry(selector).or_insert(0) += 1;
+                                }
+                                let enough = requirements.iter().all(|(selector, required)| {
+                                    let available = player_slots.iter().filter_map(|slot| slots.get(*slot))
+                                        .filter(|item| !item.is_empty()
+                                            && item_name_matches(&format!("{:?}", item.kind()), selector))
+                                        .map(|item| u16::from(item.count()))
+                                        .sum::<u16>();
+                                    available >= *required
+                                });
+                                if enough {
+                                    craftable.push(if requires_table {
+                                        format!("{output} (crafting table)")
+                                    } else {
+                                        output.to_owned()
+                                    });
+                                }
+                            }
+                            if !client.exists() { return; }
+                            craftable.sort();
+                            craftable.dedup();
+                            if craftable.is_empty() {
+                                client.chat("No allowlisted recipes can be crafted from the current inventory.");
+                            } else {
+                                let summary = craftable.into_iter().take(18).collect::<Vec<_>>().join(", ");
+                                client.chat(truncate_utf16(&format!("Craftable from inventory: {summary}"), 240));
                             }
                         });
                     }
@@ -2407,7 +2455,205 @@ pub(crate) fn smelt_spec(input: &str) -> Option<&'static str> {
     })
 }
 
-pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
+pub(crate) const CRAFTABLE_RECIPE_NAMES: &[&str] = &[
+    "planks",
+    "sticks",
+    "torch",
+    "crafting_table",
+    "wooden_pickaxe",
+    "wooden_axe",
+    "wooden_sword",
+    "wooden_shovel",
+    "stone_pickaxe",
+    "stone_axe",
+    "stone_sword",
+    "stone_shovel",
+    "wooden_hoe",
+    "stone_hoe",
+    "iron_pickaxe",
+    "iron_axe",
+    "iron_sword",
+    "iron_shovel",
+    "iron_hoe",
+    "diamond_pickaxe",
+    "diamond_axe",
+    "diamond_sword",
+    "diamond_shovel",
+    "diamond_hoe",
+    "copper_pickaxe",
+    "copper_axe",
+    "copper_sword",
+    "copper_shovel",
+    "copper_hoe",
+    "copper_helmet",
+    "copper_chestplate",
+    "copper_leggings",
+    "copper_boots",
+    "golden_pickaxe",
+    "golden_axe",
+    "golden_sword",
+    "golden_shovel",
+    "golden_hoe",
+    "leather_helmet",
+    "leather_chestplate",
+    "leather_leggings",
+    "leather_boots",
+    "iron_helmet",
+    "iron_chestplate",
+    "iron_leggings",
+    "iron_boots",
+    "golden_helmet",
+    "golden_chestplate",
+    "golden_leggings",
+    "golden_boots",
+    "diamond_helmet",
+    "diamond_chestplate",
+    "diamond_leggings",
+    "diamond_boots",
+    "shears",
+    "bucket",
+    "bow",
+    "fishing_rod",
+    "arrow",
+    "paper",
+    "glass_pane",
+    "door",
+    "trapdoor",
+    "slab",
+    "stairs",
+    "fence",
+    "sign",
+    "boat",
+    "bowl",
+    "furnace",
+    "chest",
+    "bread",
+    "ladder",
+    "composter",
+    "shield",
+    "bed",
+    "bookshelf",
+    "smoker",
+    "blast_furnace",
+    "wooden_button",
+    "stone_button",
+    "wooden_pressure_plate",
+    "stone_pressure_plate",
+    "lever",
+    "fence_gate",
+    "flower_pot",
+    "glass_bottle",
+    "item_frame",
+    "spyglass",
+    "brush",
+    "recovery_compass",
+    "armor_stand",
+    "anvil",
+    "enchanting_table",
+    "ender_chest",
+    "dispenser",
+    "dropper",
+    "piston",
+    "sticky_piston",
+    "hopper",
+    "repeater",
+    "comparator",
+    "observer",
+    "daylight_detector",
+    "target",
+    "note_block",
+    "tnt",
+    "rail",
+    "powered_rail",
+    "detector_rail",
+    "activator_rail",
+    "minecart",
+    "chest_minecart",
+    "furnace_minecart",
+    "tripwire_hook",
+    "iron_trapdoor",
+    "iron_bars",
+    "lantern",
+    "soul_lantern",
+    "chiseled_bookshelf",
+    "book",
+    "writable_book",
+    "stone_bricks",
+    "polished_andesite",
+    "polished_diorite",
+    "polished_granite",
+    "polished_deepslate",
+    "loom",
+    "campfire",
+    "brewing_stand",
+    "stonecutter",
+    "grindstone",
+    "fletching_table",
+    "cartography_table",
+    "barrel",
+    "compass",
+    "clock",
+    "map",
+    "flint_and_steel",
+    "crossbow",
+    "golden_apple",
+    "golden_carrot",
+    "pumpkin_pie",
+    "cookie",
+    "lectern",
+    "conduit",
+    "beacon",
+    "lodestone",
+    "respawn_anchor",
+    "shulker_box",
+    "tinted_glass",
+    "soul_campfire",
+    "smithing_table",
+    "beehive",
+    "honeycomb_block",
+    "magma_block",
+    "nether_bricks",
+    "end_stone_bricks",
+    "prismarine_bricks",
+    "sea_lantern",
+    "netherite_ingot",
+    "netherite_block",
+    "iron_block",
+    "gold_block",
+    "diamond_block",
+    "emerald_block",
+    "redstone_block",
+    "lapis_block",
+    "coal_block",
+    "copper_block",
+    "quartz_block",
+    "hay_bale",
+    "slime_block",
+    "honey_block",
+    "iron_nuggets",
+    "gold_nuggets",
+    "wheat_from_hay",
+    "bone_meal",
+    "bone_block",
+    "dried_kelp_block",
+    "amethyst_block",
+    "glowstone",
+    "redstone_torch",
+    "jukebox",
+    "sugar",
+    "melon_block",
+    "glistering_melon_slice",
+    "magma_cream",
+    "fermented_spider_eye",
+    "fire_charge",
+    "ender_eye",
+    "redstone_lamp",
+    "mushroom_stew",
+    "rabbit_stew",
+    "beetroot_soup",
+];
+
+fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static [(usize, &'static str)])> {
     match recipe {
         "planks" => Some((false, "planks", &[(1, "log")])),
         "sticks" => Some((false, "stick", &[(1, "planks"), (3, "planks")])),
