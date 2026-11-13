@@ -841,6 +841,14 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             hunger_error = ?hunger_result.err(),
                             "survival telemetry is unavailable; stopping movement and discarding queued gameplay commands"
                         );
+                        if let Some(status) = &state.status {
+                            if let Some(agent_id) = &state.agent_id {
+                                status.agents.lock().await.remove(agent_id);
+                            }
+                            if state.primary {
+                                *status.world.lock().await = None;
+                            }
+                        }
                         if let Some(generation) = &state.mine_generation {
                             generation.fetch_add(1, Ordering::Relaxed);
                         }
