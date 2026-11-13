@@ -4204,8 +4204,12 @@ async fn execute_container_view(
         bot.chat("I can't read the loaded world to reach that container.");
         return;
     };
-    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+    let Some(target_block) = world.read().get_block_state(position).filter(|block| !block.is_air()) else {
         bot.chat("That container coordinate is not a loaded non-air block.");
+        return;
+    };
+    if format!("{target_block:?}").to_ascii_lowercase().contains("trapped_chest") {
+        bot.chat("I won't open a trapped chest for inspection because opening it can trigger redstone mechanisms.");
         return;
     }
     let chunk_storage = world.read().chunks.clone();
