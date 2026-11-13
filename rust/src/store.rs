@@ -325,11 +325,9 @@ impl Store {
             params![kind, subject],
             |row| row.get(0),
         )?;
-        if !already_exists {
-            // Preserve the strongest and most recently used knowledge. The
-            // helper also repairs any over-capacity database from older builds.
-            prune_memory_history(&tx, 1)?;
-        }
+        // Preserve the strongest and most recently used knowledge. This
+        // also repairs any over-capacity database left by an older build.
+        prune_memory_history(&tx, if already_exists { 0 } else { 1 })?;
         tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP)
@@ -847,9 +845,7 @@ impl Store {
             [&memory_subject],
             |row| row.get(0),
         )?;
-        if !memory_exists {
-            prune_memory_history(&tx, 1)?;
-        }
+        prune_memory_history(&tx, if memory_exists { 0 } else { 1 })?;
         tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source)
              VALUES ('episodic', ?1, ?2, 1.0, 35, 'verified_task')
