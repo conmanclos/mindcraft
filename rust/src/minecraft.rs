@@ -1149,24 +1149,30 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             };
                             let origin = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
                             let states = BlockStates::from([kind]);
+                            let radius_squared = i64::from(range) * i64::from(range);
                             let mut candidates = {
                                 let Ok(world) = client.world() else {
                                     client.chat("The loaded world is unavailable; I can't search for that block.");
                                     return;
                                 };
                                 let world = world.read();
-                                world.find_blocks(origin, &states).take(512).collect::<Vec<_>>()
+                                world.find_blocks(origin, &states).filter(|target| {
+                                    let dx = i64::from(target.x) - i64::from(origin.x);
+                                    let dy = i64::from(target.y) - i64::from(origin.y);
+                                    let dz = i64::from(target.z) - i64::from(origin.z);
+                                    dx * dx + dy * dy + dz * dz <= radius_squared
+                                }).take(512).collect::<Vec<_>>()
                             };
-                            // The registry search order is not a distance contract. Sort the
-                            // bounded loaded-chunk sample explicitly so collection chooses the
-                            // nearest viable targets instead of whichever chunk was visited first.
+                            // The registry search order is not a distance contract. Filter
+                            // by the requested radius before applying the candidate cap, then
+                            // sort the bounded sample so distant chunks cannot crowd out nearby
+                            // matches and the nearest viable target is attempted first.
                             candidates.sort_unstable_by_key(|target| {
                                 let dx = i64::from(target.x) - i64::from(origin.x);
                                 let dy = i64::from(target.y) - i64::from(origin.y);
                                 let dz = i64::from(target.z) - i64::from(origin.z);
                                 (dx * dx + dy * dy + dz * dz, target.x, target.y, target.z)
                             });
-                            let radius_squared = i64::from(range) * i64::from(range);
                             let max_attempts = (usize::from(count) * 2).min(128);
                             let deadline = tokio::time::Instant::now() + Duration::from_secs(15 * 60);
                             let mut attempts = 0usize;
