@@ -115,18 +115,18 @@ fn replicate_output_text(prediction: &Value) -> Result<String> {
 }
 
 impl Brain {
-    pub fn new(config: Arc<Config>) -> Self {
-        Self {
+    pub fn new(config: Arc<Config>) -> Result<Self> {
+        let http = Client::builder()
+            .timeout(std::time::Duration::from_secs(45))
+            // Provider credentials must not follow endpoint redirects to
+            // another origin or downgrade from HTTPS to HTTP.
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        Ok(Self {
             config,
-            http: Client::builder()
-                .timeout(std::time::Duration::from_secs(45))
-                // Provider credentials must not follow endpoint redirects to
-                // another origin or downgrade from HTTPS to HTTP.
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .expect("HTTP client"),
+            http,
             llm_slots: Arc::new(Semaphore::new(2)),
-        }
+        })
     }
 
     pub fn is_autonomous(&self) -> bool {
@@ -457,7 +457,7 @@ mod tests {
             minecraft_auth: "offline".into(), microsoft_email: None,
             trusted_chat_players: Vec::new(),
             database: PathBuf::from(":memory:")
-        }))
+        })).unwrap()
     }
 
     #[test]
