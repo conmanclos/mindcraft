@@ -1260,6 +1260,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             Ok(BotCommand::EnterPortal(parsed[0], parsed[1], parsed[2]))
         }
         "use_item" => Ok(BotCommand::UseItem),
+        "eat" => Ok(BotCommand::Eat),
         "attack" => {
             let target = action.target.unwrap_or_default();
             if !target.eq_ignore_ascii_case("crosshair") {
