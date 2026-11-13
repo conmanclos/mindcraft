@@ -118,10 +118,13 @@ pub async fn connect(
                         let connected_agents = goal_status.agents.lock().await.values()
                             .map(|agent| format!("{} ({})", agent.agent, agent.role))
                             .collect::<Vec<_>>();
+                        let mut online_players = goal_status.online_players.lock().await.iter().cloned().collect::<Vec<_>>();
+                        online_players.sort_unstable_by_key(|name| name.to_ascii_lowercase());
                         let team_context = format!(
-                            "Connected Minecraft team ({}): {}.",
+                            "Connected Minecraft team ({}): {}. Other players online: {}.",
                             connected_agents.len(),
-                            if connected_agents.is_empty() { "none".to_owned() } else { connected_agents.join(", ") }
+                            if connected_agents.is_empty() { "none".to_owned() } else { connected_agents.join(", ") },
+                            if online_players.is_empty() { "none".to_owned() } else { online_players.join(", ") }
                         );
                         let context = format!("{DEFAULT_GOAL}\n{team_context}\n{memory}");
                         match tokio::time::timeout(Duration::from_secs(50), goal_brain.decompose_goal(&context)).await {
