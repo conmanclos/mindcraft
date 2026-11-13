@@ -343,7 +343,7 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
 
 /// Search only nearby loaded blocks, and only choose a POI with an adjacent
 /// loaded air block that can serve as a safe navigation destination.
-fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, BlockPos, &'static str)> {
+fn nearby_point_of_interest(bot: &Client, radius: i32, visited: &HashSet<(i32, i32, i32)>) -> Option<(BlockPos, BlockPos, &'static str)> {
     let position = bot.position().ok()?;
     let center = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
     let world = bot.world().ok()?;
@@ -352,13 +352,14 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
         .and_then(|biome| bot.with_resolved_registry(biome, |name, _| name.to_string()).ok().flatten())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let radius = radius.clamp(4, 8);
+    let radius = radius.clamp(4, 16);
     let mut best: Option<(f64, BlockPos, BlockPos, &'static str)> = None;
     for y in -3..=3 {
         for x in -radius..=radius {
             for z in -radius..=radius {
                 if x * x + z * z > radius * radius { continue; }
                 let poi = BlockPos::new(center.x + x, center.y + y, center.z + z);
+                if visited.contains(&(poi.x, poi.y, poi.z)) { continue; }
                 let Some(block) = world.get_block_state(poi) else { continue; };
                 let Some(kind) = point_of_interest_kind(&format!("{block:?}")) else { continue; };
                 let distance_sq = (x * x + y * y + z * z) as f64;
@@ -1331,18 +1332,15 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         None
                     };
                     if let Ok(position) = bot.position() {
-                        let poi_candidate = nearby_point_of_interest(bot, 8);
-                        let poi = if let Some((poi_position, _, _)) = poi_candidate {
-                            let key = (poi_position.x, poi_position.y, poi_position.z);
-                            let already_visited = if let Some(visited) = &state.visited_pois {
-                                visited.lock().await.contains(&key)
-                            } else {
-                                false
-                            };
-                            (!already_visited).then_some(poi_candidate).flatten()
+                        let visited_snapshot = if let Some(visited) = &state.visited_pois {
+                            visited.lock().await.clone()
                         } else {
-                            None
+                            HashSet::new()
                         };
+                        // Run a wider loaded-chunk POI sweep every fourth waypoint;
+                        // the other passes stay local to keep routine scanning bounded.
+                        let poi_radius = if step % 4 == 0 { 16 } else { 8 };
+                        let poi = nearby_point_of_interest(bot, poi_radius, &visited_snapshot);
                         let origin_x = spiral_origin.map(|origin| origin.x).unwrap_or_else(|| position.x.floor() as i32);
                         let origin_z = spiral_origin.map(|origin| origin.z).unwrap_or_else(|| position.z.floor() as i32);
                         let destination = poi.map(|(_, approach, _)| approach).unwrap_or_else(|| {
