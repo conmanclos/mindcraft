@@ -97,7 +97,7 @@ impl Brain {
             "anthropic" => self.anthropic(&system, prompt).await,
             "google" => self.google(&system, prompt).await,
             "openai" | "openai-compatible" | "ollama" | "deepseek" | "groq"
-            | "cerebras" | "mistral" | "openrouter" | "xai" | "qwen"
+            | "cerebras" | "mistral" | "openrouter" | "xai" | "grok" | "qwen"
             | "huggingface" | "hyperbolic" | "novita" | "mercury"
             | "lmstudio" | "vllm" => self.openai_compatible(&system, prompt).await,
             other => bail!("unsupported provider '{other}'"),
