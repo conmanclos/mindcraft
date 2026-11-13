@@ -476,7 +476,11 @@ async fn run_specialist_task(
         }
         if sender.send(AgentCommand { target: Some(agent_id.clone()), command }).is_err() {
             let _ = store.release_task(task.id, &agent_id);
-            anyhow::bail!("no connected bot accepted the specialist action");
+            bot.chat(format!(
+                "Specialist task #{} was returned to the queue because the command dispatcher is no longer connected.",
+                task.id
+            ));
+            return Ok(());
         }
         bot.chat(format!("Specialist task #{} queued one action for review. Check the in-game result before marking it complete.", task.id));
         Ok::<(), anyhow::Error>(())
