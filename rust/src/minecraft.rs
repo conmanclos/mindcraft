@@ -620,6 +620,13 @@ fn make_state(
 async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> {
     match event {
         Event::Spawn => {
+            if let Some(status) = &state.status {
+                let mut connection = status.connection.lock().await;
+                connection.state = "connected".into();
+                connection.last_error = None;
+                connection.retry_in_seconds = None;
+                connection.last_connected_unix = Some(unix_timestamp());
+            }
             if let Some(connected) = &state.connected {
                 if !connected.swap(true, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
@@ -631,6 +638,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             tracing::info!(username = %bot.username(), "Minecraft agent spawned and ready");
         }
         Event::ConnectionFailed(error) => {
+            if let Some(status) = &state.status {
+                let mut connection = status.connection.lock().await;
+                connection.state = "reconnecting".into();
+                connection.last_error = Some(format!("{error:?}"));
+            }
             tracing::warn!(username = %bot.username(), error = ?error, "Minecraft connection attempt failed; Azalea will retry");
         }
         Event::AddPlayer(info) | Event::UpdatePlayer(info) => {
@@ -696,6 +708,12 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             }
         }
         Event::Disconnect(reason) => {
+            if let Some(status) = &state.status {
+                let mut connection = status.connection.lock().await;
+                connection.state = "reconnecting".into();
+                connection.last_error = Some(format!("{reason:?}"));
+                connection.last_disconnected_unix = Some(unix_timestamp());
+            }
             if let Some(connected) = &state.connected {
                 if connected.swap(false, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
