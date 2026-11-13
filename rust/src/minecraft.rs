@@ -3441,6 +3441,29 @@ fn cancel_active_mining(client: &Client) {
 /// Recipes intentionally use a small, explicit allowlist. Ingredient placement is
 /// performed through Azalea's real inventory click events; no local inventory
 /// mutation is treated as a successful craft.
+fn smelt_furnace_compatible(block_debug: &str, input: &str) -> bool {
+    let block: String = block_debug.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let input = input.rsplit(':').next().unwrap_or(input);
+    if block.contains("blastfurnace") {
+        matches!(input,
+            "raw_iron" | "iron_ore" | "deepslate_iron_ore"
+            | "raw_gold" | "gold_ore" | "deepslate_gold_ore" | "nether_gold_ore"
+            | "raw_copper" | "copper_ore" | "deepslate_copper_ore"
+            | "nether_quartz_ore" | "ancient_debris"
+        )
+    } else if block.contains("smoker") {
+        matches!(input,
+            "beef" | "porkchop" | "chicken" | "mutton" | "rabbit"
+            | "cod" | "salmon" | "potato" | "kelp"
+        )
+    } else {
+        block.contains("furnace")
+    }
+}
+
 pub(crate) fn smelt_spec(input: &str) -> Option<&'static str> {
     Some(match input {
         "raw_iron" | "iron_ore" | "deepslate_iron_ore" => "iron_ingot",
@@ -5973,6 +5996,10 @@ async fn execute_clear_furnace(
     };
     if !is_furnace_block(&target_block) {
         bot.chat("That coordinate is not a furnace, blast furnace, or smoker; no container was opened.");
+        return false;
+    }
+    if !smelt_furnace_compatible(&format!("{target_block:?}"), &input) {
+        bot.chat(format!("That furnace type cannot smelt {input}; use a regular furnace for this recipe or choose a compatible blast furnace/smoker."));
         return false;
     }
     let chunk_storage = world.read().chunks.clone();
