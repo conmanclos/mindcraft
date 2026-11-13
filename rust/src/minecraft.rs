@@ -461,7 +461,11 @@ async fn run_specialist_task(
             if !store.release_task(task.id, &agent_id)? {
                 anyhow::bail!("planner action requires explicit approval, but the task lease could not be released: {reason}");
             }
-            anyhow::bail!("planner action requires explicit approval; task returned to the queue: {reason}");
+            bot.chat(format!(
+                "Specialist task #{} needs player approval before this action can run. I returned it to the queue: {}",
+                task.id, reason
+            ));
+            return Ok(());
         }
         let command = crate::api::command_from_action(action.clone())
             .map_err(|(_, reason)| anyhow::anyhow!("planner produced an unsupported task action: {reason}"))?;
