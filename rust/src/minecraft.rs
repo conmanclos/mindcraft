@@ -41,6 +41,8 @@ pub enum BotCommand {
     LocateEntity(String, u16),
     GoToSurface,
     MoveAway(u8),
+    RememberHere(String),
+    GoToRememberedPlace(String),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1143,6 +1145,120 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat("Reached the surface above the current column.");
                             } else {
                                 client.chat("Pathfinding stopped before reaching the surface.");
+                            }
+                        });
+                    }
+                    BotCommand::RememberHere(name) => {
+                        let Some(store) = state.store.clone() else {
+                            bot.chat("Persistent memory is unavailable; I couldn't save this location.");
+                            continue;
+                        };
+                        let Ok(position) = bot.position() else {
+                            bot.chat("I couldn't read my position, so the location was not saved.");
+                            continue;
+                        };
+                        let dimension = if let Some(dimension) = &state.dimension {
+                            dimension.lock().await.clone()
+                        } else {
+                            String::new()
+                        };
+                        let content = serde_json::json!({
+                            "x": position.x,
+                            "y": position.y,
+                            "z": position.z,
+                            "dimension": dimension
+                        }).to_string();
+                        match store.upsert_memory("world", &name, &content, 1.0, 60, "bot") {
+                            Ok(_) => bot.chat(format!("Saved the current location as '{name}'.")),
+                            Err(error) => bot.chat(format!("I couldn't save that location: {error}")),
+                        }
+                    }
+                    BotCommand::GoToRememberedPlace(name) => {
+                        let Some(store) = state.store.clone() else {
+                            bot.chat("Persistent memory is unavailable; I can't recall saved locations.");
+                            continue;
+                        };
+                        let memories = match store.list_memories(Some("world"), 200) {
+                            Ok(memories) => memories,
+                            Err(error) => {
+                                bot.chat(format!("I couldn't read saved locations: {error}"));
+                                continue;
+                            }
+                        };
+                        let Some(memory) = memories.into_iter().find(|memory| memory.subject.eq_ignore_ascii_case(&name)) else {
+                            bot.chat(format!("I don't have a saved location named '{name}'."));
+                            continue;
+                        };
+                        let Ok(value) = serde_json::from_str::<serde_json::Value>(&memory.content) else {
+                            bot.chat(format!("The saved location '{name}' has no valid coordinate record."));
+                            continue;
+                        };
+                        let (Some(x), Some(y), Some(z)) = (
+                            value.get("x").and_then(serde_json::Value::as_f64),
+                            value.get("y").and_then(serde_json::Value::as_f64),
+                            value.get("z").and_then(serde_json::Value::as_f64),
+                        ) else {
+                            bot.chat(format!("The saved location '{name}' is missing coordinates."));
+                            continue;
+                        };
+                        if !x.is_finite() || !y.is_finite() || !z.is_finite()
+                            || x.abs() > 30_000_000.0 || z.abs() > 30_000_000.0
+                            || !(-64.0..=320.0).contains(&y) {
+                            bot.chat(format!("The saved location '{name}' contains out-of-world coordinates."));
+                            continue;
+                        }
+                        let stored_dimension = value.get("dimension").and_then(serde_json::Value::as_str).unwrap_or("");
+                        let current_dimension = if let Some(dimension) = &state.dimension {
+                            dimension.lock().await.clone()
+                        } else {
+                            String::new()
+                        };
+                        if !stored_dimension.is_empty() && !current_dimension.is_empty()
+                            && stored_dimension != current_dimension {
+                            bot.chat(format!("'{name}' is saved in dimension '{stored_dimension}', not the current dimension '{current_dimension}'."));
+                            continue;
+                        }
+                        let destination = BlockPos::new(x.floor() as i32, y.floor() as i32, z.floor() as i32);
+                        let Ok(world) = bot.world() else {
+                            bot.chat("The loaded world is unavailable; I can't validate that saved location.");
+                            continue;
+                        };
+                        if world.read().get_block_state(destination).is_none() {
+                            bot.chat("That saved location is outside loaded chunks; move closer before navigating there.");
+                            continue;
+                        }
+                        let Ok(position) = bot.position() else { continue; };
+                        let dx = position.x - (destination.x as f64 + 0.5);
+                        let dy = position.y - (destination.y as f64 + 0.5);
+                        let dz = position.z - (destination.z as f64 + 0.5);
+                        if dx * dx + dy * dy + dz * dz > 256.0 * 256.0 {
+                            bot.chat("That saved location is more than 256 blocks away; use closer waypoints.");
+                            continue;
+                        }
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            if !goto_cancellable(&client, BlockPosGoal(destination), &generation_state, generation).await {
+                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                                    client.chat(format!("Pathfinding to saved location '{name}' timed out or failed."));
+                                }
+                                return;
+                            }
+                            let Ok(current) = client.position() else { return; };
+                            let dx = current.x - (destination.x as f64 + 0.5);
+                            let dy = current.y - (destination.y as f64 + 0.5);
+                            let dz = current.z - (destination.z as f64 + 0.5);
+                            if dx * dx + dy * dy + dz * dz <= 9.0 {
+                                client.chat(format!("Reached saved location '{name}'."));
+                            } else {
+                                client.chat(format!("Pathfinding stopped before reaching saved location '{name}'."));
                             }
                         });
                     }
