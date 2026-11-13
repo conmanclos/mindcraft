@@ -1982,7 +1982,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.start_use_item();
                     }
                     BotCommand::Eat => {
-                        if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        cancel_active_mining(&bot);
                         if let Some(target) = &state.follow_target { *target.lock().await = None; }
                         if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
                         if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
@@ -2012,12 +2015,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let hotbar_index = (slot - *hotbar.start()) as u8;
                         bot.set_selected_hotbar_slot(hotbar_index);
                         bot.wait_updates(1).await;
+                        if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                            continue;
+                        }
                         let still_safe_food = bot.menu().ok().and_then(|menu| {
                             menu.try_as_player()?;
                             let slots = menu.slots();
                             let item = slots.get(slot)?;
                             (!item.is_empty() && safe_food_priority(&format!("{item:?}")).is_some()).then_some(())
                         }).is_some();
+                        if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
+                            continue;
+                        }
                         if bot.selected_hotbar_slot().ok() == Some(hotbar_index) && still_safe_food {
                             bot.start_use_item();
                             bot.chat("Eating a recognized safe food item from my hotbar.");
