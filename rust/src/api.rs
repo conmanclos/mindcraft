@@ -850,6 +850,14 @@ fn parse_blueprint_origin(raw: &str) -> Result<(i32, i32, i32), (StatusCode, Str
 
 fn expand_blueprint(name: &str, origin: (i32, i32, i32)) -> Result<Vec<(i32, i32, i32)>, (StatusCode, String)> {
     let (ox, oy, oz) = origin;
+    // Every built-in blueprint fits within a 16-block positive offset.
+    // Validate the margin before adding offsets so malicious edge-of-world
+    // origins cannot overflow i32 in debug or release builds.
+    if ox < -30_000_000 || ox > 29_999_984
+        || oz < -30_000_000 || oz > 29_999_984
+        || !(-64..=304).contains(&oy) {
+        return Err((StatusCode::BAD_REQUEST, "blueprint origin must leave a 16-block margin inside supported Minecraft world bounds".into()));
+    }
     let mut positions = Vec::new();
     match name.trim().to_ascii_lowercase().as_str() {
         "platform_5x5" => {
