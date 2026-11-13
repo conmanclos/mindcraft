@@ -851,6 +851,17 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
             }
             Ok(BotCommand::SmeltQueue(jobs))
         }
+        "container_sort" => {
+            let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be a storage container coordinate x,y,z".into()))?;
+            let parsed = raw.split(',').map(str::trim).map(str::parse::<i32>)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| (StatusCode::BAD_REQUEST, "storage coordinates must be integers".into()))?;
+            if parsed.len() != 3 || parsed[1] < -64 || parsed[1] > 320
+                || parsed.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+                return Err((StatusCode::BAD_REQUEST, "storage coordinates are outside supported world bounds".into()));
+            }
+            Ok(BotCommand::ContainerSort(parsed[0], parsed[1], parsed[2]))
+        }
         "container_deposit" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z or x,y,z,exact_item_name for a filtered container deposit".into()))?;
             let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
