@@ -143,7 +143,7 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "goto", "explore", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "equip", "optimize_armor", "inventory_sort", "attack", "jump", "use_item"];
+        let supported = ["look", "follow", "stop", "say", "goto", "explore", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "equip", "optimize_armor", "inventory_sort", "trade", "attack", "jump", "use_item"];
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
@@ -165,14 +165,14 @@ impl Brain {
         if self.config.mode == "assisted" && !explicit_approval {
             bail!("assisted mode requires explicit approval for every action ('{}')", action.action);
         }
-        if ["attack", "use_item", "container_transfer", "container_deposit", "optimize_armor"].contains(&action_name.as_str()) && !explicit_approval {
+        if ["attack", "use_item", "container_transfer", "container_deposit", "optimize_armor", "trade"].contains(&action_name.as_str()) && !explicit_approval {
             bail!("attack, generic item use, all container transfers (including deposits), and armor replacement always require explicit user approval, including in autonomous mode");
         }
         // Never let an LLM-provided risk label downgrade a dangerous executor.
         // The runtime assigns a minimum risk from the action itself, then takes the
         // more conservative of that floor and the planner's label.
         let action_floor = match action_name.as_str() {
-            "attack" | "use_item" | "mine" | "place" | "till" | "plant" | "harvest" | "build" | "craft" | "smelt" | "smelt_queue" | "smelt_parallel" | "container_transfer" | "container_deposit" | "optimize_armor" | "inventory_sort" => "high",
+            "attack" | "use_item" | "mine" | "place" | "till" | "plant" | "harvest" | "build" | "craft" | "smelt" | "smelt_queue" | "smelt_parallel" | "container_transfer" | "container_deposit" | "optimize_armor" | "inventory_sort" | "trade" => "high",
             "equip" | "explore" => "medium",
             _ => "low",
         };
