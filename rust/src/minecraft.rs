@@ -150,7 +150,7 @@ pub async fn connect(
     let mut reconnect_delay = Duration::from_secs(5);
     let mut authentication_retry_delay = Duration::from_secs(30);
     loop {
-        let connection_attempt_started = Instant::now();
+        let mut connection_attempt_started = Instant::now();
         let accounts_to_join = if auth_mode == "microsoft" {
             let emails = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?
                 .split(',').map(str::trim).filter(|email| !email.is_empty()).collect::<Vec<_>>();
@@ -211,6 +211,7 @@ pub async fn connect(
             builder = builder.add_account_with_state(account, state);
         }
 
+        connection_attempt_started = Instant::now();
         let result = builder.join_delay(Duration::from_millis(500)).start(server.as_str()).await;
         let attempt_duration = connection_attempt_started.elapsed();
         status.minecraft_connected.store(false, Ordering::Relaxed);
