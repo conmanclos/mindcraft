@@ -18,6 +18,8 @@ pub struct Config {
     pub microsoft_email: Option<String>,
     pub trusted_chat_players: Vec<String>,
     pub database: PathBuf,
+    pub tls_cert_path: Option<PathBuf>,
+    pub tls_key_path: Option<PathBuf>,
 }
 
 impl Config {
@@ -110,6 +112,22 @@ impl Config {
         }
         validate_api_token(&api_token)?;
 
+        let tls_cert_path = env::var("MINDCRAFT_TLS_CERT").ok()
+            .map(|value| PathBuf::from(value.trim())).filter(|path| !path.as_os_str().is_empty());
+        let tls_key_path = env::var("MINDCRAFT_TLS_KEY").ok()
+            .map(|value| PathBuf::from(value.trim())).filter(|path| !path.as_os_str().is_empty());
+        if tls_cert_path.is_some() != tls_key_path.is_some() {
+            bail!("MINDCRAFT_TLS_CERT and MINDCRAFT_TLS_KEY must be configured together");
+        }
+        if !bind.ip().is_loopback() && tls_cert_path.is_none() {
+            bail!("non-loopback MINDCRAFT_BIND requires MINDCRAFT_TLS_CERT and MINDCRAFT_TLS_KEY; use a loopback bind behind a trusted TLS reverse proxy otherwise");
+        }
+        if let (Some(cert), Some(key)) = (&tls_cert_path, &tls_key_path) {
+            if !cert.is_file() || !key.is_file() {
+                bail!("MINDCRAFT_TLS_CERT and MINDCRAFT_TLS_KEY must point to readable certificate and private-key files");
+            }
+        }
+
         Ok(Self {
             bind,
             api_token,
@@ -126,6 +144,8 @@ impl Config {
             microsoft_email,
             trusted_chat_players,
             database: PathBuf::from(env::var("MINDCRAFT_DATABASE").unwrap_or_else(|_| "./mindcraft.sqlite3".into())),
+            tls_cert_path,
+            tls_key_path,
         })
     }
 }
