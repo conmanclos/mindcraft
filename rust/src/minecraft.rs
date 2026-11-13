@@ -865,29 +865,33 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                 let username = bot.username();
                 discard_pending_commands(&state, &username, "offline tick").await;
                 if let Some(status) = &state.status {
-                    {
+                    let connection_was_connected = {
                         let mut connection = status.connection.lock().await;
-                        if connection.state == "connected" {
+                        let was_connected = connection.state == "connected";
+                        if was_connected {
                             connection.state = "reconnecting".into();
                             connection.last_error = Some("Minecraft client is no longer present in the active ECS world".into());
                             connection.last_disconnected_unix = Some(unix_timestamp());
                         }
-                    }
+                        was_connected
+                    };
                     let was_connected = state.connected.as_ref()
                         .is_some_and(|connected| connected.swap(false, Ordering::Relaxed));
-                    let count = if was_connected {
-                        status.connected_agents.fetch_update(
-                            Ordering::Relaxed,
-                            Ordering::Relaxed,
-                            |count| Some(count.saturating_sub(1)),
-                        ).unwrap_or(0).saturating_sub(1)
-                    } else {
-                        status.connected_agents.load(Ordering::Relaxed)
-                    };
-                    status.minecraft_connected.store(count > 0, Ordering::Relaxed);
-                    status.agents.lock().await.remove(&username);
-                    if count == 0 { status.online_players.lock().await.clear(); }
-                    if state.is_primary { *status.world.lock().await = None; }
+                    if connection_was_connected || was_connected {
+                        let count = if was_connected {
+                            status.connected_agents.fetch_update(
+                                Ordering::Relaxed,
+                                Ordering::Relaxed,
+                                |count| Some(count.saturating_sub(1)),
+                            ).unwrap_or(0).saturating_sub(1)
+                        } else {
+                            status.connected_agents.load(Ordering::Relaxed)
+                        };
+                        status.minecraft_connected.store(count > 0, Ordering::Relaxed);
+                        status.agents.lock().await.remove(&username);
+                        if count == 0 { status.online_players.lock().await.clear(); }
+                        if state.is_primary { *status.world.lock().await = None; }
+                    }
                 }
                 return Ok(());
             }
