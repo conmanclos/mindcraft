@@ -1099,7 +1099,10 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             for y in start_y..=320 {
                                 let position = BlockPos::new(origin_x, y, origin_z);
                                 let Some(block) = world.get_block_state(position) else { break; };
-                                if !block.is_air() { last_solid = Some(position); }
+                                let debug = format!("{block:?}").to_ascii_lowercase();
+                                if !block.is_air() && !debug.contains("water") && !debug.contains("lava") {
+                                    last_solid = Some(position);
+                                }
                             }
                             last_solid.map(|solid| BlockPos::new(solid.x, solid.y.saturating_add(1), solid.z))
                         };
