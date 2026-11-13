@@ -147,7 +147,10 @@ pub async fn connect(
             }
         });
     }
+    let mut reconnect_delay = Duration::from_secs(5);
+    let mut authentication_retry_delay = Duration::from_secs(30);
     loop {
+        let connection_attempt_started = Instant::now();
         let accounts_to_join = if auth_mode == "microsoft" {
             let emails = microsoft_email.as_deref().ok_or_else(|| anyhow::anyhow!("MINDCRAFT_MICROSOFT_EMAIL is required for Microsoft authentication"))?
                 .split(',').map(str::trim).filter(|email| !email.is_empty()).collect::<Vec<_>>();
@@ -175,9 +178,12 @@ pub async fn connect(
                 }
             }
             if authentication_failed {
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                tracing::warn!(retry_seconds = authentication_retry_delay.as_secs(), "Microsoft authentication retry is backing off");
+                tokio::time::sleep(authentication_retry_delay).await;
+                authentication_retry_delay = (authentication_retry_delay * 2).min(Duration::from_secs(300));
                 continue;
             }
+            authentication_retry_delay = Duration::from_secs(30);
             authenticated
         } else {
             accounts.iter().cloned().map(Account::offline).collect::<Vec<_>>()
@@ -206,14 +212,20 @@ pub async fn connect(
         }
 
         let result = builder.join_delay(Duration::from_millis(500)).start(server.as_str()).await;
+        let attempt_duration = connection_attempt_started.elapsed();
         status.minecraft_connected.store(false, Ordering::Relaxed);
         status.connected_agents.store(0, Ordering::Relaxed);
         *status.command_tx.lock().await = None;
         *status.world.lock().await = None;
         status.agents.lock().await.clear();
         status.online_players.lock().await.clear();
-        tracing::warn!("Azalea swarm exited: {result:?}; reconnecting in 5 seconds");
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        if attempt_duration >= Duration::from_secs(60) {
+            reconnect_delay = Duration::from_secs(5);
+        } else {
+            reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(60));
+        }
+        tracing::warn!(?result, attempt_seconds = attempt_duration.as_secs(), retry_seconds = reconnect_delay.as_secs(), "Azalea swarm exited; reconnecting with bounded backoff");
+        tokio::time::sleep(reconnect_delay).await;
     }
 }
 
