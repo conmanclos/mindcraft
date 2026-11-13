@@ -87,7 +87,8 @@ struct BotState {
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     dimension: Option<Arc<Mutex<String>>>,
-    merchant_offers: Option<Arc<Mutex<Option<Vec<TradeOfferSnapshot>>>>>,
+    merchant_position: Option<Arc<Mutex<Option<BlockPos>>>>,
+    merchant_offers: Option<Arc<Mutex<Option<(BlockPos, Vec<TradeOfferSnapshot>)>>>>,
     is_exploring: Option<Arc<AtomicBool>>,
     explore_radius: Option<Arc<AtomicUsize>>,
     explore_step: Option<Arc<AtomicUsize>>,
@@ -521,6 +522,7 @@ fn make_state(
         last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
         last_snapshot: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(2))))),
         dimension: Some(Arc::new(Mutex::new("minecraft:overworld".into()))),
+        merchant_position: Some(Arc::new(Mutex::new(None))),
         merchant_offers: Some(Arc::new(Mutex::new(None))),
         is_exploring: Some(Arc::new(AtomicBool::new(false))),
         explore_radius: Some(Arc::new(AtomicUsize::new(32))),
@@ -572,17 +574,29 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                     }
                 }
                 ClientboundGamePacket::MerchantOffers(packet) => {
-                    if let Some(offers_state) = &state.merchant_offers {
-                        let offers = packet.offers.iter().enumerate().map(|(index, offer)| TradeOfferSnapshot {
-                            index: index as u32,
-                            input_a: format!("{:?}", offer.base_cost_a.item),
-                            input_a_count: offer.base_cost_a.count,
-                            input_b: offer.cost_b.as_ref().map(|cost| (format!("{:?}", cost.item), cost.count)),
-                            output: format!("{:?}", offer.result.kind()),
-                            output_count: offer.result.count(),
-                            out_of_stock: offer.out_of_stock,
+                    let position = state.merchant_position.as_ref()
+                        .and_then(|position| position.try_lock().ok().and_then(|guard| *guard));
+                    if let (Some(position), Some(offers_state)) = (position, &state.merchant_offers) {
+                        let offers = packet.offers.iter().enumerate().filter_map(|(index, offer)| {
+                            let input_b = offer.cost_b.as_ref().map(|cost| (format!("{:?}", cost.item), cost.count));
+                            let output_count = offer.result.count();
+                            if index > u8::MAX as usize
+                                || offer.base_cost_a.count <= 0 || offer.base_cost_a.count > 64
+                                || input_b.as_ref().is_some_and(|(_, count)| *count <= 0 || *count > 64)
+                                || output_count == 0 || output_count > 64 {
+                                return None;
+                            }
+                            Some(TradeOfferSnapshot {
+                                index: index as u32,
+                                input_a: format!("{:?}", offer.base_cost_a.item),
+                                input_a_count: offer.base_cost_a.count,
+                                input_b,
+                                output: format!("{:?}", offer.result.kind()),
+                                output_count,
+                                out_of_stock: offer.out_of_stock,
+                            })
                         }).collect();
-                        *offers_state.lock().await = Some(offers);
+                        *offers_state.lock().await = Some((position, offers));
                     }
                 }
                 _ => {}
