@@ -262,6 +262,6 @@ Thanks to everyone who has submitted issues on and off Github, made suggestions,
 
 ## Native Rust desktop app (Minecraft Java 26.1)
 
-A separate Rust-native implementation is being developed in `rust/`, targeting Minecraft Java Edition 26.1 through Azalea 0.16.0. The new `rust/desktop/` package adds a native macOS app with a setup wizard, Keychain-backed AI API key storage, runtime start/stop controls, connection telemetry, and teammate chat. The original JavaScript/Mineflayer project remains intact as a legacy implementation while the Rust rewrite is completed.
+A separate Rust-native implementation is being developed in `rust/`, targeting Minecraft Java Edition 26.1 through Azalea 0.16.0. The new `rust/desktop/` package adds a cross-platform Tauri desktop app for macOS, Windows, and Linux, with a setup wizard, operating-system credential-store integration for AI API keys, runtime start/stop controls, connection telemetry, and teammate chat. The original JavaScript/Mineflayer project remains intact as a legacy implementation while the Rust rewrite is completed.
 
 The Mac app is not yet a ready-to-download release: the Azalea 0.16.0+mc26.1 gameplay integration has been migrated, but a successful native Mac build, Microsoft sign-in validation, and a live 26.1 server test remain outstanding. See [the native Rust setup](rust/README.md) and [desktop packaging notes](rust/desktop/README.md). No CI or GitHub Actions are used.
