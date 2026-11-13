@@ -1167,6 +1167,7 @@ pub(crate) fn command_from_action(action: PlannedAction) -> Result<BotCommand, (
         }
         "optimize_armor" => Ok(BotCommand::OptimizeArmor),
         "inventory_sort" => Ok(BotCommand::InventorySort),
+        "inventory_compact" => Ok(BotCommand::InventoryCompact),
         "trade" => {
             let raw = action.target.ok_or((StatusCode::BAD_REQUEST, "target must be x,y,z to inspect a nearby merchant or x,y,z,index to execute one offer".into()))?;
             let parts = raw.split(',').map(str::trim).collect::<Vec<_>>();
