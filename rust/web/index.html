@@ -340,7 +340,7 @@ $("completeTask").onclick=async()=>{
   try{
     if(!currentTask)throw Error("Claim a task first.");
     const verification_note=$("taskVerification").value.trim();
-    if(!verification_note||verification_note.length>500)throw Error("Describe the observed in-game result in 1-500 characters.");
+    if(!verification_note||new TextEncoder().encode(verification_note).length>500)throw Error("Describe the observed in-game result in 1-500 UTF-8 bytes.");
     if(!window.confirm("Only confirm after checking the result in Minecraft. Mark task #"+currentTask.id+" complete with this verification note?"))return;
     $("completeTask").disabled=true;
     await api("/api/tasks/"+currentTask.id+"/complete",{agent_id:currentTaskAgentId,verification_note});
