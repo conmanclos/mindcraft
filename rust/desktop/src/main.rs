@@ -491,13 +491,12 @@ fn runtime_running(process: State<'_, RuntimeProcess>) -> Result<bool, String> {
     }
 }
 
-fn main() {
-    tauri::Builder::default()
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let app = tauri::Builder::default()
         .manage(RuntimeProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![load_setup, save_setup, start_runtime, stop_runtime, runtime_running, runtime_log])
-        .build(tauri::generate_context!())
-        .expect("error while building Mindcraft desktop")
-        .run(|app, event| {
+        .build(tauri::generate_context!())?;
+    app.run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(process) = app.try_state::<RuntimeProcess>() {
                     if let Ok(mut child) = process.0.lock() {
@@ -508,6 +507,7 @@ fn main() {
                 }
             }
         });
+    Ok(())
 }
 
 
