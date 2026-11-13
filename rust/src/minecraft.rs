@@ -421,11 +421,11 @@ async fn run_specialist_task(
         }
         let command = crate::api::command_from_action(action.clone())
             .map_err(|(_, reason)| anyhow::anyhow!("planner produced an unsupported task action: {reason}"))?;
+        let sender = status.command_tx.lock().await.clone()
+            .ok_or_else(|| anyhow::anyhow!("Minecraft command dispatcher is unavailable"))?;
         if !store.mark_task_for_review(task.id, &agent_id)? {
             anyhow::bail!("task lease could not be moved into the review queue");
         }
-        let sender = status.command_tx.lock().await.clone()
-            .ok_or_else(|| anyhow::anyhow!("Minecraft command dispatcher is unavailable"))?;
         if sender.send(AgentCommand { target: Some(agent_id.clone()), command }).is_err() {
             let _ = store.release_task(task.id, &agent_id);
             anyhow::bail!("no connected bot accepted the specialist action");
