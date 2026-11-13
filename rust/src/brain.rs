@@ -286,7 +286,7 @@ mod tests {
             bind: "127.0.0.1:8787".parse::<SocketAddr>().unwrap(),
             api_token: "test".into(), api_token_was_generated: false,
             mode: mode.into(), provider: "ollama".into(), model: "test".into(),
-            api_key: String::new(), base_url: "http://localhost:11434/v1".into(),
+            api_key: String::new(), base_url: "http://localhost:11434/v1".into(), azure_api_version: "2024-10-21".into(),
             minecraft_server: None, minecraft_username: "test".into(),
             minecraft_accounts: vec!["test".into()],
             minecraft_auth: "offline".into(), microsoft_email: None,
