@@ -375,12 +375,31 @@ impl Store {
 
     pub fn add_task(&self, goal_id: i64, role: &str, description: &str, priority: i32) -> Result<i64> {
         validate_task(role, description)?;
-        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        connection.execute(
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let goal_status: Option<String> = tx.query_row(
+            "SELECT status FROM goals WHERE id=?1",
+            [goal_id],
+            |row| row.get(0),
+        ).optional()?;
+        if goal_status.as_deref() != Some("active") {
+            anyhow::bail!("tasks can only be added to an existing active goal");
+        }
+        let task_count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM agent_tasks WHERE goal_id=?1",
+            [goal_id],
+            |row| row.get(0),
+        )?;
+        if task_count >= MAX_TASKS_PER_GOAL as i64 {
+            anyhow::bail!("a goal cannot contain more than 12 tasks");
+        }
+        tx.execute(
             "INSERT INTO agent_tasks(goal_id, role, description, priority) VALUES (?1, ?2, ?3, ?4)",
             params![goal_id, role, description, priority.clamp(0, 100)],
         )?;
-        Ok(connection.last_insert_rowid())
+        let id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(id)
     }
 
     pub fn list_goals(&self) -> Result<Vec<Goal>> {
