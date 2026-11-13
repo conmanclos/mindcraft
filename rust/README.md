@@ -34,13 +34,14 @@ cargo run -- create-goal "Prepare a safe base near spawn"
 cargo run -- cancel-goal 1
 cargo run -- retry-goal 1
 cargo run -- build '{"origin":[0,64,0],"blocks":[{"x":0,"y":0,"z":0,"material":"oak_planks"}]}'
+cargo run -- build-sponge starter.schem --origin 100,64,100 --rotation 90 --agent Builder
 cargo run -- execute '{"action":"stop","risk":"low","reason":"User approved stop"}'
 cargo run -- execute '{"action":"trade","target":"12,64,20","risk":"high","reason":"User approved merchant inspection"}'
 cargo run -- execute '{"action":"trade","target":"12,64,20,0","risk":"high","reason":"User approved this exact offer"}'
 cargo run -- execute '{"action":"enter_portal","target":"100,64,100","risk":"high","reason":"User approved this portal transition"}'
 ```
 
-`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, `goal-tasks`, `review-tasks`, and the task lease/claim/complete/release/fail commands and short-lived agent credential issue/revoke commands expose the same persistent-memory and specialist-task workflow; `build` accepts the same bounded mixed-material schematic payload as the dashboard. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
+`chat` uses the running API so its history and persistent memory are shared with the dashboard; `direct-chat` calls the provider without runtime history. `remember`, `forget-memory`, `goal-tasks`, `review-tasks`, and the task lease/claim/complete/release/fail commands and short-lived agent credential issue/revoke commands expose the same persistent-memory and specialist-task workflow; `build` accepts the same bounded mixed-material JSON schematic payload as the dashboard; `build-sponge` imports a local Sponge v2/v3 .schem file through the same authenticated runtime. `execute` is an explicit approval action: it sends the supplied structured action to the same policy gate and executor used by the dashboard. `plan` may dispatch automatically only when the configured autonomy mode permits it.
 
 ## Current implementation
 
