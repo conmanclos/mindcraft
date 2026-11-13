@@ -12,7 +12,9 @@ use std::{collections::{hash_map::DefaultHasher, HashMap, HashSet}, hash::{Hash,
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use std::time::Duration;
+use std::{io::Read, time::Duration};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use flate2::read::GzDecoder;
 
 #[derive(Clone, Serialize)]
 pub struct WorldSnapshot {
@@ -166,6 +168,49 @@ struct SchematicBuildRequest {
     agent: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct SpongeSchematicBuildRequest {
+    origin: [i32; 3],
+    data_base64: String,
+    #[serde(default)]
+    rotation: u16,
+    #[serde(default)]
+    mirror_x: bool,
+    #[serde(default)]
+    mirror_z: bool,
+    #[serde(default)]
+    agent: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SpongeSchematicNbt {
+    #[serde(rename = "Version", default)]
+    version: i32,
+    #[serde(rename = "Width")]
+    width: i16,
+    #[serde(rename = "Height")]
+    height: i16,
+    #[serde(rename = "Length")]
+    length: i16,
+    #[serde(rename = "Palette", default)]
+    palette: Option<HashMap<String, i32>>,
+    #[serde(rename = "BlockData", default)]
+    block_data: Option<Vec<i8>>,
+    #[serde(rename = "Blocks", default)]
+    blocks: Option<SpongeBlocksNbt>,
+}
+
+#[derive(Deserialize)]
+struct SpongeBlocksNbt {
+    #[serde(rename = "Palette")]
+    palette: HashMap<String, i32>,
+    #[serde(rename = "Data")]
+    data: Vec<i8>,
+}
+
+const MAX_SPONGE_BASE64_BYTES: usize = 2_000_000;
+const MAX_SPONGE_NBT_BYTES: usize = 4 * 1024 * 1024;
+
 #[derive(Serialize)]
 struct ChatResponse { reply: String }
 
@@ -230,6 +275,7 @@ pub async fn serve(config: Arc<Config>, brain: Arc<Brain>, store: Arc<Store>, st
         .route("/api/plan", post(plan))
         .route("/api/execute", post(execute))
         .route("/api/build", post(build_schematic))
+        .route("/api/build/sponge", post(build_sponge_schematic))
         .route("/api/memory", get(memory_list).post(memory_upsert))
         .route("/api/memory/:memory_id", axum::routing::delete(memory_delete))
         .route("/api/goals", get(list_goals).post(create_goal))
@@ -418,6 +464,170 @@ async fn build_schematic(
     sender.send(AgentCommand { target, command: BotCommand::BuildMixed(blocks) })
         .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
     Ok(Json(ExecuteResponse { accepted: true, message: "mixed-material schematic queued for the Minecraft runtime" }))
+}
+
+fn decode_sponge_varints(data: &[i8], expected: usize) -> Result<Vec<u32>, (StatusCode, String)> {
+    let mut output = Vec::with_capacity(expected);
+    let bytes = data.iter().map(|value| *value as u8).collect::<Vec<_>>();
+    let mut cursor = 0usize;
+    while cursor < bytes.len() && output.len() < expected {
+        let mut value = 0u32;
+        let mut shift = 0u32;
+        let mut complete = false;
+        for _ in 0..5 {
+            let byte = *bytes.get(cursor)
+                .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic BlockData ended inside a VarInt".into()))?;
+            cursor += 1;
+            value |= u32::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                complete = true;
+                break;
+            }
+            shift += 7;
+        }
+        if !complete {
+            return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains an invalid or overlong block palette VarInt".into()));
+        }
+        output.push(value);
+    }
+    if output.len() != expected || cursor != bytes.len() {
+        return Err((StatusCode::BAD_REQUEST, "Sponge schematic BlockData length does not match its declared dimensions".into()));
+    }
+    Ok(output)
+}
+
+fn sponge_block_item(state: &str) -> Result<Option<String>, (StatusCode, String)> {
+    let block_state = state.split('[').next().unwrap_or(state);
+    let (namespace, block) = block_state.split_once(':').unwrap_or(("minecraft", block_state));
+    if namespace != "minecraft" {
+        return Err((StatusCode::NOT_IMPLEMENTED, format!("Sponge schematic block namespace '{namespace}' is not supported")));
+    }
+    if !block.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+        || block.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains an invalid block-state identifier".into()));
+    }
+    if matches!(block, "air" | "cave_air" | "void_air") {
+        return Ok(None);
+    }
+    if matches!(block, "water" | "lava" | "bubble_column" | "fire" | "soul_fire" | "nether_portal" | "end_portal" | "end_gateway") {
+        return Err((StatusCode::NOT_IMPLEMENTED, format!("Sponge schematic block '{block}' requires fluid, fire, or portal-state placement and cannot be reproduced by the current item-placement executor")));
+    }
+    let item = match block {
+        "wall_torch" => "torch",
+        "redstone_wall_torch" => "redstone_torch",
+        "wall_sign" => "oak_sign",
+        "wall_hanging_sign" => "oak_hanging_sign",
+        "wall_banner" => "white_banner",
+        other => other,
+    };
+    Ok(Some(item.to_owned()))
+}
+
+fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (StatusCode, String)> {
+    if encoded.is_empty() || encoded.len() > MAX_SPONGE_BASE64_BYTES {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic Base64 payload must be 1-2,000,000 bytes".into()));
+    }
+    let compressed = BASE64_STANDARD.decode(encoded)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Sponge schematic data_base64 is not valid standard Base64".into()))?;
+    let nbt_bytes = if compressed.starts_with(&[0x1f, 0x8b]) {
+        let mut decoder = GzDecoder::new(compressed.as_slice());
+        let mut decoded = Vec::new();
+        decoder.take((MAX_SPONGE_NBT_BYTES + 1) as u64).read_to_end(&mut decoded)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "Sponge schematic gzip stream is invalid".into()))?;
+        decoded
+    } else {
+        compressed
+    };
+    if nbt_bytes.is_empty() || nbt_bytes.len() > MAX_SPONGE_NBT_BYTES {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "decompressed Sponge schematic NBT exceeds the 4 MiB safety limit".into()));
+    }
+    let root: SpongeSchematicNbt = fastnbt::from_bytes(&nbt_bytes)
+        .map_err(|error| (StatusCode::BAD_REQUEST, format!("Sponge schematic NBT could not be decoded: {error}")))?;
+    if !(2..=3).contains(&root.version) {
+        return Err((StatusCode::NOT_IMPLEMENTED, "only Sponge schematic format versions 2 and 3 are supported".into()));
+    }
+    let width = usize::try_from(root.width).ok().filter(|value| (1..=33).contains(value))
+        .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic width must be 1-33 blocks".into()))?;
+    let height = usize::try_from(root.height).ok().filter(|value| (1..=33).contains(value))
+        .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic height must be 1-33 blocks".into()))?;
+    let length = usize::try_from(root.length).ok().filter(|value| (1..=33).contains(value))
+        .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic length must be 1-33 blocks".into()))?;
+    let volume = width.checked_mul(height).and_then(|value| value.checked_mul(length))
+        .filter(|value| *value <= 35_937)
+        .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic dimensions exceed the supported volume".into()))?;
+    let (palette, block_data) = if let Some(blocks) = root.blocks {
+        (blocks.palette, blocks.data)
+    } else {
+        (
+            root.palette.ok_or((StatusCode::BAD_REQUEST, "Sponge schematic has no Palette compound".into()))?,
+            root.block_data.ok_or((StatusCode::BAD_REQUEST, "Sponge schematic has no BlockData byte array".into()))?,
+        )
+    };
+    if palette.is_empty() || palette.len() > 4096 {
+        return Err((StatusCode::BAD_REQUEST, "Sponge schematic palette must contain 1-4096 entries".into()));
+    }
+    let mut palette_by_id = HashMap::with_capacity(palette.len());
+    for (state, id) in palette {
+        if id < 0 || palette_by_id.insert(id as u32, state).is_some() {
+            return Err((StatusCode::BAD_REQUEST, "Sponge schematic palette contains a negative or duplicate palette ID".into()));
+        }
+    }
+    let block_ids = decode_sponge_varints(&block_data, volume)?;
+    let mut blocks = Vec::new();
+    for (index, palette_id) in block_ids.into_iter().enumerate() {
+        let state = palette_by_id.get(&palette_id)
+            .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic BlockData references an unknown palette ID".into()))?;
+        let Some(material) = sponge_block_item(state)? else { continue; };
+        if blocks.len() >= 64 {
+            return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic contains more than 64 non-air blocks; split it into smaller builds".into()));
+        }
+        let x = index % width;
+        let z = (index / width) % length;
+        let y = index / (width * length);
+        blocks.push(SchematicBlock { x: x as i32, y: y as i32, z: z as i32, material });
+    }
+    if blocks.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains no placeable non-air blocks".into()));
+    }
+    Ok(blocks)
+}
+
+async fn build_sponge_schematic(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<SpongeSchematicBuildRequest>,
+) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
+    authorize(&state, &headers).map_err(|code| (code, "unauthorized".into()))?;
+    state.brain.authorize_action(
+        &PlannedAction {
+            action: "build".into(),
+            target: None,
+            reason: "explicit authenticated Sponge schematic import".into(),
+            risk: "high".into(),
+        },
+        true,
+    ).map_err(|error| (StatusCode::FORBIDDEN, error.to_string()))?;
+    if request.origin[1] < -64 || request.origin[1] > 320
+        || request.origin.iter().any(|value| value.unsigned_abs() > 30_000_000) {
+        return Err((StatusCode::BAD_REQUEST, "Sponge schematic origin is outside supported world coordinates".into()));
+    }
+    let document = SchematicDocument {
+        blocks: decode_sponge_schematic(&request.data_base64)?,
+        rotation: request.rotation,
+        mirror_x: request.mirror_x,
+        mirror_z: request.mirror_z,
+    };
+    let json = serde_json::to_string(&document)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let origin = format!("{},{},{}", request.origin[0], request.origin[1], request.origin[2]);
+    let blocks = parse_schematic_spec(&format!("schematic:{json}|{origin}"))?;
+    let target = resolve_agent_target(&state.config, request.agent)?;
+    ensure_agent_connected(&state, target.as_deref()).await?;
+    let sender = state.status.command_tx.lock().await.clone()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "Minecraft bot is not connected".into()))?;
+    sender.send(AgentCommand { target, command: BotCommand::BuildMixed(blocks) })
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Minecraft command stream is disconnected".into()))?;
+    Ok(Json(ExecuteResponse { accepted: true, message: "bounded Sponge schematic converted and queued for the Minecraft runtime" }))
 }
 
 async fn execute(State(state): State<ApiState>, headers: HeaderMap, Json(request): Json<ExecuteRequest>) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
