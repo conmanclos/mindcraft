@@ -1631,7 +1631,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let target = bot.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true)
                             .into_iter()
                             .find(|player| {
-                                player.exists()
+                                player.exists() && player.uuid() != bot.uuid()
                                     && tab_list.get(&player.uuid()).is_some_and(|profile| profile.profile.name.eq_ignore_ascii_case(&name))
                             });
                         if let Some(player) = target {
