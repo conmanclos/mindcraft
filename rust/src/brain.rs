@@ -237,7 +237,7 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "stay", "say", "goto", "explore", "locate", "nearby_blocks", "craftable", "craft_plan", "entities", "locate_entity", "go_to_surface", "move_away", "remember_here", "go_to_remembered_place", "saved_places", "look_at_player", "goto_player", "go_to_bed", "container_view", "mine", "collect", "place", "till", "plant", "harvest", "clear_furnace", "build", "craft", "smelt", "smelt_collect", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "container_sort", "equip", "optimize_armor", "inventory_sort", "inventory_compact", "trade", "enter_portal", "attack", "jump", "use_item", "eat"];
+        let supported = ["look", "follow", "stop", "stay", "say", "goto", "explore", "locate", "nearby_blocks", "craftable", "craft_plan", "entities", "locate_entity", "go_to_surface", "move_away", "remember_here", "go_to_remembered_place", "saved_places", "look_at_player", "goto_player", "go_to_bed", "container_view", "mine", "collect", "place", "till", "plant", "harvest", "clear_furnace", "build", "craft", "smelt", "smelt_collect", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "container_sort", "equip", "optimize_armor", "inventory_sort", "inventory_compact", "hotbar_restock", "trade", "enter_portal", "attack", "jump", "use_item", "eat"];
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
