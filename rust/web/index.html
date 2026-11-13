@@ -29,6 +29,7 @@ input{width:100%}textarea{width:100%;min-height:90px;resize:vertical}button{curs
 <div class="stat"><span class="muted">Food</span><b id="food">Unknown</b></div>
 <div class="stat"><span class="muted">Position</span><b id="position">Unknown</b></div>
 </div></section>
+<section class="panel"><h2>Minecraft connection diagnostics</h2><div id="connectionDetails" class="muted" style="white-space:pre-wrap">Connect to view connection state and reconnect diagnostics.</div></section>
 <section class="panel"><h2>Connected bot team</h2><div id="agentRoster" class="muted" style="white-space:pre-wrap">No connected agents yet.</div></section>
 <section class="panel"><h2>Primary inventory snapshot</h2><div id="inventory" class="muted" style="white-space:pre-wrap">Unknown</div></section>
 <section class="panel"><h2>Teammate chat</h2><div id="log" aria-live="polite">Connect to the local runtime to begin.</div>
@@ -100,6 +101,15 @@ async function connect(){
   $("food").textContent=s.world?s.world.food+"/20":"Unknown";
   $("position").textContent=s.world?s.world.agent+" · "+(s.world.dimension||"unknown dimension")+" · "+(s.world.biome||"unknown biome")+" · "+s.world.position.map(v=>v.toFixed(1)).join(", "):"Unknown";
   $("inventory").textContent=s.world&&s.world.inventory.length?s.world.inventory.join("\n"):"Empty or unavailable";
+  const d=s.connection||{};
+  $("connectionDetails").textContent=[
+    "State: "+(d.state||"unknown"),
+    "Reconnect attempts: "+(d.reconnect_attempts??0),
+    "Next retry: "+(d.retry_in_seconds==null?"not scheduled":d.retry_in_seconds+" seconds"),
+    "Last connected: "+(d.last_connected_unix?new Date(d.last_connected_unix*1000).toLocaleString():"not recorded"),
+    "Last disconnected: "+(d.last_disconnected_unix?new Date(d.last_disconnected_unix*1000).toLocaleString():"not recorded"),
+    "Last connection error: "+(d.last_error||"none")
+  ].join("\n");
   $("connection").textContent="Connected to local runtime";
 }
 $("connect").onclick=()=>connect().catch(e=>{$("connection").textContent=e.message});
