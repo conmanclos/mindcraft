@@ -4208,7 +4208,10 @@ async fn execute_container_view(
         bot.chat("That container coordinate is not a loaded non-air block.");
         return;
     };
-    if format!("{target_block:?}").to_ascii_lowercase().contains("trapped_chest") {
+    let target_kind = format!("{target_block:?}").chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase).collect::<String>();
+    if target_kind.contains("trappedchest") {
         bot.chat("I won't open a trapped chest for inspection because opening it can trigger redstone mechanisms.");
         return;
     }
