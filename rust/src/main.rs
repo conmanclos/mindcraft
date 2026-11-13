@@ -53,7 +53,7 @@ enum Command {
     /// Renew an agent's active task lease.
     HeartbeatTask { task_id: i64, agent_id: String },
     /// Mark a claimed or reviewed task complete after verifying its in-game result.
-    CompleteTask { task_id: i64, agent_id: String },
+    CompleteTask { task_id: i64, agent_id: String, verification_note: String },
     /// Release a task back to the shared queue.
     ReleaseTask { task_id: i64, agent_id: String },
     /// Report an execution failure and schedule a bounded retry.
@@ -262,9 +262,14 @@ async fn main() -> Result<()> {
             if task_id <= 0 { bail!("task_id must be positive"); }
             print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/heartbeat"), Some(json!({"agent_id": agent_id}))).await?)?;
         }
-        Command::CompleteTask { task_id, agent_id } => {
+        Command::CompleteTask { task_id, agent_id, verification_note } => {
             if task_id <= 0 { bail!("task_id must be positive"); }
-            print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/complete"), Some(json!({"agent_id": agent_id}))).await?)?;
+            if verification_note.trim().is_empty() || verification_note.len() > 500 {
+                bail!("verification_note must describe the observed in-game result in 1-500 bytes");
+            }
+            print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/complete"), Some(json!({
+                "agent_id": agent_id, "verification_note": verification_note
+            }))).await?)?;
         }
         Command::ReleaseTask { task_id, agent_id } => {
             if task_id <= 0 { bail!("task_id must be positive"); }
