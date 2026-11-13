@@ -387,8 +387,8 @@ async fn run_specialist_task(
     let result = async {
         let snapshot = status.agents.lock().await.get(&agent_id).cloned();
         let world_context = snapshot.map(|snapshot| format!(
-            "Current game state: position {:?}, health {:.1}/20, food {}/20, inventory {:?}.",
-            snapshot.position, snapshot.health, snapshot.food, snapshot.inventory.iter().take(24).collect::<Vec<_>>()
+            "Current game state: dimension {}, biome {}, position {:?}, health {:.1}/20, food {}/20, inventory {:?}.",
+            snapshot.dimension, snapshot.biome.as_deref().unwrap_or("unknown"), snapshot.position, snapshot.health, snapshot.food, snapshot.inventory.iter().take(24).collect::<Vec<_>>()
         )).unwrap_or_else(|| "Current game telemetry is not available yet; use only information you can verify.".into());
         let memory_context = store.relevant_memory_context(&task.description, 2_000)?;
         let task_role = task.role.clone();
@@ -666,10 +666,18 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             } else {
                                 "minecraft:overworld".into()
                             };
+                            let biome = bot.world().ok().and_then(|world| {
+                                world.read().get_biome(BlockPos::new(
+                                    position.x.floor() as i32,
+                                    position.y.floor() as i32,
+                                    position.z.floor() as i32,
+                                )).map(|biome| format!("{biome:?}"))
+                            });
                             let snapshot = crate::api::WorldSnapshot {
                                 agent: bot.username(),
                                 role: state.role.clone().unwrap_or_else(|| "planner".into()),
                                 dimension,
+                                biome,
                                 position: [position.x as f64, position.y as f64, position.z as f64],
                                 health,
                                 food: hunger.food,
