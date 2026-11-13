@@ -1,6 +1,6 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
-use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::ClientboundGamePacket, swarm::SwarmBuilder, BlockPos, WalkDirection};
+use azalea::{account::microsoft::MicrosoftAccountOpts, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, swarm::SwarmBuilder, BlockPos, WalkDirection};
 use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
@@ -41,12 +41,24 @@ pub enum BotCommand {
     Equip(u8),
     OptimizeArmor,
     InventorySort,
+    Trade(i32, i32, i32, Option<u8>),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>, Option<String>),
     ContainerDeposit(i32, i32, i32, Option<String>),
     Craft(String, Option<(i32, i32, i32)>, u8),
     Smelt(String, (i32, i32, i32), u8),
     SmeltQueue(Vec<SmeltJob>),
+}
+
+#[derive(Debug, Clone)]
+struct TradeOfferSnapshot {
+    index: u32,
+    input_a: String,
+    input_a_count: i32,
+    input_b: Option<(String, i32)>,
+    output: String,
+    output_count: u8,
+    out_of_stock: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +87,7 @@ struct BotState {
     last_follow_repath: Option<Arc<Mutex<Instant>>>,
     last_snapshot: Option<Arc<Mutex<Instant>>>,
     dimension: Option<Arc<Mutex<String>>>,
+    merchant_offers: Option<Arc<Mutex<Option<Vec<TradeOfferSnapshot>>>>>,
     is_exploring: Option<Arc<AtomicBool>>,
     explore_radius: Option<Arc<AtomicUsize>>,
     explore_step: Option<Arc<AtomicUsize>>,
@@ -508,6 +521,7 @@ fn make_state(
         last_follow_repath: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(5))))),
         last_snapshot: Some(Arc::new(Mutex::new(instant_before(Duration::from_secs(2))))),
         dimension: Some(Arc::new(Mutex::new("minecraft:overworld".into()))),
+        merchant_offers: Some(Arc::new(Mutex::new(None))),
         is_exploring: Some(Arc::new(AtomicBool::new(false))),
         explore_radius: Some(Arc::new(AtomicUsize::new(32))),
         explore_step: Some(Arc::new(AtomicUsize::new(0))),
@@ -546,13 +560,32 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             }
         }
         Event::Packet(packet) => {
-            let dimension_name = match packet.as_ref() {
-                ClientboundGamePacket::Login(login) => Some(login.common.dimension.to_string()),
-                ClientboundGamePacket::Respawn(respawn) => Some(respawn.common.dimension.to_string()),
-                _ => None,
-            };
-            if let (Some(name), Some(dimension)) = (dimension_name, &state.dimension) {
-                *dimension.lock().await = name;
+            match packet.as_ref() {
+                ClientboundGamePacket::Login(login) => {
+                    if let Some(dimension) = &state.dimension {
+                        *dimension.lock().await = login.common.dimension.to_string();
+                    }
+                }
+                ClientboundGamePacket::Respawn(respawn) => {
+                    if let Some(dimension) = &state.dimension {
+                        *dimension.lock().await = respawn.common.dimension.to_string();
+                    }
+                }
+                ClientboundGamePacket::MerchantOffers(packet) => {
+                    if let Some(offers_state) = &state.merchant_offers {
+                        let offers = packet.offers.iter().enumerate().map(|(index, offer)| TradeOfferSnapshot {
+                            index: index as u32,
+                            input_a: format!("{:?}", offer.base_cost_a.item),
+                            input_a_count: offer.base_cost_a.count,
+                            input_b: offer.cost_b.as_ref().map(|cost| (format!("{:?}", cost.item), cost.count)),
+                            output: format!("{:?}", offer.result.kind()),
+                            output_count: offer.result.count(),
+                            out_of_stock: offer.out_of_stock,
+                        }).collect();
+                        *offers_state.lock().await = Some(offers);
+                    }
+                }
+                _ => {}
             }
         }
         Event::Disconnect(reason) => {
