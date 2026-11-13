@@ -194,7 +194,7 @@ impl Brain {
 
     pub fn validate_action(&self, action: &PlannedAction) -> Result<()> {
         let action_name = action.action.to_lowercase();
-        let supported = ["look", "follow", "stop", "say", "goto", "explore", "locate", "mine", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_collect", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "container_sort", "equip", "optimize_armor", "inventory_sort", "inventory_compact", "trade", "enter_portal", "attack", "jump", "use_item", "eat"];
+        let supported = ["look", "follow", "stop", "say", "goto", "explore", "locate", "mine", "collect", "place", "till", "plant", "harvest", "build", "craft", "smelt", "smelt_collect", "smelt_queue", "smelt_parallel", "container_transfer", "container_deposit", "container_sort", "equip", "optimize_armor", "inventory_sort", "inventory_compact", "trade", "enter_portal", "attack", "jump", "use_item", "eat"];
         if !supported.contains(&action_name.as_str()) {
             bail!("unknown action '{}'", action.action);
         }
