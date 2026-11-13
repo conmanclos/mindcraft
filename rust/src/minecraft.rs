@@ -3410,19 +3410,19 @@ async fn execute_trade(
     };
     let input_a_matches = slots.get(0).is_some_and(|item| {
         !item.is_empty() && item.count() as i32 == offer.input_a_count
-            && item_name_matches(&format!("{:?}", item.kind()), &offer.input_a)
+            && item_name_matches_exact(&format!("{:?}", item.kind()), &offer.input_a)
     });
     let input_b_matches = match (&offer.input_b, slots.get(1)) {
         (Some((name, count)), Some(item)) => !item.is_empty()
             && item.count() as i32 == *count
-            && item_name_matches(&format!("{:?}", item.kind()), name),
+            && item_name_matches_exact(&format!("{:?}", item.kind()), name),
         (None, Some(item)) => item.is_empty(),
         (None, None) => true,
         (Some(_), None) => false,
     };
     let output_matches = slots.get(2).is_some_and(|item| {
         !item.is_empty() && item.count() >= offer.output_count
-            && item_name_matches(&format!("{:?}", item.kind()), &offer.output)
+            && item_name_matches_exact(&format!("{:?}", item.kind()), &offer.output)
     });
     if !input_a_matches || !input_b_matches || !output_matches {
         bot.chat("The server's selected merchant slots do not match the saved offer. Nothing was traded.");
@@ -3432,7 +3432,7 @@ async fn execute_trade(
     let player_slots = menu.player_slots_range().collect::<Vec<_>>();
     let count_output = |items: &[azalea_inventory::ItemStack]| -> u16 {
         player_slots.iter().filter_map(|slot| items.get(*slot))
-            .filter(|item| !item.is_empty() && item_name_matches(&format!("{:?}", item.kind()), &offer.output))
+            .filter(|item| !item.is_empty() && item_name_matches_exact(&format!("{:?}", item.kind()), &offer.output))
             .map(|item| u16::from(item.count()))
             .sum()
     };
