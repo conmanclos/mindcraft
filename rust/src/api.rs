@@ -453,8 +453,14 @@ async fn plan(State(state): State<ApiState>, headers: HeaderMap, Json(request): 
         "\nCurrent Minecraft state for {} in dimension {}, biome {}: position {:?}, health {}/20, food {}/20, saturation {}, inventory {:?}.",
         world.agent, world.dimension, world.biome.as_deref().unwrap_or("unknown"), world.position, world.health, world.food, world.saturation, world.inventory
     )).unwrap_or_default();
-    let connected_agents = state.status.agents.lock().await.values()
-        .map(|agent| format!("{} ({})", agent.agent, agent.role))
+    let mut connected_agents = state.status.agents.lock().await.values().cloned().collect::<Vec<_>>();
+    connected_agents.sort_by(|left, right| left.agent.cmp(&right.agent));
+    let connected_agents = connected_agents.iter()
+        .map(|agent| format!(
+            "{} ({}) at {:?} in {}, biome {}, health {:.1}/20, food {}/20",
+            agent.agent, agent.role, agent.position, agent.dimension,
+            agent.biome.as_deref().unwrap_or("unknown"), agent.health, agent.food
+        ))
         .collect::<Vec<_>>();
     let team_context = format!(
         "\nConnected Minecraft team ({}): {}.",
