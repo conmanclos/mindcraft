@@ -7271,6 +7271,7 @@ fn safe_food_priority(name: &str) -> Option<u8> {
         ("goldencarrot", 10), ("cookedbeef", 10), ("cookedporkchop", 10),
         ("goldenapple", 10), ("cookedmutton", 8), ("cookedrabbit", 8),
         ("cookedchicken", 8), ("cookedcod", 8), ("cookedsalmon", 8),
+        ("mushroomstew", 8), ("rabbitstew", 8), ("beetrootsoup", 8),
         ("bread", 7), ("pumpkinpie", 7), ("bakedpotato", 7),
         ("carrot", 4), ("potato", 4), ("apple", 3),
         ("melonslice", 3), ("sweetberries", 3), ("glowberries", 3),
