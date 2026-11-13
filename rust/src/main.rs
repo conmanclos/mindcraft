@@ -23,8 +23,10 @@ struct Cli {
 enum Command {
     /// Start the shared runtime, dashboard, API, and optional Minecraft connection.
     Serve,
-    /// Send a one-off prompt directly to the configured AI provider.
+    /// Chat through the running runtime so history and persistent memory are shared.
     Chat { prompt: String },
+    /// Send a one-off prompt directly to the configured AI provider without runtime history.
+    DirectChat { prompt: String },
     /// Print a safe configuration and dependency diagnostic.
     Doctor,
     /// Read live runtime and Minecraft status from the local dashboard API.
@@ -33,6 +35,16 @@ enum Command {
     Goals,
     /// List persistent semantic, episodic, preference, and world memories.
     Memories,
+    /// Save or update a persistent memory record.
+    Remember {
+        kind: String,
+        subject: String,
+        content: String,
+    },
+    /// Delete a persistent memory record by ID.
+    ForgetMemory { memory_id: i64 },
+    /// List the tasks belonging to one strategic goal.
+    GoalTasks { goal_id: i64 },
     /// Ask the runtime planner to propose or autonomously dispatch an action.
     Plan {
         message: String,
@@ -148,6 +160,10 @@ async fn main() -> Result<()> {
             }
         }
         Command::Chat { prompt } => {
+            let response = api_request(&config, Method::POST, "/chat", Some(json!({"message": prompt}))).await?;
+            println!("{}", response.get("reply").and_then(Value::as_str).unwrap_or_default());
+        }
+        Command::DirectChat { prompt } => {
             let brain = brain::Brain::new(config);
             let response = brain.reply(&prompt).await?;
             println!("{response}");
@@ -168,6 +184,19 @@ async fn main() -> Result<()> {
         Command::Status => print_json(&api_request(&config, Method::GET, "/status", None).await?)?,
         Command::Goals => print_json(&api_request(&config, Method::GET, "/goals", None).await?)?,
         Command::Memories => print_json(&api_request(&config, Method::GET, "/memory", None).await?)?,
+        Command::Remember { kind, subject, content } => {
+            print_json(&api_request(&config, Method::POST, "/memory", Some(json!({
+                "kind": kind, "subject": subject, "content": content
+            }))).await?)?;
+        }
+        Command::ForgetMemory { memory_id } => {
+            if memory_id <= 0 { bail!("memory_id must be positive"); }
+            print_json(&api_request(&config, Method::DELETE, &format!("/memory/{memory_id}"), None).await?)?;
+        }
+        Command::GoalTasks { goal_id } => {
+            if goal_id <= 0 { bail!("goal_id must be positive"); }
+            print_json(&api_request(&config, Method::GET, &format!("/goals/{goal_id}/tasks"), None).await?)?;
+        }
         Command::Plan { message, agent } => {
             let mut body = json!({"message": message});
             if let Some(agent) = agent { body["agent"] = json!(agent); }
