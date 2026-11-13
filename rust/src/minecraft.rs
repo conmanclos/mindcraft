@@ -1121,160 +1121,63 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let generation_state = state.mine_generation.clone();
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            let Ok(world) = client.world() else {
-                                client.chat("I can't read the loaded world to pathfind to that block.");
-                                return;
-                            };
-                            if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
-                                client.chat("That target is not a loaded non-air block; I won't report an empty position as mined.");
-                                return;
-                            }
-                            let chunk_storage = world.read().chunks.clone();
-                            if !goto_cancellable(
-                                &client,
-                                ReachBlockPosGoal::new(position, chunk_storage),
-                                &generation_state,
-                                generation,
-                            ).await {
-                                if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    client.chat("Pathfinding to the block timed out or failed.");
-                                }
-                                return;
-                            }
-                            if !client.exists() || !client.is_goto_target_reached() {
-                                client.chat("I couldn't reach that block safely.");
-                                return;
-                            }
-                            let Ok(own_position) = client.position() else { return; };
-                            let target_position = position.center();
-                            let dx = own_position.x - target_position.x;
-                            let dy = own_position.y - target_position.y;
-                            let dz = own_position.z - target_position.z;
-                            if dx * dx + dy * dy + dz * dz > 20.25 {
-                                client.chat("That block is still outside the 4.5-block mining reach.");
-                                return;
-                            }
-                            let Some(block_state) = world.read().get_block_state(position) else {
-                                client.chat("The target block unloaded before I could choose a tool.");
-                                return;
-                            };
-                            let best_tool = match client.best_tool_in_hotbar_for_block(block_state) {
-                                Ok(tool) if tool.percentage_per_tick.is_finite() && tool.percentage_per_tick > 0.0 => tool,
-                                Ok(_) => {
-                                    client.chat("I can't safely mine that block with any tool in my hotbar.");
-                                    return;
-                                }
-                                Err(error) => {
-                                    tracing::warn!(username = %client.username(), %error, "could not determine the best mining tool");
-                                    client.chat("I couldn't determine a safe mining tool for that block.");
-                                    return;
-                                }
-                            };
-                            let selected_slot = best_tool.index as u8;
-                            client.set_selected_hotbar_slot(selected_slot);
-                            client.wait_updates(1).await;
-                            if client.selected_hotbar_slot().ok() != Some(selected_slot) {
-                                client.chat("The server did not confirm the required hotbar tool selection.");
-                                return;
-                            }
-                            client.look_at(target_position);
-                            client.wait_updates(1).await;
-                            if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                return;
-                            }
-                            match client.hit_result() {
-                                Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position => {}
+                            execute_mine_block(client, position, generation_state, generation, true).await;
+                        });
+                    }
+                    BotCommand::Collect(block_name, count, range) => {
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let generation = state.mine_generation.as_ref().map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let cancelled = || generation_state.as_ref()
+                                .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+                            let kind = match block_name.parse::<BlockKind>() {
+                                Ok(kind) if kind != BlockKind::Air => kind,
                                 _ => {
-                                    client.chat("I don't have a clear line of sight to that block.");
+                                    client.chat(format!("I don't recognize '{block_name}' as a mineable Minecraft block."));
                                     return;
                                 }
-                            }
-                            // Azalea 0.16 exposes start_mining/is_mining rather than an
-                            // async mine() helper. Start the protocol action, then observe
-                            // its lifecycle without blocking the ECS tick handler.
-                            let mut mining_ticks = client.get_tick_broadcaster();
-                            client.start_mining(position);
-                            // StartMiningBlockEvent is processed on a later game tick;
-                            // don't interpret the not-yet-inserted Mining component as
-                            // an immediate mining failure.
-                            let start_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-                            let mut mining_started = false;
-                            loop {
-                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    cancel_active_mining(&client);
+                            };
+                            let Ok(position) = client.position() else {
+                                client.chat("I can't read my position to search for blocks.");
+                                return;
+                            };
+                            let origin = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
+                            let states = BlockStates::from([kind]);
+                            let candidates = {
+                                let Ok(world) = client.world() else {
+                                    client.chat("The loaded world is unavailable; I can't search for that block.");
                                     return;
-                                }
-                                if !client.exists() { return; }
-                                if client.is_mining() {
-                                    mining_started = true;
+                                };
+                                let world = world.read();
+                                world.find_blocks(origin, &states).take(512).collect::<Vec<_>>()
+                            };
+                            let radius_squared = i64::from(range) * i64::from(range);
+                            let max_attempts = (usize::from(count) * 3).min(32);
+                            let mut attempts = 0usize;
+                            let mut mined = 0u8;
+                            for target in candidates {
+                                if cancelled() || !client.exists() || mined >= count || attempts >= max_attempts {
                                     break;
                                 }
-                                match tokio::time::timeout_at(start_deadline, mining_ticks.recv()).await {
-                                    Ok(Ok(())) => {}
-                                    Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
-                                        tracing::debug!(username = %client.username(), skipped, "mining start wait missed tick notifications");
-                                    }
-                                    Ok(Err(broadcast::error::RecvError::Closed)) => return,
-                                    Err(_) => break,
+                                let dx = i64::from(target.x - origin.x);
+                                let dy = i64::from(target.y - origin.y);
+                                let dz = i64::from(target.z - origin.z);
+                                if dx * dx + dy * dy + dz * dz > radius_squared {
+                                    continue;
+                                }
+                                attempts += 1;
+                                if execute_mine_block(client.clone(), target, generation_state.clone(), generation, false).await {
+                                    mined = mined.saturating_add(1);
                                 }
                             }
-                            if !mining_started {
-                                if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
-                                    if approach_mined_drop(&client, position, &generation_state, generation).await {
-                                        client.chat("The block broke before the mining state could be observed; I approached its drop location.");
-                                    }
-                                } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    client.chat("The server did not start mining that block; it may be protected or out of reach.");
-                                }
-                                return;
-                            }
-                            let mining_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-                            loop {
-                                if generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    cancel_active_mining(&client);
-                                    client.chat("Mining was cancelled by a newer command.");
-                                    return;
-                                }
-                                if !client.exists() { return; }
-                                if !client.is_mining() {
-                                    let mut final_state = world.read().get_block_state(position);
-                                    for _ in 0..5 {
-                                        if final_state.as_ref().is_some_and(|block| block.is_air()) { break; }
-                                        client.wait_ticks(1).await;
-                                        final_state = world.read().get_block_state(position);
-                                    }
-                                    match final_state {
-                                        Some(block) if block.is_air() => {
-                                            if approach_mined_drop(&client, position, &generation_state, generation).await {
-                                                client.chat(format!("Block broken at {}, {}, {}. I moved through the drop location; verify the items in inventory.", position.x, position.y, position.z));
-                                            } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                                client.chat("Block broken, but I couldn't safely reach the drop location.");
-                                            }
-                                        },
-                                        Some(_) => client.chat("Mining stopped, but the target block remains. It may be protected or the tool/action was rejected."),
-                                        None => client.chat("Mining stopped, but the target chunk is no longer loaded; I can't confirm the block result."),
-                                    }
-                                    return;
-                                }
-                                match tokio::time::timeout_at(mining_deadline, mining_ticks.recv()).await {
-                                    Ok(Ok(())) => {}
-                                    Ok(Err(broadcast::error::RecvError::Lagged(skipped))) => {
-                                        tracing::debug!(username = %client.username(), skipped, "mining task missed tick notifications; resuming from current state");
-                                    }
-                                    Ok(Err(broadcast::error::RecvError::Closed)) => return,
-                                    Err(_) => break,
-                                }
-                            }
-                            cancel_active_mining(&client);
-                            client.wait_ticks(2).await;
-                            if world.read().get_block_state(position).is_some_and(|block| block.is_air()) {
-                                if approach_mined_drop(&client, position, &generation_state, generation).await {
-                                    client.chat(format!("Block broken at {}, {}, {}. I moved through the drop location; verify the items in inventory.", position.x, position.y, position.z));
-                                } else if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
-                                    client.chat("Block broken, but I couldn't safely reach the drop location.");
-                                }
-                            } else {
-                                client.chat("Mining did not finish within 30 seconds; the block may be too hard, protected, or unreachable.");
+                            if !cancelled() && client.exists() {
+                                client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
                             }
                         });
                     }
