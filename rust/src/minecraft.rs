@@ -1113,7 +1113,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         let food_slot = if let Some((slot, _)) = food_candidate {
                             Some(slot)
                         } else {
-                            restock_one_food_stack_to_hotbar(&bot, health <= 10.0).await
+                            restock_one_food_stack_to_hotbar(&bot, health <= 10.0, hunger.food <= 12).await
                         };
                         if let Some(slot) = food_slot {
                             let hotbar = bot.menu().ok().and_then(|menu| {
@@ -7061,7 +7061,7 @@ fn best_safe_food_slot(menu: &azalea_inventory::Menu) -> Option<(usize, u8)> {
     }).max_by_key(|(_, priority)| *priority)
 }
 
-async fn restock_one_food_stack_to_hotbar(bot: &Client, allow_golden_apple: bool) -> Option<usize> {
+async fn restock_one_food_stack_to_hotbar(bot: &Client, allow_golden_apple: bool, allow_ordinary_food: bool) -> Option<usize> {
     let menu = bot.menu().ok()?;
     menu.try_as_player()?;
     let main_slots = menu.player_slots_without_hotbar_range().collect::<Vec<_>>();
@@ -7076,7 +7076,8 @@ async fn restock_one_food_stack_to_hotbar(bot: &Client, allow_golden_apple: bool
             .filter(|character| character.is_ascii_alphanumeric())
             .flat_map(char::to_lowercase)
             .collect();
-        if !allow_golden_apple && compact.contains("goldenapple") {
+        let golden_apple = compact.contains("goldenapple");
+        if (golden_apple && !allow_golden_apple) || (!golden_apple && !allow_ordinary_food) {
             return None;
         }
         Some((slot, safe_food_priority(&compact)?))
