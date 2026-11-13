@@ -761,6 +761,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             // reuse a stale menu snapshot after Azalea reconnects the client.
             if let Some(position) = &state.merchant_position { *position.lock().await = None; }
             if let Some(offers) = &state.merchant_offers { *offers.lock().await = None; }
+            // In-flight interaction tasks must not continue against a replaced
+            // ECS world after reconnect; invalidate their generation and clear
+            // persistent movement intents before the next Spawn event.
+            if let Some(generation) = &state.mine_generation { generation.fetch_add(1, Ordering::Relaxed); }
+            if let Some(target) = &state.follow_target { *target.lock().await = None; }
+            if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+            if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
             if let Some(connected) = &state.connected {
                 if connected.swap(false, Ordering::Relaxed) {
                     if let Some(status) = &state.status {
