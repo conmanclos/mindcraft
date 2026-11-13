@@ -23,3 +23,6 @@ keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
