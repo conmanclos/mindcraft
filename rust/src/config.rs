@@ -34,7 +34,7 @@ impl Config {
         }
         let provider = env::var("MINDCRAFT_PROVIDER").unwrap_or_else(|_| "ollama".into()).to_lowercase();
         if !supported_provider(&provider) {
-            bail!("MINDCRAFT_PROVIDER must be openai, anthropic, google, ollama, openai-compatible, deepseek, groq, cerebras, mistral, openrouter, xai/grok, qwen, huggingface, hyperbolic, novita, mercury, lmstudio, vllm, or azure");
+            bail!("MINDCRAFT_PROVIDER must be openai, anthropic, google, ollama, openai-compatible, deepseek, groq, cerebras, mistral, openrouter, xai/grok, qwen, huggingface, hyperbolic, novita, mercury, lmstudio, vllm, azure, or replicate");
         }
         let minecraft_auth = env::var("MINDCRAFT_MC_AUTH").unwrap_or_else(|_| "offline".into()).to_lowercase();
         if !["offline", "microsoft"].contains(&minecraft_auth.as_str()) {
@@ -160,7 +160,7 @@ fn supported_provider(provider: &str) -> bool {
         "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
         | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
         | "xai" | "grok" | "qwen" | "huggingface" | "hyperbolic" | "novita"
-        | "mercury" | "lmstudio" | "vllm" | "azure"
+        | "mercury" | "lmstudio" | "vllm" | "azure" | "replicate"
     )
 }
 
@@ -168,7 +168,7 @@ fn provider_requires_api_key(provider: &str) -> bool {
     matches!(provider,
         "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
         | "mistral" | "openrouter" | "xai" | "grok" | "qwen" | "huggingface"
-        | "hyperbolic" | "novita" | "mercury" | "azure"
+        | "hyperbolic" | "novita" | "mercury" | "azure" | "replicate"
     )
 }
 
@@ -178,6 +178,7 @@ fn default_provider_base_url(provider: &str) -> &'static str {
         "lmstudio" => "http://127.0.0.1:1234/v1",
         "vllm" => "http://127.0.0.1:8000/v1",
         "openai-compatible" | "azure" => "",
+        "replicate" => "https://api.replicate.com/v1",
         "deepseek" => "https://api.deepseek.com/v1",
         "groq" => "https://api.groq.com/openai/v1",
         "cerebras" => "https://api.cerebras.ai/v1",
