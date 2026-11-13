@@ -3291,7 +3291,7 @@ async fn execute_enter_portal(
         return false;
     }
     let starting_dimension = dimension_state.as_ref()
-        .map(|dimension| dimension.blocking_lock().clone())
+        .map(|dimension| dimension.lock().await.clone())
         .unwrap_or_else(|| "unknown".into());
     let Ok(starting_position) = bot.position() else { return false; };
     bot.chat(format!("Approaching the verified portal at {},{},{}.", position.x, position.y, position.z));
