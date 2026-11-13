@@ -4838,115 +4838,53 @@ async fn execute_build(
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
 ) {
-    let cancelled = || generation_state.as_ref()
-        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     if positions.is_empty() || positions.len() > 256 {
         bot.chat("A build plan must contain between 1 and 256 block positions.");
         return;
     }
-    let Ok(initial_menu) = bot.menu() else {
-        bot.chat("I can't inspect the player inventory before starting this build.");
-        return;
-    };
-    if initial_menu.try_as_player().is_none() {
-        bot.chat("Close the open container before starting a build.");
-        return;
-    }
-    if let Some(material) = material {
-        let hotbar_start = *initial_menu.hotbar_slots_range().start();
-        let mut material_slot = initial_menu.hotbar_slots_range().find(|slot| {
-            initial_menu.slot(*slot).is_some_and(|item| {
-                !item.is_empty()
-                    && (item.count() as usize) >= positions.len()
-                    && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
-            })
-        });
-        if material_slot.is_none() {
-            let source_slot = initial_menu.player_slots_without_hotbar_range().find(|slot| {
-                initial_menu.slot(*slot).is_some_and(|item| {
-                    !item.is_empty()
-                        && (item.count() as usize) >= positions.len()
-                        && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
-                })
-            });
-            let empty_hotbar_slot = initial_menu.hotbar_slots_range().find(|slot| {
-                initial_menu.slot(*slot).is_some_and(|item| item.is_empty())
-            });
-            let (Some(source_slot), Some(destination_slot)) = (source_slot, empty_hotbar_slot) else {
-                bot.chat(format!("I need a stack of at least {} {material} blocks and an empty hotbar slot; I won't overwrite items or start a partial build.", positions.len()));
-                return;
-            };
-            let Ok(inventory) = bot.get_inventory() else {
-                bot.chat("I couldn't safely open the player inventory to move the build material.");
-                return;
-            };
-            inventory.left_click(source_slot);
-            bot.wait_updates(1).await;
-            if cancelled() {
-                inventory.left_click(source_slot);
-                bot.wait_updates(1).await;
-                return;
-            }
-            inventory.left_click(destination_slot);
-            bot.wait_updates(2).await;
-            let verified = bot.menu().ok().is_some_and(|menu| {
-                menu.slot(destination_slot).is_some_and(|item| {
-                    !item.is_empty()
-                        && (item.count() as usize) >= positions.len()
-                        && item_name_matches_exact(&format!("{:?}", item.kind()), &material)
-                })
-            });
-            if !verified {
-                let source_is_empty = bot.menu().ok()
-                    .and_then(|menu| menu.slot(source_slot).map(|item| item.is_empty()))
-                    .unwrap_or(false);
-                if source_is_empty {
-                    inventory.left_click(source_slot);
-                    bot.wait_updates(1).await;
-                }
-                bot.chat("The server did not confirm moving the complete build material stack into the hotbar; I attempted to return any cursor-held stack.");
-                return;
-            }
-            material_slot = Some(destination_slot);
-        }
-        let Some(slot) = material_slot else { return; };
-        let hotbar_index = (slot - hotbar_start) as u8;
-        bot.set_selected_hotbar_slot(hotbar_index);
-        bot.wait_updates(1).await;
-        if bot.selected_hotbar_slot().ok() != Some(hotbar_index) {
-            bot.chat("The server did not confirm the requested build material selection.");
+    let material = if let Some(material) = material {
+        material.trim().to_ascii_lowercase()
+    } else {
+        let Ok(menu) = bot.menu() else {
+            bot.chat("I couldn't inspect the selected build material.");
+            return;
+        };
+        if menu.try_as_player().is_none() {
+            bot.chat("Close the open container before starting a build.");
             return;
         }
-    } else {
         let Some(selected_slot) = bot.selected_hotbar_slot().ok() else {
             bot.chat("I couldn't determine the selected hotbar slot for this build.");
             return;
         };
-        let Some(item) = initial_menu.slot(*initial_menu.hotbar_slots_range().start() + selected_slot as usize) else {
+        let slot = *menu.hotbar_slots_range().start() + selected_slot as usize;
+        let Some(item) = menu.slot(slot) else {
             bot.chat("The selected hotbar slot is unavailable.");
             return;
         };
-        if item.is_empty() || (item.count() as usize) < positions.len() {
-            bot.chat(format!("The selected hotbar stack needs at least {} placeable blocks; I won't start a partial build.", positions.len()));
+        if item.is_empty() {
+            bot.chat("Select a placeable block or specify an exact build material.");
             return;
         }
+        format!("{:?}", item.kind()).to_ascii_lowercase()
+    };
+    if material.is_empty() {
+        bot.chat("Specify an exact build material or select a non-empty hotbar item.");
+        return;
     }
-    for (index, (x, y, z)) in positions.iter().copied().enumerate() {
-        if cancelled() || !bot.exists() { return; }
-        let target = BlockPos::new(x, y, z);
-        if !place_block_at(&bot, target, block.axis.as_deref(), block.slab_top, &generation_state, generation).await {
-            if !cancelled() {
-                bot.chat(format!("Build stopped at block {} of {} ( {}, {}, {} ): placement was not confirmed. Check support, reach, line of sight, and the selected block stack.", index + 1, positions.len(), x, y, z));
-            }
-            return;
-        }
-    }
-    if !cancelled() {
-        bot.chat(format!("Build placement confirmed for all {} requested blocks.", positions.len()));
-    }
+    let blocks = positions.into_iter().map(|(x, y, z)| BuildBlock {
+        material: material.clone(),
+        x,
+        y,
+        z,
+        axis: None,
+        slab_top: None,
+    }).collect();
+    // Use the same multi-stack preflight and verified placement path as
+    // custom schematics so large blueprints do not require one impossible
+    // 256-item stack and never overwrite occupied hotbar slots.
+    execute_build_mixed(bot, blocks, generation_state, generation).await;
 }
-
-
 
 /// Sort the 27 main-inventory slots by normalized registry item name.
 /// The hotbar, armor, and offhand are deliberately untouched. Only whole-stack
@@ -5722,7 +5660,7 @@ async fn execute_build_mixed(
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     if blocks.is_empty() || blocks.len() > 256 {
-        bot.chat("A custom schematic must contain between 1 and 256 blocks.");
+        bot.chat("A build plan must contain between 1 and 256 blocks.");
         return;
     }
     let Ok(menu) = bot.menu() else {
@@ -5883,7 +5821,7 @@ async fn execute_build_mixed(
         plan.slots[plan.current].1 = remaining;
     }
     if !cancelled() {
-        bot.chat(format!("Custom mixed-material schematic confirmed for all {} blocks.", blocks.len()));
+        bot.chat(format!("Build placement confirmed for all {} blocks.", blocks.len()));
     }
 }
 
