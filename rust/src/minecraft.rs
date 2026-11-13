@@ -37,6 +37,7 @@ pub enum BotCommand {
     Locate(String, u16),
     NearbyBlocks(u8),
     Craftable,
+    Entities(u16),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1200,6 +1201,46 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                             if !cancelled() && client.exists() {
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
+                            }
+                        });
+                    }
+                    BotCommand::Entities(range) => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let radius = f64::from(range);
+                            let tab_list = client.tab_list();
+                            let mut lines = Vec::new();
+                            let players = client.nearest_entities_by::<(), With<azalea::entity::metadata::Player>>(|_: ()| true);
+                            for player in players {
+                                if player.uuid() == client.uuid() || player.distance_to_client() > radius { continue; }
+                                let name = tab_list.get(&player.uuid())
+                                    .map(|profile| profile.profile.name.as_str())
+                                    .unwrap_or("unknown");
+                                lines.push(format!("player {name} ({:.1} blocks)", player.distance_to_client()));
+                            }
+                            let mobs = client.nearest_entities_by::<(), (
+                                With<azalea::core::entity_id::MinecraftEntityId>,
+                                Without<azalea::entity::metadata::Player>,
+                            )>(|_: ()| true);
+                            let mut counts: HashMap<String, u32> = HashMap::new();
+                            for entity in mobs {
+                                let distance = entity.distance_to_client();
+                                if distance > radius { continue; }
+                                let kind = format!("{:?}", entity.kind()).to_ascii_lowercase();
+                                if kind.contains("item") { continue; }
+                                *counts.entry(kind).or_insert(0) += 1;
+                            }
+                            let mut mobs = counts.into_iter().collect::<Vec<_>>();
+                            mobs.sort_unstable_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+                            for (kind, count) in mobs.into_iter().take(16) {
+                                lines.push(format!("{count} {kind}"));
+                            }
+                            if !client.exists() { return; }
+                            if lines.is_empty() {
+                                client.chat(format!("No nearby players or non-item entities found within {range} blocks."));
+                            } else {
+                                let summary = lines.into_iter().take(24).collect::<Vec<_>>().join("; ");
+                                client.chat(truncate_utf16(&format!("Nearby entities within {range} blocks: {summary}"), 240));
                             }
                         });
                     }
