@@ -153,9 +153,9 @@ impl Brain {
     pub async fn reply(&self, prompt: &str) -> Result<String> {
         // Chat prompts include the latest user message plus bounded history,
         // world telemetry, online-player context, and relevant memories. Keep
-        // the API's 12 KB user-message limit without rejecting valid requests
-        // merely because those runtime context sections are also present.
-        self.reply_with_limit(prompt, 24_000).await
+        // the API's 12 KB user-message limit plus bounded conversation,
+        // world, team, player-roster, and memory context sections.
+        self.reply_with_limit(prompt, 40_000).await
     }
 
     async fn reply_with_limit(&self, prompt: &str, max_prompt_bytes: usize) -> Result<String> {
