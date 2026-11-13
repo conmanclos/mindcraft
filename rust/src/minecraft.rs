@@ -69,6 +69,12 @@ pub enum BotCommand {
 }
 
 #[derive(Debug, Clone)]
+fn is_hazardous_support(debug_name: &str) -> bool {
+    let name = debug_name.to_ascii_lowercase();
+    ["water", "lava", "magma", "cactus", "fire", "powder_snow", "sweet_berry_bush", "pointed_dripstone"]
+        .iter().any(|hazard| name.contains(hazard))
+}
+
 struct TradeOfferSnapshot {
     index: u32,
     input_a: String,
@@ -1105,7 +1111,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 let position = BlockPos::new(origin_x, y, origin_z);
                                 let Some(block) = world.get_block_state(position) else { break; };
                                 let debug = format!("{block:?}").to_ascii_lowercase();
-                                if !block.is_air() && !debug.contains("water") && !debug.contains("lava") {
+                                if !block.is_air() && !is_hazardous_support(&debug) {
                                     last_solid = Some(position);
                                 }
                             }
@@ -1119,6 +1125,9 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             let world = world.read();
                             world.get_block_state(destination).is_some_and(|block| block.is_air())
                                 && world.get_block_state(destination.up(1)).is_some_and(|block| block.is_air())
+                                && world.get_block_state(destination.down(1)).is_some_and(|block| {
+                                    !block.is_air() && !is_hazardous_support(&format!("{block:?}"))
+                                })
                         };
                         if !safe_landing {
                             bot.chat("The top of this column doesn't have two clear blocks for a safe landing.");
@@ -1296,8 +1305,8 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 let head_name = format!("{head:?}").to_ascii_lowercase();
                                 let support_name = format!("{support:?}").to_ascii_lowercase();
                                 (feet.is_air() && head.is_air() && !support.is_air()
-                                    && !support_name.contains("water") && !support_name.contains("lava")
-                                    && !feet_name.contains("water") && !head_name.contains("water"))
+                                    && !is_hazardous_support(&support_name)
+                                    && !is_hazardous_support(&feet_name) && !is_hazardous_support(&head_name))
                                     .then_some(target)
                             })
                         };
