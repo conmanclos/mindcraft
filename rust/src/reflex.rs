@@ -6,9 +6,7 @@ pub enum ReflexAction {
 
 /// Deterministic survival guard; it never consumes items or depends on an LLM.
 pub fn evaluate(health: f32, food: u32) -> Option<ReflexAction> {
-    // Unknown/non-finite health is not evidence that the bot is safe.
-    // Fail closed and stop movement until the next valid server snapshot.
-    if !health.is_finite() || health <= 6.0 {
+    if health.is_finite() && health <= 6.0 {
         Some(ReflexAction::StopAndWarn)
     } else if food <= 6 {
         Some(ReflexAction::WarnLowFood)
