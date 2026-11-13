@@ -269,13 +269,16 @@ fn point_of_interest_kind(debug_name: &str) -> Option<&'static str> {
     else if name.contains("coalore") { Some("coal ore") }
     else if name.contains("amethystcluster") { Some("amethyst cluster") }
     else if name.contains("chest") || name.contains("barrel") || name.contains("shulkerbox") { Some("storage") }
-    else if name.contains("craftingtable") || name.contains("furnace") || name.contains("smoker") { Some("workstation") }
+    else if name.contains("craftingtable") || name.contains("furnace") || name.contains("smoker")
+        || name.contains("campfire") { Some("workstation") }
     else if name.contains("anvil") || name.contains("enchantingtable") || name.contains("brewingstand")
-        || name.contains("grindstone") || name.contains("stonecutter") { Some("utility workstation") }
+        || name.contains("grindstone") || name.contains("stonecutter") || name.contains("cauldron") { Some("utility workstation") }
+    else if name.contains("composter") { Some("farming workstation") }
+    else if name.contains("suspicioussand") || name.contains("suspiciousgravel") { Some("archaeology site") }
     else if name.contains("endportalframe") || name.contains("endgateway") || name.contains("netherportal")
         || name.contains("beacon") || name.contains("lodestone") || name.contains("respawnanchor") { Some("structure landmark") }
     else if name.contains("bell") || name.contains("loom") || name.contains("cartographytable")
-        || name.contains("smithingtable") || name.contains("fletchingtable") { Some("village workstation") }
+        || name.contains("smithingtable") || name.contains("fletchingtable") || name.contains("lectern") { Some("village workstation") }
     else { None }
 }
 
