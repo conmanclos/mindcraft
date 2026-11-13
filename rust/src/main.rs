@@ -60,7 +60,7 @@ fn local_api_url(bind: SocketAddr) -> Result<String> {
         address if address.is_loopback() => address,
         _ => bail!("CLI API commands are restricted to loopback-bound runtimes; use the authenticated dashboard for a non-loopback bind"),
     };
-    Ok(format!("http://{}:{}/api", ip, bind.port()))
+    Ok(format!("http://{}/api", SocketAddr::new(ip, bind.port())))
 }
 
 async fn api_request(
