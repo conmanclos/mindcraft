@@ -8,6 +8,7 @@ const MAX_TASKS_PER_GOAL: usize = 12;
 const MAX_TASK_DESCRIPTION_BYTES: usize = 500;
 const MAX_MEMORY_SUBJECT_BYTES: usize = 200;
 const MAX_MEMORY_CONTENT_BYTES: usize = 4_000;
+const MAX_MEMORY_RECORDS: i64 = 10_000;
 
 fn validate_task(role: &str, description: &str) -> Result<()> {
     const ALLOWED_ROLES: [&str; 6] = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
@@ -225,8 +226,35 @@ impl Store {
         if source.trim().is_empty() || source.len() > 80 {
             anyhow::bail!("memory source must contain 1-80 bytes");
         }
-        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        connection.execute(
+        if !confidence.is_finite() {
+            anyhow::bail!("memory confidence must be a finite number");
+        }
+
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let already_exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM memories WHERE kind=?1 AND subject=?2)",
+            params![kind, subject],
+            |row| row.get(0),
+        )?;
+        if !already_exists {
+            let count: i64 = tx.query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))?;
+            if count >= MAX_MEMORY_RECORDS {
+                // Preserve the strongest and most recently maintained knowledge.
+                // Only the lowest-importance, least-recently-used record is evicted.
+                tx.execute(
+                    "DELETE FROM memories WHERE id IN (
+                       SELECT id FROM memories
+                       ORDER BY importance ASC,
+                                COALESCE(last_accessed_at, updated_at) ASC,
+                                updated_at ASC, id ASC
+                       LIMIT 1
+                     )",
+                    [],
+                )?;
+            }
+        }
+        tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source, updated_at, last_accessed_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
              ON CONFLICT(kind, subject) DO UPDATE SET
@@ -238,11 +266,12 @@ impl Store {
                last_accessed_at=CURRENT_TIMESTAMP",
             params![kind, subject, content, confidence.clamp(0.0, 1.0), importance.clamp(0, 100), source],
         )?;
-        let id = connection.query_row(
+        let id = tx.query_row(
             "SELECT id FROM memories WHERE kind=?1 AND subject=?2",
             params![kind, subject],
             |row| row.get(0),
         )?;
+        tx.commit()?;
         Ok(id)
     }
 
