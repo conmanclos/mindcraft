@@ -32,8 +32,8 @@ impl Config {
             bail!("MINDCRAFT_MODE must be assisted, balanced, or autonomous");
         }
         let provider = env::var("MINDCRAFT_PROVIDER").unwrap_or_else(|_| "ollama".into()).to_lowercase();
-        if !["openai", "openai-compatible", "anthropic", "google", "ollama"].contains(&provider.as_str()) {
-            bail!("MINDCRAFT_PROVIDER must be openai, openai-compatible, anthropic, google, or ollama");
+        if !supported_provider(&provider) {
+            bail!("MINDCRAFT_PROVIDER must be openai, anthropic, google, ollama, openai-compatible, deepseek, groq, cerebras, mistral, openrouter, xai, qwen, huggingface, hyperbolic, novita, mercury, lmstudio, or vllm");
         }
         let minecraft_auth = env::var("MINDCRAFT_MC_AUTH").unwrap_or_else(|_| "offline".into()).to_lowercase();
         if !["offline", "microsoft"].contains(&minecraft_auth.as_str()) {
@@ -87,17 +87,13 @@ impl Config {
             bail!("MINDCRAFT_MODEL must not be empty");
         }
         let api_key = env::var("MINDCRAFT_API_KEY").unwrap_or_default().trim().to_owned();
-        let default_base_url = match provider.as_str() {
-            "ollama" => "http://127.0.0.1:11434/v1",
-            "openai-compatible" => "",
-            _ => "https://api.openai.com/v1",
-        };
+        let default_base_url = default_provider_base_url(&provider);
         let base_url = env::var("MINDCRAFT_BASE_URL")
             .unwrap_or_else(|_| default_base_url.into()).trim().to_owned();
         if provider == "openai-compatible" && base_url.is_empty() {
             bail!("MINDCRAFT_BASE_URL is required when MINDCRAFT_PROVIDER=openai-compatible");
         }
-        if ["openai", "anthropic", "google"].contains(&provider.as_str()) && api_key.is_empty() {
+        if provider_requires_api_key(&provider) && api_key.is_empty() {
             bail!("MINDCRAFT_API_KEY is required for the selected hosted AI provider");
         }
         validate_provider_base_url(&base_url)?;
@@ -150,6 +146,44 @@ impl Config {
     }
 }
 
+
+fn supported_provider(provider: &str) -> bool {
+    matches!(provider,
+        "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
+        | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
+        | "xai" | "qwen" | "huggingface" | "hyperbolic" | "novita"
+        | "mercury" | "lmstudio" | "vllm"
+    )
+}
+
+fn provider_requires_api_key(provider: &str) -> bool {
+    matches!(provider,
+        "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
+        | "mistral" | "openrouter" | "xai" | "qwen" | "huggingface"
+        | "hyperbolic" | "novita" | "mercury"
+    )
+}
+
+fn default_provider_base_url(provider: &str) -> &'static str {
+    match provider {
+        "ollama" => "http://127.0.0.1:11434/v1",
+        "lmstudio" => "http://127.0.0.1:1234/v1",
+        "vllm" => "http://127.0.0.1:8000/v1",
+        "openai-compatible" => "",
+        "deepseek" => "https://api.deepseek.com/v1",
+        "groq" => "https://api.groq.com/openai/v1",
+        "cerebras" => "https://api.cerebras.ai/v1",
+        "mistral" => "https://api.mistral.ai/v1",
+        "openrouter" => "https://openrouter.ai/api/v1",
+        "xai" => "https://api.x.ai/v1",
+        "qwen" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "huggingface" => "https://router.huggingface.co/v1",
+        "hyperbolic" => "https://api.hyperbolic.xyz/v1",
+        "novita" => "https://api.novita.ai/v3/openai",
+        "mercury" => "https://api.inceptionlabs.ai/v1",
+        _ => "https://api.openai.com/v1",
+    }
+}
 
 fn validate_minecraft_server(value: &str) -> Result<()> {
     let value = value.trim();
