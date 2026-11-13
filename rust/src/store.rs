@@ -43,6 +43,28 @@ fn prune_terminal_goal_history(
     }
 }
 
+fn prune_memory_history(transaction: &Transaction<'_>, incoming_records: usize) -> Result<()> {
+    loop {
+        let count: i64 = transaction.query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))?;
+        if count + incoming_records as i64 <= MAX_MEMORY_RECORDS {
+            return Ok(());
+        }
+        let deleted = transaction.execute(
+            "DELETE FROM memories WHERE id IN (
+               SELECT id FROM memories
+               ORDER BY importance ASC,
+                        COALESCE(last_accessed_at, updated_at) ASC,
+                        updated_at ASC, id ASC
+               LIMIT 1
+             )",
+            [],
+        )?;
+        if deleted == 0 {
+            anyhow::bail!("memory history is at capacity and no record could be evicted");
+        }
+    }
+}
+
 fn validate_task(role: &str, description: &str) -> Result<()> {
     const ALLOWED_ROLES: [&str; 6] = ["planner", "scout", "gatherer", "builder", "crafter", "guardian"];
     if !ALLOWED_ROLES.contains(&role) {
@@ -304,21 +326,9 @@ impl Store {
             |row| row.get(0),
         )?;
         if !already_exists {
-            let count: i64 = tx.query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))?;
-            if count >= MAX_MEMORY_RECORDS {
-                // Preserve the strongest and most recently maintained knowledge.
-                // Only the lowest-importance, least-recently-used record is evicted.
-                tx.execute(
-                    "DELETE FROM memories WHERE id IN (
-                       SELECT id FROM memories
-                       ORDER BY importance ASC,
-                                COALESCE(last_accessed_at, updated_at) ASC,
-                                updated_at ASC, id ASC
-                       LIMIT 1
-                     )",
-                    [],
-                )?;
-            }
+            // Preserve the strongest and most recently used knowledge. The
+            // helper also repairs any over-capacity database from older builds.
+            prune_memory_history(&tx, 1)?;
         }
         tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source, updated_at, last_accessed_at)
@@ -839,19 +849,7 @@ impl Store {
             |row| row.get(0),
         )?;
         if !memory_exists {
-            let memory_count: i64 = tx.query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))?;
-            if memory_count >= MAX_MEMORY_RECORDS {
-                tx.execute(
-                    "DELETE FROM memories WHERE id IN (
-                       SELECT id FROM memories
-                       ORDER BY importance ASC,
-                                COALESCE(last_accessed_at, updated_at) ASC,
-                                updated_at ASC, id ASC
-                       LIMIT 1
-                     )",
-                    [],
-                )?;
-            }
+            prune_memory_history(&tx, 1)?;
         }
         tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source)
