@@ -1223,8 +1223,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             bot.chat("The loaded world is unavailable; I can't validate that saved location.");
                             continue;
                         };
-                        if world.read().get_block_state(destination).is_none() {
-                            bot.chat("That saved location is outside loaded chunks; move closer before navigating there.");
+                        let landing_is_clear = {
+                            let world = world.read();
+                            world.get_block_state(destination).is_some_and(|block| block.is_air())
+                                && world.get_block_state(destination.up(1)).is_some_and(|block| block.is_air())
+                        };
+                        if !landing_is_clear {
+                            bot.chat("That saved location is unloaded or no longer has two clear blocks for a safe landing.");
                             continue;
                         }
                         let Ok(position) = bot.position() else { continue; };
