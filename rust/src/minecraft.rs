@@ -4473,9 +4473,12 @@ async fn place_block_at(
         return false;
     }
     let supports = match (axis, slab_top) {
-        (Some("y"), None) | (None, Some(false)) => vec![
+        (Some("y"), None) => vec![
             (target.down(1), Direction::Up),
             (target.up(1), Direction::Down),
+        ],
+        (None, Some(false)) => vec![
+            (target.down(1), Direction::Up),
         ],
         (Some("x"), None) => vec![
             (target.west(1), Direction::East),
