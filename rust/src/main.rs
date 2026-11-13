@@ -5,9 +5,11 @@ mod minecraft;
 mod reflex;
 mod store;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use std::sync::Arc;
+use reqwest::Method;
+use serde_json::{json, Value};
+use std::{net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::Arc};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -21,10 +23,80 @@ struct Cli {
 enum Command {
     /// Start the shared runtime, dashboard, API, and optional Minecraft connection.
     Serve,
-    /// Send a one-off prompt to the configured AI provider.
+    /// Send a one-off prompt directly to the configured AI provider.
     Chat { prompt: String },
     /// Print a safe configuration and dependency diagnostic.
     Doctor,
+    /// Read live runtime and Minecraft status from the local dashboard API.
+    Status,
+    /// List persisted strategic goals and their current states.
+    Goals,
+    /// List persistent semantic, episodic, preference, and world memories.
+    Memories,
+    /// Ask the runtime planner to propose or autonomously dispatch an action.
+    Plan {
+        message: String,
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Execute an explicitly approved action supplied as a JSON object.
+    Execute {
+        action_json: String,
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Create a strategic goal and let the planner decompose it into tasks.
+    CreateGoal { description: String },
+    /// Cancel an active strategic goal and revoke its queued work.
+    CancelGoal { goal_id: i64 },
+    /// Retry a failed strategic goal without repeating verified completed tasks.
+    RetryGoal { goal_id: i64 },
+}
+
+fn local_api_url(bind: SocketAddr) -> Result<String> {
+    let ip = match bind.ip() {
+        IpAddr::V4(address) if address.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(address) if address.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        address if address.is_loopback() => address,
+        _ => bail!("CLI API commands are restricted to loopback-bound runtimes; use the authenticated dashboard for a non-loopback bind"),
+    };
+    Ok(format!("http://{}:{}/api", ip, bind.port()))
+}
+
+async fn api_request(
+    config: &config::Config,
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+) -> Result<Value> {
+    if config.api_token_was_generated {
+        bail!("CLI API commands require MINDCRAFT_API_TOKEN to be set to the token used by the running runtime");
+    }
+    let base = local_api_url(config.bind)?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let mut request = client.request(method, format!("{base}{path}"))
+        .bearer_auth(&config.api_token);
+    if let Some(body) = body {
+        request = request.json(&body);
+    }
+    let response = request.send().await?;
+    let status = response.status();
+    let text = response.text().await?;
+    if !status.is_success() {
+        bail!("local runtime API returned {status}: {text}");
+    }
+    if text.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    Ok(serde_json::from_str(&text)?)
+}
+
+fn print_json(value: &Value) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -92,6 +164,34 @@ async fn main() -> Result<()> {
             println!("API token configured: {}", !config.api_token.is_empty());
             println!("Database: {}", config.database.display());
             println!("Autonomy: {}", config.mode);
+        }
+        Command::Status => print_json(&api_request(&config, Method::GET, "/status", None).await?)?,
+        Command::Goals => print_json(&api_request(&config, Method::GET, "/goals", None).await?)?,
+        Command::Memories => print_json(&api_request(&config, Method::GET, "/memory", None).await?)?,
+        Command::Plan { message, agent } => {
+            let mut body = json!({"message": message});
+            if let Some(agent) = agent { body["agent"] = json!(agent); }
+            print_json(&api_request(&config, Method::POST, "/plan", Some(body)).await?)?;
+        }
+        Command::Execute { action_json, agent } => {
+            let action: Value = serde_json::from_str(&action_json)?;
+            if !action.is_object() {
+                bail!("action_json must be a JSON object matching the planner action schema");
+            }
+            let mut body = json!({"action": action});
+            if let Some(agent) = agent { body["agent"] = json!(agent); }
+            print_json(&api_request(&config, Method::POST, "/execute", Some(body)).await?)?;
+        }
+        Command::CreateGoal { description } => {
+            print_json(&api_request(&config, Method::POST, "/goals", Some(json!({"description": description}))).await?)?;
+        }
+        Command::CancelGoal { goal_id } => {
+            if goal_id <= 0 { bail!("goal_id must be positive"); }
+            print_json(&api_request(&config, Method::POST, &format!("/goals/{goal_id}/cancel"), Some(json!({}))).await?)?;
+        }
+        Command::RetryGoal { goal_id } => {
+            if goal_id <= 0 { bail!("goal_id must be positive"); }
+            print_json(&api_request(&config, Method::POST, &format!("/goals/{goal_id}/retry"), Some(json!({}))).await?)?;
         }
     }
     Ok(())
