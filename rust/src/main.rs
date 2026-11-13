@@ -57,6 +57,10 @@ enum Command {
     ReleaseTask { task_id: i64, agent_id: String },
     /// Report an execution failure and schedule a bounded retry.
     FailTask { task_id: i64, agent_id: String, reason: String },
+    /// Issue a short-lived credential for an external specialist worker.
+    IssueAgentCredential { agent_id: String },
+    /// Revoke an external specialist worker credential.
+    RevokeAgentCredential { agent_id: String },
     /// Ask the runtime planner to propose or autonomously dispatch an action.
     Plan {
         message: String,
@@ -118,6 +122,11 @@ async fn api_request(
         return Ok(Value::Null);
     }
     Ok(serde_json::from_str(&text)?)
+}
+
+fn valid_agent_id(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 64
+        && value.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
 }
 
 fn print_json(value: &Value) -> Result<()> {
@@ -234,6 +243,14 @@ async fn main() -> Result<()> {
             print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/fail"), Some(json!({
                 "agent_id": agent_id, "reason": reason
             }))).await?)?;
+        }
+        Command::IssueAgentCredential { agent_id } => {
+            if !valid_agent_id(&agent_id) { bail!("agent_id must contain 1-64 ASCII letters, numbers, dots, underscores, or hyphens"); }
+            print_json(&api_request(&config, Method::POST, &format!("/agents/{agent_id}/credential"), Some(json!({}))).await?)?;
+        }
+        Command::RevokeAgentCredential { agent_id } => {
+            if !valid_agent_id(&agent_id) { bail!("agent_id must contain 1-64 ASCII letters, numbers, dots, underscores, or hyphens"); }
+            print_json(&api_request(&config, Method::DELETE, &format!("/agents/{agent_id}/credential"), None).await?)?;
         }
         Command::Plan { message, agent } => {
             let mut body = json!({"message": message});
