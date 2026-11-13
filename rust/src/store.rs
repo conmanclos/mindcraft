@@ -673,7 +673,7 @@ impl Store {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let attempts: Option<i64> = tx.query_row(
             "SELECT attempts FROM agent_tasks WHERE id=?1 AND assigned_agent=?2
-             AND status='claimed' AND lease_until > CURRENT_TIMESTAMP",
+             AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
             |row| row.get(0),
         ).optional()?;
