@@ -43,6 +43,7 @@ pub struct AgentTask {
     pub attempts: i64,
     pub last_error: Option<String>,
     pub available_at: String,
+    pub verification_note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -492,11 +493,11 @@ impl Store {
     pub fn list_tasks(&self, goal_id: i64) -> Result<Vec<AgentTask>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at FROM agent_tasks WHERE goal_id=?1 ORDER BY id ASC"
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at, verification_note FROM agent_tasks WHERE goal_id=?1 ORDER BY id ASC"
         )?;
         let rows = statement.query_map([goal_id], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?, verification_note: row.get(11)?
         }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -527,7 +528,7 @@ impl Store {
             [],
         )?;
         let task = tx.query_row(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at, verification_note
              FROM agent_tasks
              WHERE EXISTS (SELECT 1 FROM goals g WHERE g.id=agent_tasks.goal_id AND g.status='active')
                AND ((status='pending' AND attempts < 5 AND available_at <= CURRENT_TIMESTAMP) OR (status='claimed' AND attempts < 5 AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)))
@@ -559,7 +560,7 @@ impl Store {
             [role],
             |row| Ok(AgentTask {
                 id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?
+                priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?, verification_note: row.get(11)?
             }),
         ).optional()?;
 
@@ -666,12 +667,12 @@ impl Store {
     pub fn list_review_tasks(&self) -> Result<Vec<AgentTask>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
-            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at
+            "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at, verification_note
              FROM agent_tasks WHERE status='review' ORDER BY priority DESC, id ASC"
         )?;
         let rows = statement.query_map([], |row| Ok(AgentTask {
             id: row.get(0)?, goal_id: row.get(1)?, role: row.get(2)?, description: row.get(3)?,
-            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?
+            priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?, verification_note: row.get(11)?
         }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
