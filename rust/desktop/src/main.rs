@@ -324,8 +324,9 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
     *child = Some(spawned);
 
     // Do not report a successful launch until the child has actually bound
-    // its API port and answered the public health endpoint. This catches
-    // stale-port races and immediate configuration/startup failures.
+    // its API port and accepted the app's private bearer token. The public
+    // health route alone could produce a false positive if another local
+    // process wins the brief port-allocation race.
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         let Some(running) = child.as_mut() else {
@@ -342,8 +343,10 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
         let address = SocketAddr::from(([127, 0, 0, 1], api_port));
         if let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(200)) {
             let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-            let request = b"GET /api/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
-            if stream.write_all(request).is_ok() {
+            let request = format!(
+                "GET /api/status HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+            );
+            if stream.write_all(request.as_bytes()).is_ok() {
                 let mut response = [0_u8; 128];
                 if let Ok(read) = stream.read(&mut response) {
                     let status_line = String::from_utf8_lossy(&response[..read]);
