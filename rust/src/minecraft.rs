@@ -2255,6 +2255,8 @@ pub(crate) fn recipe_spec(recipe: &str) -> Option<(bool, &'static str, &'static 
         "golden_carrot" => Some((true, "golden_carrot", &[(1, "gold_nugget"), (2, "gold_nugget"), (3, "gold_nugget"), (4, "gold_nugget"), (5, "carrot"), (6, "gold_nugget"), (7, "gold_nugget"), (8, "gold_nugget"), (9, "gold_nugget")])),
         "pumpkin_pie" => Some((true, "pumpkin_pie", &[(1, "sugar"), (4, "pumpkin"), (7, "egg")])),
         "cookie" => Some((true, "cookie", &[(1, "wheat"), (2, "cocoa_beans"), (3, "wheat")])),
+        "shulker_box" => Some((true, "shulker_box", &[(2, "shulker_shell"), (5, "chest"), (8, "shulker_shell")])),
+        "tinted_glass" => Some((true, "tinted_glass", &[(2, "amethyst_shard"), (4, "amethyst_shard"), (5, "glass"), (6, "amethyst_shard"), (8, "amethyst_shard")])),
         "smithing_table" => Some((true, "smithing_table", &[(1, "iron_ingot"), (2, "iron_ingot"), (4, "planks"), (5, "planks"), (7, "planks"), (8, "planks")])),
         "beehive" => Some((true, "beehive", &[(1, "planks"), (2, "planks"), (3, "planks"), (4, "honeycomb"), (5, "honeycomb"), (6, "honeycomb"), (7, "planks"), (8, "planks"), (9, "planks")])),
         "honeycomb_block" => Some((false, "honeycomb_block", &[(1, "honeycomb"), (2, "honeycomb"), (3, "honeycomb"), (4, "honeycomb")])),
