@@ -43,6 +43,7 @@ pub enum BotCommand {
     MoveAway(u8),
     RememberHere(String),
     GoToRememberedPlace(String),
+    LookAtPlayer(String),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1454,6 +1455,21 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
                             }
                         });
+                    }
+                    BotCommand::LookAtPlayer(name) => {
+                        let tab_list = bot.tab_list();
+                        let target = bot.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true)
+                            .into_iter()
+                            .find(|player| {
+                                player.exists()
+                                    && tab_list.get(&player.uuid()).is_some_and(|profile| profile.profile.name.eq_ignore_ascii_case(&name))
+                            });
+                        if let Some(player) = target {
+                            player.look_at();
+                            bot.chat(format!("Looking at player '{name}'."));
+                        } else {
+                            bot.chat(format!("I can't see a player named '{name}' in the loaded world."));
+                        }
                     }
                     BotCommand::LocateEntity(query, range) => {
                         let client = bot.clone();
