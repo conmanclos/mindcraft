@@ -2605,7 +2605,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         bot.walk(WalkDirection::None);
                         let client = bot.clone();
                         tokio::task::spawn_local(async move {
-                            execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation).await;
+                            execute_smelt(client, input, BlockPos::new(x, y, z), count, generation_state, generation, true).await;
                         });
                     }
                     BotCommand::ClearFurnace(x, y, z) => {
@@ -2660,6 +2660,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                                     job.count,
                                     generation_state.clone(),
                                     generation,
+                                    false,
                                 ).await;
                                 if !completed {
                                     if !generation_state.as_ref().is_some_and(|value| value.load(Ordering::Relaxed) != generation) {
@@ -6053,6 +6054,7 @@ async fn execute_smelt(
     count: u8,
     generation_state: Option<Arc<AtomicUsize>>,
     generation: usize,
+    wait_for_output: bool,
 ) -> bool {
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
@@ -6276,6 +6278,12 @@ async fn execute_smelt(
         bot.wait_ticks(2).await;
         bot.chat("The server did not accept the complete selected fuel stack; I returned any accepted fuel and the input.");
         return false;
+    }
+
+    if !wait_for_output {
+        bot.chat(format!("Loaded {count} {input} and the required fuel into the furnace at {}, {}, {}; it is smelting while I prepare the remaining queue.", position.x, position.y, position.z));
+        drop(container);
+        return true;
     }
 
     bot.chat(format!("Started a batch of {count} {input}; waiting for {count} {result_name}."));
