@@ -4745,7 +4745,7 @@ async fn execute_build(
     let cancelled = || generation_state.as_ref()
         .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
     if positions.is_empty() || positions.len() > 256 {
-        bot.chat("A build plan must contain between 1 and 64 block positions.");
+        bot.chat("A build plan must contain between 1 and 256 block positions.");
         return;
     }
     let Ok(initial_menu) = bot.menu() else {
