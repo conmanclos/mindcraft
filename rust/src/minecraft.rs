@@ -42,6 +42,7 @@ pub enum BotCommand {
     OptimizeArmor,
     InventorySort,
     Trade(i32, i32, i32, Option<u8>),
+    EnterPortal(i32, i32, i32),
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>, Option<String>),
     ContainerDeposit(i32, i32, i32, Option<String>),
@@ -3261,6 +3262,63 @@ async fn execute_build_mixed(
     if !cancelled() {
         bot.chat(format!("Custom mixed-material schematic confirmed for all {} blocks.", blocks.len()));
     }
+}
+
+async fn execute_enter_portal(
+    bot: Client,
+    position: BlockPos,
+    dimension_state: Option<Arc<Mutex<String>>>,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) -> bool {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return false; }
+    let Ok(world) = bot.world() else {
+        bot.chat("The world is unavailable; I cannot inspect that portal.");
+        return false;
+    };
+    let block = world.read().get_block_state(position);
+    let block_name = block.map(|block| format!("{block:?}").to_ascii_lowercase()).unwrap_or_default();
+    let compact: String = block_name.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect();
+    let is_nether_portal = compact.contains("netherportal");
+    let is_end_portal = compact.contains("endportal") && !compact.contains("endportalframe");
+    let is_end_gateway = compact.contains("endgateway");
+    if !is_nether_portal && !is_end_portal && !is_end_gateway {
+        bot.chat("That block is not an active Nether portal, End portal, or End gateway. I will not attempt to enter it.");
+        return false;
+    }
+    let starting_dimension = dimension_state.as_ref()
+        .map(|dimension| dimension.blocking_lock().clone())
+        .unwrap_or_else(|| "unknown".into());
+    let Ok(starting_position) = bot.position() else { return false; };
+    bot.chat(format!("Approaching the verified portal at {},{},{}.", position.x, position.y, position.z));
+    if !goto_cancellable(&bot, BlockPosGoal(position), &generation_state, generation).await {
+        bot.chat("Portal approach was cancelled or could not be completed.");
+        return false;
+    }
+    bot.stop_pathfinding();
+    if cancelled() { return false; }
+    let Ok(portal_position) = bot.position() else { return false; };
+    for _ in 0..600 {
+        if cancelled() { return false; }
+        bot.wait_ticks(1).await;
+        let current_dimension = dimension_state.as_ref()
+            .map(|dimension| dimension.blocking_lock().clone())
+            .unwrap_or_else(|| starting_dimension.clone());
+        let Ok(current_position) = bot.position() else { continue; };
+        let dimension_changed = current_dimension != starting_dimension;
+        let teleported_in_dimension = current_position.distance_to(portal_position) > 16.0
+            || current_position.distance_to(starting_position) > 24.0;
+        if dimension_changed || teleported_in_dimension {
+            bot.chat(format!("Portal transition detected. Current dimension: {current_dimension}."));
+            return true;
+        }
+    }
+    bot.chat("I reached the portal but no dimension change or portal teleport was confirmed. I did not claim a successful transition.");
+    false
 }
 
 async fn execute_trade(
