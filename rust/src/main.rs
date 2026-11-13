@@ -45,6 +45,18 @@ enum Command {
     ForgetMemory { memory_id: i64 },
     /// List the tasks belonging to one strategic goal.
     GoalTasks { goal_id: i64 },
+    /// List tasks awaiting human result verification.
+    ReviewTasks,
+    /// Claim the next eligible task for an agent.
+    ClaimTask { agent_id: String, role: String },
+    /// Renew an agent's active task lease.
+    HeartbeatTask { task_id: i64, agent_id: String },
+    /// Mark a claimed or reviewed task complete after verifying its in-game result.
+    CompleteTask { task_id: i64, agent_id: String },
+    /// Release a task back to the shared queue.
+    ReleaseTask { task_id: i64, agent_id: String },
+    /// Report an execution failure and schedule a bounded retry.
+    FailTask { task_id: i64, agent_id: String, reason: String },
     /// Ask the runtime planner to propose or autonomously dispatch an action.
     Plan {
         message: String,
@@ -198,6 +210,30 @@ async fn main() -> Result<()> {
         Command::GoalTasks { goal_id } => {
             if goal_id <= 0 { bail!("goal_id must be positive"); }
             print_json(&api_request(&config, Method::GET, &format!("/goals/{goal_id}/tasks"), None).await?)?;
+        }
+        Command::ReviewTasks => print_json(&api_request(&config, Method::GET, "/tasks/review", None).await?)?,
+        Command::ClaimTask { agent_id, role } => {
+            print_json(&api_request(&config, Method::POST, "/tasks/claim", Some(json!({
+                "agent_id": agent_id, "role": role
+            }))).await?)?;
+        }
+        Command::HeartbeatTask { task_id, agent_id } => {
+            if task_id <= 0 { bail!("task_id must be positive"); }
+            print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/heartbeat"), Some(json!({"agent_id": agent_id}))).await?)?;
+        }
+        Command::CompleteTask { task_id, agent_id } => {
+            if task_id <= 0 { bail!("task_id must be positive"); }
+            print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/complete"), Some(json!({"agent_id": agent_id}))).await?)?;
+        }
+        Command::ReleaseTask { task_id, agent_id } => {
+            if task_id <= 0 { bail!("task_id must be positive"); }
+            print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/release"), Some(json!({"agent_id": agent_id}))).await?)?;
+        }
+        Command::FailTask { task_id, agent_id, reason } => {
+            if task_id <= 0 { bail!("task_id must be positive"); }
+            print_json(&api_request(&config, Method::POST, &format!("/tasks/{task_id}/fail"), Some(json!({
+                "agent_id": agent_id, "reason": reason
+            }))).await?)?;
         }
         Command::Plan { message, agent } => {
             let mut body = json!({"message": message});
