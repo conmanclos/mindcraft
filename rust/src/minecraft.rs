@@ -369,7 +369,17 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
                 else if (biome.contains("desert") || biome.contains("beach"))
                     && kind == "archaeology site" { 0.75 }
                 else { 1.0 };
-                let score = distance_sq * biome_weight;
+                // Prefer useful landmarks and village infrastructure, but
+                // avoid routing an autonomous scout directly toward hostile
+                // spawners or deep-dark shriekers.
+                let structure_weight = match kind {
+                    "structure landmark" | "trial chamber vault" => 0.75,
+                    "village workstation" | "village bed" => 0.85,
+                    "trial chamber spawner" | "dungeon spawner" | "deep dark shrieker" => 1.5,
+                    "deep dark sensor" => 1.2,
+                    _ => 1.0,
+                };
+                let score = distance_sq * biome_weight * structure_weight;
                 // Once the bot has reached a POI, skip it so the patrol moves on.
                 if distance_sq <= 16.0 { continue; }
                 let approaches = [
