@@ -615,18 +615,23 @@ fn schematic_axis_supported(block: &str) -> bool {
         )
 }
 
-fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (StatusCode, String)> {
+fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>, Option<bool>)>, (StatusCode, String)> {
     let (block_state, axis) = if let Some((block_state, raw_properties)) = state.split_once('[') {
         let properties = raw_properties.strip_suffix(']')
             .filter(|properties| !properties.contains('[') && !properties.contains(']'))
             .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()))?;
         let mut axis = None;
+        let mut slab_top = None;
+        let block_id = block_state.rsplit(':').next().unwrap_or(block_state);
         for entry in properties.split(',') {
             let (key, value) = entry.split_once('=')
                 .ok_or((StatusCode::BAD_REQUEST, "Sponge block-state properties must use key=value syntax".into()))?;
             match key {
                 "axis" if axis.is_none() && matches!(value, "x" | "y" | "z") => {
                     axis = Some(value.to_owned());
+                }
+                "type" if slab_top.is_none() && block_id.ends_with("_slab") && matches!(value, "top" | "bottom") => {
+                    slab_top = Some(value == "top");
                 }
                 // These explicit false values match the default placement state.
                 "waterlogged" | "open" | "powered" | "triggered" | "extended" | "snowy"
@@ -638,12 +643,12 @@ fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (S
                 }
             }
         }
-        (block_state, axis)
+        (block_state, axis, slab_top)
     } else {
         if state.contains(']') {
             return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains malformed block-state properties".into()));
         }
-        (state, None)
+        (state, None, None)
     };
     let (namespace, block) = block_state.split_once(':').unwrap_or(("minecraft", block_state));
     if namespace != "minecraft" {
@@ -683,7 +688,7 @@ fn sponge_block_item(state: &str) -> Result<Option<(String, Option<String>)>, (S
     } else {
         block.to_owned()
     };
-    Ok(Some((item, axis)))
+    Ok(Some((item, axis, slab_top)))
 }
 
 fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (StatusCode, String)> {
@@ -744,14 +749,14 @@ fn decode_sponge_schematic(encoded: &str) -> Result<Vec<SchematicBlock>, (Status
     for (index, palette_id) in block_ids.into_iter().enumerate() {
         let state = palette_by_id.get(&palette_id)
             .ok_or((StatusCode::BAD_REQUEST, "Sponge schematic BlockData references an unknown palette ID".into()))?;
-        let Some((material, axis)) = sponge_block_item(state)? else { continue; };
+        let Some((material, axis, slab_top)) = sponge_block_item(state)? else { continue; };
         if blocks.len() >= 256 {
             return Err((StatusCode::PAYLOAD_TOO_LARGE, "Sponge schematic contains more than 256 non-air blocks; split it into smaller builds".into()));
         }
         let x = index % width;
         let z = (index / width) % length;
         let y = index / (width * length);
-        blocks.push(SchematicBlock { x: x as i32 + offset[0], y: y as i32 + offset[1], z: z as i32 + offset[2], material, axis });
+        blocks.push(SchematicBlock { x: x as i32 + offset[0], y: y as i32 + offset[1], z: z as i32 + offset[2], material, axis, slab_top });
     }
     if blocks.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Sponge schematic contains no placeable non-air blocks".into()));
