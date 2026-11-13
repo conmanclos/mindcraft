@@ -1030,7 +1030,13 @@ async fn create_goal(State(state): State<ApiState>, headers: HeaderMap, Json(req
         connected_agents.len(),
         if connected_agents.is_empty() { "none".to_owned() } else { connected_agents.join(", ") }
     );
-    let planning_context = format!("{}\n{team_context}\n{memory_context}", request.description);
+    let mut online_players = state.status.online_players.lock().await.iter().cloned().collect::<Vec<_>>();
+    online_players.sort_unstable_by_key(|name| name.to_ascii_lowercase());
+    let player_context = format!(
+        "Other players currently listed online: {}.",
+        if online_players.is_empty() { "none".to_owned() } else { online_players.join(", ") }
+    );
+    let planning_context = format!("{}\n{team_context}\n{player_context}\n{memory_context}", request.description);
     let drafts = tokio::time::timeout(Duration::from_secs(50), state.brain.decompose_goal(&planning_context))
         .await.map_err(|_| (StatusCode::GATEWAY_TIMEOUT, "strategic planner timed out".into()))?
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
