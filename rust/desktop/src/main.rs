@@ -85,7 +85,7 @@ fn supported_provider(provider: &str) -> bool {
 fn provider_requires_api_key(provider: &str) -> bool {
     matches!(provider,
         "openai" | "anthropic" | "google" | "deepseek" | "groq" | "cerebras"
-        | "mistral" | "openrouter" | "xai" | "qwen" | "huggingface"
+        | "mistral" | "openrouter" | "xai" | "grok" | "qwen" | "huggingface"
         | "hyperbolic" | "novita" | "mercury"
     )
 }
