@@ -1,7 +1,7 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
 use azalea::{account::microsoft::MicrosoftAccountOpts, block::BlockStates, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage, MaxStackSize}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, registry::builtin::BlockKind, swarm::SwarmBuilder, BlockPos, WalkDirection};
-use std::{collections::HashSet, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
+use std::{collections::{HashMap, HashSet}, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant}};
 use tokio::sync::{broadcast, Mutex};
 
 #[derive(Debug, Clone)]
@@ -35,6 +35,7 @@ pub enum BotCommand {
     Mine(i32, i32, i32),
     Collect(String, u8, u16),
     Locate(String, u16),
+    NearbyBlocks(u8),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1199,6 +1200,55 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             if !cancelled() && client.exists() {
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
                             }
+                        });
+                    }
+                    BotCommand::NearbyBlocks(range) => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let Ok(position) = client.position() else {
+                                client.chat("I can't read my position to inspect nearby blocks.");
+                                return;
+                            };
+                            let origin = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
+                            let Ok(world) = client.world() else {
+                                client.chat("The loaded world is unavailable; I can't inspect nearby blocks.");
+                                return;
+                            };
+                            let radius = i32::from(range);
+                            let radius_squared = i64::from(range) * i64::from(range);
+                            let mut counts: HashMap<String, u32> = HashMap::new();
+                            {
+                                let world = world.read();
+                                for y in -radius..=radius {
+                                    for x in -radius..=radius {
+                                        for z in -radius..=radius {
+                                            let dx = i64::from(x);
+                                            let dy = i64::from(y);
+                                            let dz = i64::from(z);
+                                            if dx * dx + dy * dy + dz * dz > radius_squared { continue; }
+                                            let position = BlockPos::new(origin.x + x, origin.y + y, origin.z + z);
+                                            let Some(block) = world.get_block_state(position) else { continue; };
+                                            if block.is_air() { continue; }
+                                            let debug = format!("{block:?}");
+                                            let name = debug.split(['[', '{']).next().unwrap_or(&debug).trim().to_ascii_lowercase();
+                                            if !name.is_empty() {
+                                                *counts.entry(name).or_insert(0) += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if !client.exists() { return; }
+                            if counts.is_empty() {
+                                client.chat(format!("No non-air blocks are loaded within {range} blocks."));
+                                return;
+                            }
+                            let mut entries = counts.into_iter().collect::<Vec<_>>();
+                            entries.sort_unstable_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+                            let summary = entries.into_iter().take(20)
+                                .map(|(name, count)| format!("{name}: {count}"))
+                                .collect::<Vec<_>>().join("; ");
+                            client.chat(format!("Nearby blocks within {range} blocks (loaded blocks only): {summary}"));
                         });
                     }
                     BotCommand::Locate(block_name, range) => {
