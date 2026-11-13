@@ -77,7 +77,7 @@ fn supported_provider(provider: &str) -> bool {
     matches!(provider,
         "openai" | "openai-compatible" | "anthropic" | "google" | "ollama"
         | "deepseek" | "groq" | "cerebras" | "mistral" | "openrouter"
-        | "xai" | "qwen" | "huggingface" | "hyperbolic" | "novita"
+        | "xai" | "grok" | "qwen" | "huggingface" | "hyperbolic" | "novita"
         | "mercury" | "lmstudio" | "vllm"
     )
 }
@@ -101,7 +101,7 @@ fn default_provider_base_url(provider: &str) -> &'static str {
         "cerebras" => "https://api.cerebras.ai/v1",
         "mistral" => "https://api.mistral.ai/v1",
         "openrouter" => "https://openrouter.ai/api/v1",
-        "xai" => "https://api.x.ai/v1",
+        "xai" | "grok" => "https://api.x.ai/v1",
         "qwen" => "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "huggingface" => "https://router.huggingface.co/v1",
         "hyperbolic" => "https://api.hyperbolic.xyz/v1",
