@@ -6,7 +6,6 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
-#[derive(Clone)]
 fn safe_collect_target(target: &str) -> bool {
     let block = target.split('@').next().unwrap_or(target)
         .split('*').next().unwrap_or(target)
