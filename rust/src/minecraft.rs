@@ -291,7 +291,10 @@ fn nearby_point_of_interest(bot: &Client, radius: i32) -> Option<(BlockPos, Bloc
     let center = BlockPos::new(position.x.floor() as i32, position.y.floor() as i32, position.z.floor() as i32);
     let world = bot.world().ok()?;
     let world = world.read();
-    let biome = world.get_biome(center).map(|biome| format!("{biome:?}").to_ascii_lowercase()).unwrap_or_default();
+    let biome = world.get_biome(center)
+        .and_then(|biome| bot.with_resolved_registry(biome, |name, _| name.to_string()).ok().flatten())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     let radius = radius.clamp(4, 8);
     let mut best: Option<(f64, BlockPos, BlockPos, &'static str)> = None;
     for y in -3..=3 {
@@ -679,12 +682,15 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             } else {
                                 "minecraft:overworld".into()
                             };
-                            let biome = bot.world().ok().and_then(|world| {
+                            let biome_id = bot.world().ok().and_then(|world| {
                                 world.read().get_biome(BlockPos::new(
                                     position.x.floor() as i32,
                                     position.y.floor() as i32,
                                     position.z.floor() as i32,
-                                )).map(|biome| format!("{biome:?}"))
+                                ))
+                            });
+                            let biome = biome_id.and_then(|biome| {
+                                bot.with_resolved_registry(biome, |name, _| name.to_string()).ok().flatten()
                             });
                             let snapshot = crate::api::WorldSnapshot {
                                 agent: bot.username(),
