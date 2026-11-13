@@ -5,10 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     fs::OpenOptions,
-    io::{Read, Seek, SeekFrom},
+    io::{Read, Seek, SeekFrom, Write},
+    net::{SocketAddr, TcpStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
+    thread,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, State};
 use url::Url;
@@ -319,7 +322,50 @@ fn start_runtime(app: AppHandle, process: State<'_, RuntimeProcess>) -> Result<R
 
     let spawned = command.spawn().map_err(|e| format!("Could not start the Rust runtime: {e}"))?;
     *child = Some(spawned);
-    Ok(RuntimeLaunch { token, api_port })
+
+    // Do not report a successful launch until the child has actually bound
+    // its API port and answered the public health endpoint. This catches
+    // stale-port races and immediate configuration/startup failures.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let Some(running) = child.as_mut() else {
+            return Err("The Rust runtime process disappeared during startup.".into());
+        };
+        if let Some(status) = running.try_wait().map_err(|error| error.to_string())? {
+            *child = None;
+            return Err(format!(
+                "The Rust runtime exited during startup ({status}). Inspect {} for the startup error.",
+                log_path.display()
+            ));
+        }
+
+        let address = SocketAddr::from(([127, 0, 0, 1], api_port));
+        if let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(200)) {
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+            let request = b"GET /api/health HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n";
+            if stream.write_all(request).is_ok() {
+                let mut response = [0_u8; 128];
+                if let Ok(read) = stream.read(&mut response) {
+                    let status_line = String::from_utf8_lossy(&response[..read]);
+                    if status_line.starts_with("HTTP/1.1 200") || status_line.starts_with("HTTP/1.0 200") {
+                        return Ok(RuntimeLaunch { token, api_port });
+                    }
+                }
+            }
+        }
+
+        if Instant::now() >= deadline {
+            if let Some(mut running) = child.take() {
+                let _ = running.kill();
+                let _ = running.wait();
+            }
+            return Err(format!(
+                "The Rust runtime did not become healthy within 15 seconds. Its startup log is at {}.",
+                log_path.display()
+            ));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 #[tauri::command]
