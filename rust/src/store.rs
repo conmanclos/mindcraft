@@ -104,7 +104,8 @@ impl Store {
                assigned_agent TEXT,
                lease_until TEXT,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               verification_note TEXT
              );
              CREATE INDEX IF NOT EXISTS agent_tasks_queue_idx ON agent_tasks(status, role, priority DESC, id);
              CREATE TABLE IF NOT EXISTS memories (
@@ -144,6 +145,9 @@ impl Store {
         }
         if !task_columns.iter().any(|name| name == "available_at") {
             connection.execute("ALTER TABLE agent_tasks ADD COLUMN available_at TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'", [])?;
+        }
+        if !task_columns.iter().any(|name| name == "verification_note") {
+            connection.execute("ALTER TABLE agent_tasks ADD COLUMN verification_note TEXT", [])?;
         }
         connection.execute(
             "CREATE INDEX IF NOT EXISTS agent_tasks_ready_idx ON agent_tasks(status, available_at, priority DESC, id)",
@@ -685,6 +689,13 @@ impl Store {
     }
 
     pub fn complete_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
+        self.complete_task_verified(task_id, agent_id, "verified by authorized task owner")
+    }
+
+    pub fn complete_task_verified(&self, task_id: i64, agent_id: &str, verification_note: &str) -> Result<bool> {
+        if verification_note.trim().is_empty() || verification_note.len() > 500 {
+            anyhow::bail!("verification note must contain 1-500 bytes");
+        }
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task: Option<(i64, String, String)> = tx.query_row(
@@ -702,10 +713,10 @@ impl Store {
         // tasks intentionally have no lease, so do not apply the lease check
         // to that state.
         let changed = tx.execute(
-            "UPDATE agent_tasks SET status='complete', lease_until=NULL, updated_at=CURRENT_TIMESTAMP
+            "UPDATE agent_tasks SET status='complete', lease_until=NULL, verification_note=?3, updated_at=CURRENT_TIMESTAMP
              WHERE id=?1 AND assigned_agent=?2
                AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
-            params![task_id, agent_id],
+            params![task_id, agent_id, verification_note.trim()],
         )?;
         if changed != 1 {
             tx.commit()?;
@@ -718,10 +729,11 @@ impl Store {
              )",
             [goal_id],
         )?;
-        // Completion is only accepted after the worker owner explicitly
-        // confirms the result; preserve that verified outcome as episodic memory.
         let memory_subject = format!("verified-task-{task_id}");
-        let memory_content = format!("Verified completion by {agent_id} for the {role} task: {description}");
+        let memory_content = format!(
+            "Verified completion by {agent_id} for the {role} task: {description}. Observed result: {}",
+            verification_note.trim()
+        );
         tx.execute(
             "INSERT INTO memories(kind, subject, content, confidence, importance, source)
              VALUES ('episodic', ?1, ?2, 1.0, 35, 'verified_task')
