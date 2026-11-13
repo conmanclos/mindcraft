@@ -46,6 +46,7 @@ pub enum BotCommand {
     Explore(u16),
     ContainerTransfer(i32, i32, i32, Option<(u16, u16)>, Option<String>),
     ContainerDeposit(i32, i32, i32, Option<String>),
+    ContainerSort(i32, i32, i32),
     Craft(String, Option<(i32, i32, i32)>, u8),
     Smelt(String, (i32, i32, i32), u8),
     SmeltQueue(Vec<SmeltJob>),
@@ -1558,6 +1559,20 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                         });
                     }
+                    BotCommand::ContainerSort(x, y, z) => {
+                        let generation = state.mine_generation.as_ref()
+                            .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
+                        let generation_state = state.mine_generation.clone();
+                        if let Some(target) = &state.follow_target { *target.lock().await = None; }
+                        if let Some(following) = &state.is_following { following.store(false, Ordering::Relaxed); }
+                        if let Some(exploring) = &state.is_exploring { exploring.store(false, Ordering::Relaxed); }
+                        bot.stop_pathfinding();
+                        bot.walk(WalkDirection::None);
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            execute_container_sort(client, BlockPos::new(x, y, z), generation_state, generation).await;
+                        });
+                    }
                     BotCommand::ContainerDeposit(x, y, z, filter) => {
                         let generation = state.mine_generation.as_ref()
                             .map(|value| value.fetch_add(1, Ordering::Relaxed) + 1).unwrap_or(0);
@@ -3065,6 +3080,140 @@ async fn execute_inventory_sort(
         bot.chat("Main inventory sorted and server-confirmed. Hotbar, armor, and offhand were preserved.");
     } else {
         bot.chat("Inventory sorting ended with a mismatch. Inspect the main inventory before issuing another sort.");
+    }
+}
+
+async fn execute_container_sort(
+    bot: Client,
+    position: BlockPos,
+    generation_state: Option<Arc<AtomicUsize>>,
+    generation: usize,
+) {
+    let cancelled = || generation_state.as_ref()
+        .is_some_and(|value| value.load(Ordering::Relaxed) != generation);
+    if cancelled() { return; }
+    let Ok(world) = bot.world() else {
+        bot.chat("I can't read the loaded world to reach that storage container.");
+        return;
+    };
+    if !world.read().get_block_state(position).is_some_and(|block| !block.is_air()) {
+        bot.chat("That storage coordinate is not a loaded non-air block.");
+        return;
+    }
+    let chunk_storage = world.read().chunks.clone();
+    if !goto_cancellable(
+        &bot,
+        ReachBlockPosGoal::new(position, chunk_storage),
+        &generation_state,
+        generation,
+    ).await {
+        if !cancelled() { bot.chat("Pathfinding to the storage container timed out or failed."); }
+        return;
+    }
+    if cancelled() || !bot.exists() || !bot.is_goto_target_reached() {
+        if !cancelled() { bot.chat("I couldn't reach that container without breaking blocks."); }
+        return;
+    }
+    let Ok(own_position) = bot.position() else { return; };
+    let dx = own_position.x - (position.x as f64 + 0.5);
+    let dy = own_position.y - (position.y as f64 + 0.5);
+    let dz = own_position.z - (position.z as f64 + 0.5);
+    if dx * dx + dy * dy + dz * dz > 20.25 {
+        bot.chat("That container is outside the 4.5-block interaction reach.");
+        return;
+    }
+    bot.look_at(position.center());
+    bot.wait_updates(1).await;
+    if cancelled() { return; }
+    if !matches!(bot.hit_result(), Ok(HitResult::Block(hit)) if !hit.miss && hit.block_pos == position) {
+        bot.chat("I don't have a clear line of sight to that storage container.");
+        return;
+    }
+    match bot.open_container_at(position).await {
+        Ok(Some(container)) => {
+            if cancelled() { drop(container); return; }
+            let Some(menu) = container.menu().ok().flatten() else {
+                bot.chat("The container menu closed before sorting could begin.");
+                drop(container);
+                return;
+            };
+            let container_slots = *menu.player_slots_range().start();
+            if !(9..=54).contains(&container_slots) || container_slots % 9 != 0 {
+                bot.chat("This menu is not a supported 9-, 27-, or 54-slot storage container. Nothing was moved.");
+                drop(container);
+                return;
+            }
+            let snapshot = container.slots().unwrap_or_default();
+            if snapshot.len() < container_slots {
+                bot.chat("The storage menu layout changed before sorting. Nothing was moved.");
+                drop(container);
+                return;
+            }
+            let key = |item: &_| -> String {
+                if item.is_empty() { String::new() } else { format!("{item:?}") }
+            };
+            let mut current = (0..container_slots).map(|slot| key(&snapshot[slot])).collect::<Vec<_>>();
+            let mut desired = current.iter().filter(|value| !value.is_empty()).cloned().collect::<Vec<_>>();
+            desired.sort();
+            desired.resize(container_slots, String::new());
+            if current == desired {
+                bot.chat("Storage container is already sorted. Player inventory was untouched.");
+                drop(container);
+                return;
+            }
+            for target_index in 0..container_slots {
+                if cancelled() {
+                    bot.chat("Storage sorting cancelled after the current safe slot operation.");
+                    drop(container);
+                    return;
+                }
+                if current[target_index] == desired[target_index] { continue; }
+                let Some(source_index) = (target_index + 1..container_slots)
+                    .find(|index| current[*index] == desired[target_index]) else {
+                    bot.chat("Storage sorting stopped because the live slot layout changed.");
+                    drop(container);
+                    return;
+                };
+                let source = source_index;
+                let target = target_index;
+                container.left_click(source);
+                bot.wait_updates(1).await;
+                container.left_click(target);
+                bot.wait_updates(1).await;
+                if !current[target].is_empty() {
+                    container.left_click(source);
+                    bot.wait_updates(2).await;
+                    current.swap(target, source);
+                } else {
+                    bot.wait_updates(2).await;
+                    current[target] = current[source].clone();
+                    current[source].clear();
+                }
+                if cancelled() { drop(container); return; }
+                let Some(live) = container.slots() else {
+                    bot.chat("Storage menu closed during sorting. Inspect the chest before retrying.");
+                    drop(container);
+                    return;
+                };
+                if live.get(target).map(key) != Some(current[target].clone())
+                    || live.get(source).map(key) != Some(current[source].clone()) {
+                    bot.chat("The server did not confirm the storage slot swap. Sorting stopped.");
+                    drop(container);
+                    return;
+                }
+            }
+            let confirmed = container.slots().is_some_and(|live| {
+                (0..container_slots).all(|slot| live.get(slot).map(key) == Some(desired[slot].clone()))
+            });
+            if confirmed {
+                bot.chat("Storage container sorted and server-confirmed. Player inventory was untouched.");
+            } else {
+                bot.chat("Storage sorting ended with a mismatch. Inspect the container before issuing another sort.");
+            }
+            drop(container);
+        }
+        Ok(None) => bot.chat("I could not open that block as a storage container."),
+        Err(error) => tracing::warn!(username = %bot.username(), %error, "storage sort failed to open container"),
     }
 }
 
