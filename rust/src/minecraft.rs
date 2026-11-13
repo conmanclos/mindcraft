@@ -10,6 +10,7 @@ pub struct BuildBlock {
     pub x: i32,
     pub y: i32,
     pub z: i32,
+    pub axis: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -4424,6 +4425,7 @@ fn placement_face_point(support: BlockPos, face: Direction) -> azalea::Vec3 {
 async fn place_block_at(
     bot: &Client,
     target: BlockPos,
+    axis: Option<&str>,
     generation_state: &Option<Arc<AtomicUsize>>,
     generation: usize,
 ) -> bool {
@@ -4434,14 +4436,28 @@ async fn place_block_at(
     if !world.read().get_block_state(target).is_some_and(|block| block.is_air()) {
         return false;
     }
-    let supports = [
-        (target.down(1), Direction::Up),
-        (target.north(1), Direction::South),
-        (target.south(1), Direction::North),
-        (target.west(1), Direction::East),
-        (target.east(1), Direction::West),
-        (target.up(1), Direction::Down),
-    ];
+    let supports = match axis {
+        Some("y") => vec![
+            (target.down(1), Direction::Up),
+            (target.up(1), Direction::Down),
+        ],
+        Some("x") => vec![
+            (target.west(1), Direction::East),
+            (target.east(1), Direction::West),
+        ],
+        Some("z") => vec![
+            (target.north(1), Direction::South),
+            (target.south(1), Direction::North),
+        ],
+        _ => vec![
+            (target.down(1), Direction::Up),
+            (target.north(1), Direction::South),
+            (target.south(1), Direction::North),
+            (target.west(1), Direction::East),
+            (target.east(1), Direction::West),
+            (target.up(1), Direction::Down),
+        ],
+    };
     for (support, face) in supports {
         if cancelled() || !bot.exists() { return false; }
         if !world.read().get_block_state(support).is_some_and(|block| block.is_collision_shape_full()) {
@@ -4473,7 +4489,16 @@ async fn place_block_at(
                 bot.block_interact(support);
                 for _ in 0..10 {
                     if cancelled() { return false; }
-                    if world.read().get_block_state(target).is_some_and(|block| !block.is_air()) {
+                    if let Some(placed) = world.read().get_block_state(target).filter(|block| !block.is_air()) {
+                        if let Some(expected_axis) = axis {
+                            let compact: String = format!("{placed:?}").chars()
+                                .filter(|character| character.is_ascii_alphanumeric())
+                                .flat_map(char::to_lowercase)
+                                .collect();
+                            if !compact.contains(&format!("axis{expected_axis}")) {
+                                return false;
+                            }
+                        }
                         return true;
                     }
                     bot.wait_ticks(1).await;
@@ -4860,7 +4885,7 @@ async fn execute_build(
     for (index, (x, y, z)) in positions.iter().copied().enumerate() {
         if cancelled() || !bot.exists() { return; }
         let target = BlockPos::new(x, y, z);
-        if !place_block_at(&bot, target, &generation_state, generation).await {
+        if !place_block_at(&bot, target, block.axis.as_deref(), &generation_state, generation).await {
             if !cancelled() {
                 bot.chat(format!("Build stopped at block {} of {} ( {}, {}, {} ): placement was not confirmed. Check support, reach, line of sight, and the selected block stack.", index + 1, positions.len(), x, y, z));
             }
