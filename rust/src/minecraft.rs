@@ -38,6 +38,7 @@ pub enum BotCommand {
     NearbyBlocks(u8),
     Craftable,
     Entities(u16),
+    LocateEntity(String, u16),
     Place(i32, i32, i32),
     Till(i32, i32, i32),
     Plant(i32, i32, i32),
@@ -1201,6 +1202,57 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                             }
                             if !cancelled() && client.exists() {
                                 client.chat(format!("Gathering finished: mined {mined} of {count} requested {block_name} blocks within {range} loaded blocks. Unreachable or protected blocks were skipped."));
+                            }
+                        });
+                    }
+                    BotCommand::LocateEntity(query, range) => {
+                        let client = bot.clone();
+                        tokio::task::spawn_local(async move {
+                            let needle = query.chars().filter(|character| character.is_ascii_alphanumeric())
+                                .flat_map(char::to_lowercase).collect::<String>();
+                            let radius = f64::from(range);
+                            let mut nearest: Option<(f64, String, String)> = None;
+                            let tab_list = client.tab_list();
+                            let players = client.nearest_entities_by::<(), azalea::ecs::prelude::With<azalea::entity::metadata::Player>>(|_: ()| true);
+                            for player in players {
+                                if player.uuid() == client.uuid() { continue; }
+                                let Some(profile) = tab_list.get(&player.uuid()) else { continue; };
+                                let name = profile.profile.name.as_str();
+                                let compact_name = name.chars().filter(|character| character.is_ascii_alphanumeric())
+                                    .flat_map(char::to_lowercase).collect::<String>();
+                                let distance = player.distance_to_client();
+                                if distance <= radius && compact_name.contains(&needle) {
+                                    let position = player.position();
+                                    let candidate = (distance, format!("player {name}"),
+                                        format!("{:.0}, {:.0}, {:.0}", position.x, position.y, position.z));
+                                    if nearest.as_ref().map_or(true, |current| distance < current.0) {
+                                        nearest = Some(candidate);
+                                    }
+                                }
+                            }
+                            let mobs = client.nearest_entities_by::<(), (
+                                azalea::ecs::prelude::With<azalea::core::entity_id::MinecraftEntityId>,
+                                azalea::ecs::prelude::Without<azalea::entity::metadata::Player>,
+                            )>(|_: ()| true);
+                            for entity in mobs {
+                                let distance = entity.distance_to_client();
+                                if distance > radius { continue; }
+                                let kind = format!("{:?}", entity.kind());
+                                let compact_kind = kind.chars().filter(|character| character.is_ascii_alphanumeric())
+                                    .flat_map(char::to_lowercase).collect::<String>();
+                                if compact_kind.contains("item") || !compact_kind.contains(&needle) { continue; }
+                                let position = entity.position();
+                                let candidate = (distance, compact_kind,
+                                    format!("{:.0}, {:.0}, {:.0}", position.x, position.y, position.z));
+                                if nearest.as_ref().map_or(true, |current| distance < current.0) {
+                                    nearest = Some(candidate);
+                                }
+                            }
+                            if !client.exists() { return; }
+                            if let Some((distance, label, position)) = nearest {
+                                client.chat(format!("Nearest {label} found at {position} ({distance:.1} blocks away)."));
+                            } else {
+                                client.chat(format!("No loaded entity matching '{query}' was found within {range} blocks."));
                             }
                         });
                     }
