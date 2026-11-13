@@ -34,7 +34,7 @@ impl Config {
         }
         let provider = env::var("MINDCRAFT_PROVIDER").unwrap_or_else(|_| "ollama".into()).to_lowercase();
         if !supported_provider(&provider) {
-            bail!("MINDCRAFT_PROVIDER must be openai, anthropic, google, ollama, openai-compatible, deepseek, groq, cerebras, mistral, openrouter, xai/grok, qwen, huggingface, hyperbolic, novita, mercury, lmstudio, or vllm");
+            bail!("MINDCRAFT_PROVIDER must be openai, anthropic, google, ollama, openai-compatible, deepseek, groq, cerebras, mistral, openrouter, xai/grok, qwen, huggingface, hyperbolic, novita, mercury, lmstudio, vllm, or azure");
         }
         let minecraft_auth = env::var("MINDCRAFT_MC_AUTH").unwrap_or_else(|_| "offline".into()).to_lowercase();
         if !["offline", "microsoft"].contains(&minecraft_auth.as_str()) {
