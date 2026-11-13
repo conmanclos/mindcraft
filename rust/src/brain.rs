@@ -221,7 +221,7 @@ impl Brain {
             bail!("assisted mode requires explicit approval for every action ('{}')", action.action);
         }
         if ["attack", "use_item", "eat", "container_transfer", "container_deposit", "container_sort", "optimize_armor", "trade", "enter_portal"].contains(&action_name.as_str()) && !explicit_approval {
-            bail!("attack, generic item use, all container transfers (including deposits and storage sorting), armor replacement, merchant trades, and portal transitions always require explicit user approval, including in autonomous mode");
+            bail!("attack, generic item use, food consumption, all container transfers (including deposits and storage sorting), armor replacement, merchant trades, and portal transitions always require explicit user approval, including in autonomous mode");
         }
         // Never let an LLM-provided risk label downgrade a dangerous executor.
         // The runtime assigns a minimum risk from the action itself, then takes the
