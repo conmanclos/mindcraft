@@ -682,7 +682,7 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             let mut critical_health = false;
             if bot.exists() {
                 let (Ok(health), Ok(hunger)) = (bot.health(), bot.hunger()) else { return Ok(()); };
-                critical_health = health.is_finite() && health <= 6.0;
+                critical_health = !health.is_finite() || health <= 6.0;
 
                 if let Some(status) = &state.status {
                     let should_snapshot = if let Some(last) = &state.last_snapshot {
