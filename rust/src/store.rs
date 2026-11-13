@@ -538,7 +538,7 @@ impl Store {
         if changed == 1 {
             tx.execute(
                 "UPDATE agent_tasks SET status='pending', assigned_agent=NULL, lease_until=NULL,
-                 attempts=0, available_at=CURRENT_TIMESTAMP,
+                 attempts=0, available_at=CURRENT_TIMESTAMP, verification_note=NULL,
                  last_error=CASE WHEN last_error IS NULL THEN NULL ELSE 'previous failure: ' || last_error END,
                  updated_at=CURRENT_TIMESTAMP
                  WHERE goal_id=?1 AND status IN ('failed','cancelled','review')",
