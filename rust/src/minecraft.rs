@@ -3399,6 +3399,11 @@ async fn execute_trade(
         }
         if cancelled() { return false; }
         if merchant.look_at().is_err() { return false; }
+        bot.wait_updates(1).await;
+        if !matches!(bot.hit_result(), Ok(HitResult::Entity(hit)) if hit.entity == merchant.id()) {
+            bot.chat("The merchant is not directly visible. I will not interact through a wall or obstruction.");
+            return false;
+        }
         merchant.interact();
         let mut offers = None;
         for _ in 0..60 {
