@@ -368,6 +368,20 @@ impl Store {
         Ok(id)
     }
 
+    /// Return durable exploration POI subjects independently of general memory
+    /// ranking, so frequently used semantic memories cannot crowd them out.
+    pub fn list_exploration_poi_subjects(&self, limit: usize) -> Result<Vec<String>> {
+        let connection = self.connection.lock()
+            .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let mut statement = connection.prepare(
+            "SELECT subject FROM memories
+             WHERE kind='world' AND subject GLOB 'poi:[-0-9]*'
+             ORDER BY updated_at DESC, id DESC LIMIT ?1"
+        )?;
+        let rows = statement.query_map([limit.clamp(1, 1024) as i64], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn list_memories(&self, kind: Option<&str>, limit: usize) -> Result<Vec<MemoryRecord>> {
         let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
