@@ -811,9 +811,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             // Restore the dimension-local exploration index from its dedicated
             // SQLite table. This history is not subject to general AI-memory eviction.
             if let (Some(store), Some(visited)) = (&state.store, &state.visited_pois) {
-                let active_dimension = state.dimension.as_ref()
-                    .and_then(|dimension| dimension.try_lock().ok().map(|value| value.clone()))
-                    .unwrap_or_else(|| "minecraft:overworld".to_owned());
+                let active_dimension = if let Some(dimension) = &state.dimension {
+                    dimension.lock().await.clone()
+                } else {
+                    "minecraft:overworld".to_owned()
+                };
                 match store.list_exploration_pois(&active_dimension, 4096) {
                     Ok(positions) => {
                         let mut restored = visited.lock().await;
