@@ -173,6 +173,7 @@ impl Store {
                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
              CREATE INDEX IF NOT EXISTS resource_reservations_expiry_idx ON resource_reservations(expires_at);
+             CREATE INDEX IF NOT EXISTS resource_reservations_task_idx ON resource_reservations(task_id, agent_id);
              CREATE TABLE IF NOT EXISTS memories (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
                kind TEXT NOT NULL CHECK(kind IN ('semantic','episodic','preference','world')),
