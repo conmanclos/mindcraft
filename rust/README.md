@@ -176,7 +176,7 @@ The dashboard is served from `/`. `GET /api/health` is public; all other API rou
 | `POST /api/tasks/{id}/release` | Release a task back to the pending queue when a worker cannot complete it |
 | `POST /api/tasks/{id}/complete` | Complete a task owned by the requesting agent |
 
-Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guardian`. Claims include an agent ID so multiple workers can share the same SQLite database without taking the same live task.
+Worker roles are `planner`, `scout`, `gatherer`, `builder`, `crafter`, and `guardian`. Claims include an agent ID so multiple workers can share the same SQLite database without taking the same live task. Mutating specialist actions that name a world target also acquire a durable, normalized target reservation before dispatch; competing workers are requeued without consuming an attempt, and active task heartbeats extend the reservation while the player reviews the result. Reservations are released atomically on task completion, failure, release, goal retry/cancellation, failed-goal cleanup, or worker-lease expiry, with a bounded 15-minute idle expiry as a crash-recovery fallback.
 
 ## Important scope boundary
 
