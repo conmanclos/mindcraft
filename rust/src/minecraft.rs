@@ -5811,7 +5811,7 @@ async fn execute_build_mixed(
             selected_slot = Some(slot);
         }
         let target = BlockPos::new(block.x, block.y, block.z);
-        if !place_block_at(&bot, target, None, None, &generation_state, generation).await {
+        if !place_block_at(&bot, target, block.axis.as_deref(), block.slab_top, &generation_state, generation).await {
             if !cancelled() {
                 bot.chat(format!("Build stopped at block {} of {} ({} {} {}): placement was not confirmed. Check support, reach, line of sight, and material stock.", index + 1, blocks.len(), block.x, block.y, block.z));
             }
