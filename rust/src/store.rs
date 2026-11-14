@@ -164,6 +164,15 @@ impl Store {
                verification_note TEXT
              );
              CREATE INDEX IF NOT EXISTS agent_tasks_queue_idx ON agent_tasks(status, role, priority DESC, id);
+             CREATE TABLE IF NOT EXISTS resource_reservations (
+               resource_key TEXT PRIMARY KEY,
+               agent_id TEXT NOT NULL,
+               task_id INTEGER NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+               expires_at TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE INDEX IF NOT EXISTS resource_reservations_expiry_idx ON resource_reservations(expires_at);
              CREATE TABLE IF NOT EXISTS memories (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
                kind TEXT NOT NULL CHECK(kind IN ('semantic','episodic','preference','world')),
@@ -615,6 +624,71 @@ impl Store {
             priority: row.get(4)?, status: row.get(5)?, assigned_agent: row.get(6)?, lease_until: row.get(7)?, attempts: row.get(8)?, last_error: row.get(9)?, available_at: row.get(10)?, verification_note: row.get(11)?
         }))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Reserve a shared world resource while a specialist task is being executed
+    /// and reviewed. Reservations are durable across bot reconnects and expire
+    /// automatically if a worker or desktop process disappears.
+    pub fn reserve_resource(
+        &self,
+        resource_key: &str,
+        agent_id: &str,
+        task_id: i64,
+        lease_seconds: u64,
+    ) -> Result<bool> {
+        if resource_key.trim().is_empty() || resource_key.len() > 160
+            || resource_key.chars().any(char::is_control) {
+            anyhow::bail!("resource reservation keys must contain 1-160 non-control bytes");
+        }
+        if agent_id.is_empty() || agent_id.len() > 64
+            || !agent_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')) {
+            anyhow::bail!("reservation agent ID must contain 1-64 safe ASCII characters");
+        }
+        if task_id <= 0 || !(15..=900).contains(&lease_seconds) {
+            anyhow::bail!("resource reservations require a positive task ID and a 15-900 second lease");
+        }
+        let mut connection = self.connection.lock()
+            .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let owns_task: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM agent_tasks WHERE id=?1 AND assigned_agent=?2
+             AND status='claimed' AND lease_until > CURRENT_TIMESTAMP)",
+            params![task_id, agent_id],
+            |row| row.get(0),
+        )?;
+        if !owns_task {
+            tx.commit()?;
+            return Ok(false);
+        }
+        tx.execute(
+            "DELETE FROM resource_reservations WHERE expires_at <= CURRENT_TIMESTAMP",
+            [],
+        )?;
+        let changed = tx.execute(
+            "INSERT INTO resource_reservations(resource_key, agent_id, task_id, expires_at)
+             VALUES (?1, ?2, ?3, datetime('now', '+' || ?4 || ' seconds'))
+             ON CONFLICT(resource_key) DO UPDATE SET
+               agent_id=excluded.agent_id, task_id=excluded.task_id,
+               expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
+             WHERE resource_reservations.agent_id=excluded.agent_id
+               AND resource_reservations.task_id=excluded.task_id",
+            params![resource_key, agent_id, task_id, lease_seconds as i64],
+        )?;
+        tx.commit()?;
+        Ok(changed == 1)
+    }
+
+    /// Remove all world-resource reservations held by one task.
+    fn release_task_reservations(
+        connection: &rusqlite::Connection,
+        task_id: i64,
+        agent_id: &str,
+    ) -> Result<()> {
+        connection.execute(
+            "DELETE FROM resource_reservations WHERE task_id=?1 AND agent_id=?2",
+            params![task_id, agent_id],
+        )?;
+        Ok(())
     }
 
     pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
