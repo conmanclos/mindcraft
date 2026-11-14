@@ -174,6 +174,18 @@ impl Store {
              );
              CREATE INDEX IF NOT EXISTS resource_reservations_expiry_idx ON resource_reservations(expires_at);
              CREATE INDEX IF NOT EXISTS resource_reservations_task_idx ON resource_reservations(task_id, agent_id);
+             CREATE TABLE IF NOT EXISTS exploration_pois (
+               dimension TEXT NOT NULL,
+               x INTEGER NOT NULL,
+               y INTEGER NOT NULL,
+               z INTEGER NOT NULL,
+               kind TEXT NOT NULL,
+               discovered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+               PRIMARY KEY(dimension, x, y, z)
+             );
+             CREATE INDEX IF NOT EXISTS exploration_pois_recent_idx
+               ON exploration_pois(dimension, last_seen_at DESC);
              CREATE TABLE IF NOT EXISTS memories (
                id INTEGER PRIMARY KEY AUTOINCREMENT,
                kind TEXT NOT NULL CHECK(kind IN ('semantic','episodic','preference','world')),
@@ -368,17 +380,55 @@ impl Store {
         Ok(id)
     }
 
-    /// Return durable exploration POI subjects independently of general memory
-    /// ranking, so frequently used semantic memories cannot crowd them out.
-    pub fn list_exploration_poi_subjects(&self, limit: usize) -> Result<Vec<String>> {
+    /// Persist a discovered point of interest independently of bounded AI memory.
+    pub fn record_exploration_poi(
+        &self,
+        dimension: &str,
+        x: i32,
+        y: i32,
+        z: i32,
+        kind: &str,
+    ) -> Result<()> {
+        if dimension.is_empty() || dimension.len() > 128
+            || dimension.chars().any(char::is_control)
+            || kind.is_empty() || kind.len() > 80
+            || kind.chars().any(char::is_control)
+            || x.abs() > 30_000_000 || z.abs() > 30_000_000
+            || !(-2048..=2048).contains(&y)
+        {
+            anyhow::bail!("exploration POI identity is outside supported bounds");
+        }
+        let connection = self.connection.lock()
+            .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        connection.execute(
+            "INSERT INTO exploration_pois(dimension,x,y,z,kind)
+             VALUES (?1,?2,?3,?4,?5)
+             ON CONFLICT(dimension,x,y,z) DO UPDATE SET
+               kind=excluded.kind, last_seen_at=CURRENT_TIMESTAMP",
+            params![dimension, x, y, z, kind],
+        )?;
+        Ok(())
+    }
+
+    /// Load recent POIs for one dimension without mixing coordinates from other dimensions.
+    pub fn list_exploration_pois(
+        &self,
+        dimension: &str,
+        limit: usize,
+    ) -> Result<Vec<(i32, i32, i32)>> {
+        if dimension.is_empty() || dimension.len() > 128 {
+            anyhow::bail!("exploration dimension is invalid");
+        }
         let connection = self.connection.lock()
             .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
-            "SELECT subject FROM memories
-             WHERE kind='world' AND subject LIKE 'poi%'
-             ORDER BY updated_at DESC, id DESC LIMIT ?1"
+            "SELECT x,y,z FROM exploration_pois
+             WHERE dimension=?1
+             ORDER BY last_seen_at DESC, discovered_at DESC LIMIT ?2"
         )?;
-        let rows = statement.query_map([limit.clamp(1, 1024) as i64], |row| row.get(0))?;
+        let rows = statement.query_map(params![dimension, limit.clamp(1, 4096) as i64], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
