@@ -808,6 +808,35 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Spawn => {
             let username = bot.username();
             discard_pending_commands(&state, &username, "spawn").await;
+            // Restore the bounded exploration exclusion set from durable world
+            // memories. Without this hydration, every reconnect would rediscover
+            // the same POIs and spend its exploration budget revisiting old sites.
+            if let (Some(store), Some(visited)) = (&state.store, &state.visited_pois) {
+                match store.list_memories(Some("world"), 200) {
+                    Ok(memories) => {
+                        let mut restored = visited.lock().await;
+                        for memory in memories {
+                            let Some(coordinates) = memory.subject.strip_prefix("poi:") else { continue; };
+                            let mut parts = coordinates.split(':');
+                            let parsed = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                                (Some(x), Some(y), Some(z), None) => {
+                                    match (x.parse::<i32>(), y.parse::<i32>(), z.parse::<i32>()) {
+                                        (Ok(x), Ok(y), Ok(z)) => Some((x, y, z)),
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            };
+                            if let Some(position) = parsed {
+                                restored.insert(position);
+                                if restored.len() >= 1024 { break; }
+                            }
+                        }
+                        tracing::debug!(username = %username, restored = restored.len(), "restored persistent exploration POI exclusions");
+                    }
+                    Err(error) => tracing::warn!(%error, username = %username, "could not restore persistent exploration POIs"),
+                }
+            }
             if let Some(status) = &state.status {
                 let mut connection = status.connection.lock().await;
                 connection.state = "connected".into();
