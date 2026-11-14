@@ -898,13 +898,34 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
         Event::Packet(packet) => {
             match packet.as_ref() {
                 ClientboundGamePacket::Login(login) => {
-                    if let Some(dimension) = &state.dimension {
-                        *dimension.lock().await = login.common.dimension.to_string();
+                    let next_dimension = login.common.dimension.to_string();
+                    let changed = if let Some(dimension) = &state.dimension {
+                        let mut current = dimension.lock().await;
+                        let changed = *current != next_dimension;
+                        *current = next_dimension.clone();
+                        changed
+                    } else { false };
+                    if changed {
+                        if let Some(visited) = &state.visited_pois { visited.lock().await.clear(); }
+                        if let Some(origin) = &state.explore_origin { *origin.lock().await = None; }
+                        if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
                     }
                 }
                 ClientboundGamePacket::Respawn(respawn) => {
-                    if let Some(dimension) = &state.dimension {
-                        *dimension.lock().await = respawn.common.dimension.to_string();
+                    let next_dimension = respawn.common.dimension.to_string();
+                    let changed = if let Some(dimension) = &state.dimension {
+                        let mut current = dimension.lock().await;
+                        let changed = *current != next_dimension;
+                        *current = next_dimension.clone();
+                        changed
+                    } else { false };
+                    if changed {
+                        // The in-memory POI set is dimension-local. Clear it on
+                        // portal transitions; durable records remain partitioned
+                        // by dimension and are rehydrated on the next spawn.
+                        if let Some(visited) = &state.visited_pois { visited.lock().await.clear(); }
+                        if let Some(origin) = &state.explore_origin { *origin.lock().await = None; }
+                        if let Some(step) = &state.explore_step { step.store(0, Ordering::Relaxed); }
                     }
                 }
                 ClientboundGamePacket::MerchantOffers(packet) => {
