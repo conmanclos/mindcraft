@@ -1,7 +1,7 @@
 use crate::{api::RuntimeStatus, brain::Brain, store::Store};
 use anyhow::Result;
 use azalea::{account::microsoft::MicrosoftAccountOpts, block::BlockStates, core::{direction::Direction, hit_result::HitResult}, inventory::components::{Damage, Enchantments, MaxDamage, MaxStackSize}, pathfinder::{PathfinderClientExt, PathfinderOpts, goals::{BlockPosGoal, ReachBlockPosGoal}}, prelude::*, protocol::packets::game::{ClientboundGamePacket, s_select_trade::ServerboundSelectTrade}, registry::builtin::BlockKind, swarm::SwarmBuilder, BlockPos, WalkDirection};
-use std::{collections::{HashMap, HashSet}, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
+use std::{collections::{hash_map::DefaultHasher, HashMap, HashSet}, hash::{Hash, Hasher}, sync::{atomic::{AtomicBool, AtomicUsize, Ordering}, Arc}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use tokio::sync::{broadcast, Mutex};
 
 const MAX_TRACKED_ONLINE_PLAYERS: usize = 256;
@@ -585,7 +585,14 @@ async fn run_specialist_task(
                 let dimension = status.agents.lock().await.get(&agent_id)
                     .map(|snapshot| snapshot.dimension.clone())
                     .unwrap_or_else(|| "unknown".to_owned());
-                let resource_key = format!("minecraft:{dimension}:{target}");
+                // Normalize equivalent target spellings and hash the value so
+                // arbitrary schematic/build strings never inflate SQLite keys
+                // or leak raw world-target descriptions into the lock table.
+                let normalized_target = target.split_whitespace()
+                    .collect::<Vec<_>>().join(" ").to_ascii_lowercase();
+                let mut resource_hasher = DefaultHasher::new();
+                (dimension, normalized_target).hash(&mut resource_hasher);
+                let resource_key = format!("minecraft-target:{:016x}", resource_hasher.finish());
                 if !store.reserve_resource(&resource_key, &agent_id, task.id, 900)? {
                     if store.release_task(task.id, &agent_id)? {
                         bot.chat(format!(
