@@ -375,7 +375,7 @@ impl Store {
             .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let mut statement = connection.prepare(
             "SELECT subject FROM memories
-             WHERE kind='world' AND subject GLOB 'poi:[-0-9]*'
+             WHERE kind='world' AND subject LIKE 'poi:%'
              ORDER BY updated_at DESC, id DESC LIMIT ?1"
         )?;
         let rows = statement.query_map([limit.clamp(1, 1024) as i64], |row| row.get(0))?;
