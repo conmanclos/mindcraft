@@ -202,6 +202,9 @@ fn default_memory_source() -> String { "user".into() }
 struct AgentClaimRequest { agent_id: String, role: String }
 
 #[derive(Deserialize)]
+struct AgentTaskRequest { agent_id: String }
+
+#[derive(Deserialize)]
 struct CompleteTaskRequest { agent_id: String, verification_note: String }
 
 #[derive(Deserialize)]
@@ -1861,7 +1864,7 @@ async fn claim_task(State(state): State<ApiState>, headers: HeaderMap, Json(requ
     Ok(Json(ClaimResponse { task }))
 }
 
-async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+async fn heartbeat_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<AgentTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     if !valid_agent_id(&request.agent_id) {
         return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
@@ -1893,7 +1896,7 @@ async fn fail_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_
     }
 }
 
-async fn release_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<CompleteTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+async fn release_task(State(state): State<ApiState>, headers: HeaderMap, Path(task_id): Path<i64>, Json(request): Json<AgentTaskRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     if !valid_agent_id(&request.agent_id) {
         return Err((StatusCode::BAD_REQUEST, "agent_id must be 1-64 ASCII letters, numbers, dots, underscores, or hyphens".into()));
     }
