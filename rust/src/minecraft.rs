@@ -612,20 +612,20 @@ async fn run_specialist_task(
             let dimension = status.agents.lock().await.get(&agent_id)
                 .map(|snapshot| snapshot.dimension.clone())
                 .unwrap_or_else(|| "unknown".to_owned());
-            for (x, y, z) in shared_positions {
+            let resource_keys = shared_positions.into_iter().map(|(x, y, z)| {
                 let mut resource_hasher = DefaultHasher::new();
                 (dimension.as_str(), x, y, z).hash(&mut resource_hasher);
-                let resource_key = format!("minecraft-target:{:016x}", resource_hasher.finish());
-                if !store.reserve_resource(&resource_key, &agent_id, task.id, 900)? {
-                    if store.release_task(task.id, &agent_id)? {
-                        bot.chat(format!(
-                            "Specialist task #{} is waiting because another teammate has reserved one of its world targets. All partial reservations were released and no attempt was consumed.",
-                            task.id
-                        ));
-                        return Ok(());
-                    }
-                    anyhow::bail!("a shared world target is reserved by another task and this task lease could not be released");
+                format!("minecraft-target:{:016x}", resource_hasher.finish())
+            }).collect::<Vec<_>>();
+            if !store.reserve_resources(&resource_keys, &agent_id, task.id, 900)? {
+                if store.release_task(task.id, &agent_id)? {
+                    bot.chat(format!(
+                        "Specialist task #{} is waiting because another teammate has reserved one of its world targets. All reservations were rolled back and no attempt was consumed.",
+                        task.id
+                    ));
+                    return Ok(());
                 }
+                anyhow::bail!("a shared world target is reserved by another task and this task lease could not be released");
             }
         }
 
