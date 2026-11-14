@@ -680,19 +680,6 @@ impl Store {
         Ok(changed == 1)
     }
 
-    /// Remove all world-resource reservations held by one task.
-    fn release_task_reservations(
-        connection: &rusqlite::Connection,
-        task_id: i64,
-        agent_id: &str,
-    ) -> Result<()> {
-        connection.execute(
-            "DELETE FROM resource_reservations WHERE task_id=?1 AND agent_id=?2",
-            params![task_id, agent_id],
-        )?;
-        Ok(())
-    }
-
     pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -839,13 +826,28 @@ impl Store {
     }
 
     pub fn renew_task_lease(&self, task_id: i64, agent_id: &str) -> Result<bool> {
-        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        let changed = connection.execute(
-            "UPDATE agent_tasks SET lease_until=datetime('now','+2 minutes'), updated_at=CURRENT_TIMESTAMP
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE agent_tasks
+             SET lease_until=CASE WHEN status='claimed' THEN datetime('now','+2 minutes') ELSE NULL END,
+                 updated_at=CURRENT_TIMESTAMP
              WHERE id=?1 AND assigned_agent=?2
                AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
         )?;
+        if changed == 1 {
+            // Review tasks deliberately have no worker lease, but their
+            // world-target reservation remains active while the assigned
+            // desktop/dashboard is still checking the result.
+            tx.execute(
+                "UPDATE resource_reservations
+                 SET expires_at=datetime('now','+15 minutes'), updated_at=CURRENT_TIMESTAMP
+                 WHERE task_id=?1 AND agent_id=?2",
+                params![task_id, agent_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(changed == 1)
     }
 
