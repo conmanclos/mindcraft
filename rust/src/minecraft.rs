@@ -814,9 +814,23 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             if let (Some(store), Some(visited)) = (&state.store, &state.visited_pois) {
                 match store.list_exploration_poi_subjects(1024) {
                     Ok(subjects) => {
+                        let active_dimension = state.dimension.as_ref()
+                            .and_then(|dimension| dimension.try_lock().ok().map(|value| value.clone()))
+                            .unwrap_or_else(|| "minecraft:overworld".to_owned());
                         let mut restored = visited.lock().await;
                         for subject in subjects {
-                            let Some(coordinates) = subject.strip_prefix("poi:") else { continue; };
+                            // New records are dimension-qualified. Legacy keys
+                            // are retained for backward compatibility with older
+                            // databases created before dimension-aware POI memory.
+                            let coordinates = if let Some(rest) = subject.strip_prefix("poi@") {
+                                let Some((dimension, coordinates)) = rest.split_once('@') else { continue; };
+                                if dimension != active_dimension { continue; }
+                                coordinates
+                            } else if let Some(rest) = subject.strip_prefix("poi:") {
+                                rest
+                            } else {
+                                continue;
+                            };
                             let mut parts = coordinates.split(':');
                             let parsed = match (parts.next(), parts.next(), parts.next(), parts.next()) {
                                 (Some(x), Some(y), Some(z), None) => {
