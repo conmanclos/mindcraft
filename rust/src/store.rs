@@ -398,15 +398,29 @@ impl Store {
         {
             anyhow::bail!("exploration POI identity is outside supported bounds");
         }
-        let connection = self.connection.lock()
+        let mut connection = self.connection.lock()
             .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        connection.execute(
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
             "INSERT INTO exploration_pois(dimension,x,y,z,kind)
              VALUES (?1,?2,?3,?4,?5)
              ON CONFLICT(dimension,x,y,z) DO UPDATE SET
                kind=excluded.kind, last_seen_at=CURRENT_TIMESTAMP",
             params![dimension, x, y, z, kind],
         )?;
+        let count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM exploration_pois", [], |row| row.get(0)
+        )?;
+        if count > 50_000 {
+            transaction.execute(
+                "DELETE FROM exploration_pois WHERE rowid IN (
+                   SELECT rowid FROM exploration_pois
+                   ORDER BY last_seen_at DESC, discovered_at DESC LIMIT -1 OFFSET 50000
+                 )",
+                [],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
