@@ -713,6 +713,11 @@ impl Store {
                AND goal_id IN (SELECT id FROM goals WHERE status='failed')",
             [],
         )?;
+        tx.execute(
+            "DELETE FROM resource_reservations
+             WHERE task_id IN (SELECT id FROM agent_tasks WHERE goal_id IN (SELECT id FROM goals WHERE status='failed'))",
+            [],
+        )?;
         let task = tx.query_row(
             "SELECT id, goal_id, role, description, priority, status, assigned_agent, lease_until, attempts, last_error, available_at, verification_note
              FROM agent_tasks
