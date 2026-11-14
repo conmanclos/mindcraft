@@ -568,6 +568,37 @@ async fn run_specialist_task(
         }
         let command = crate::api::command_from_action(action.clone())
             .map_err(|(_, reason)| anyhow::anyhow!("planner produced an unsupported task action: {reason}"))?;
+
+        // Mutating actions that name a shared world target reserve that target
+        // before they enter review. This prevents two specialist bots from
+        // concurrently mining, placing, farming, trading, or manipulating the
+        // same container while the first action is awaiting player verification.
+        let action_name = action.action.to_ascii_lowercase();
+        let target_is_shared = matches!(
+            action_name.as_str(),
+            "mine" | "place" | "build" | "build_mixed" | "till" | "plant"
+                | "harvest" | "trade" | "container_transfer" | "container_deposit"
+                | "container_sort" | "smelt" | "smelt_queue"
+        );
+        if target_is_shared {
+            if let Some(target) = action.target.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+                let dimension = status.agents.lock().await.get(&agent_id)
+                    .map(|snapshot| snapshot.dimension.clone())
+                    .unwrap_or_else(|| "unknown".to_owned());
+                let resource_key = format!("minecraft:{dimension}:{target}");
+                if !store.reserve_resource(&resource_key, &agent_id, task.id, 900)? {
+                    if store.release_task(task.id, &agent_id)? {
+                        bot.chat(format!(
+                            "Specialist task #{} is waiting because another teammate has reserved the same world target. It was returned to the queue without consuming an attempt.",
+                            task.id
+                        ));
+                        return Ok(());
+                    }
+                    anyhow::bail!("shared world target is reserved by another task and this task lease could not be released");
+                }
+            }
+        }
+
         let Some(sender) = status.command_tx.lock().await.clone() else {
             if store.release_task(task.id, &agent_id)? {
                 bot.chat(format!(
