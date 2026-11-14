@@ -393,7 +393,8 @@ impl Store {
             || dimension.chars().any(char::is_control)
             || kind.is_empty() || kind.len() > 80
             || kind.chars().any(char::is_control)
-            || x.abs() > 30_000_000 || z.abs() > 30_000_000
+            || !(-30_000_000..=30_000_000).contains(&x)
+            || !(-30_000_000..=30_000_000).contains(&z)
             || !(-2048..=2048).contains(&y)
         {
             anyhow::bail!("exploration POI identity is outside supported bounds");
