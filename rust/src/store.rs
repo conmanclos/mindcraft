@@ -581,6 +581,7 @@ impl Store {
             [goal_id],
         )?;
         if changed == 1 {
+            tx.execute("DELETE FROM resource_reservations WHERE task_id IN (SELECT id FROM agent_tasks WHERE goal_id=?1)", [goal_id])?;
             tx.execute(
                 "UPDATE agent_tasks SET status='pending', assigned_agent=NULL, lease_until=NULL,
                  attempts=0, available_at=CURRENT_TIMESTAMP, verification_note=NULL,
@@ -603,6 +604,7 @@ impl Store {
             [goal_id],
         )?;
         if changed == 1 {
+            tx.execute("DELETE FROM resource_reservations WHERE task_id IN (SELECT id FROM agent_tasks WHERE goal_id=?1)", [goal_id])?;
             tx.execute(
                 "UPDATE agent_tasks SET status='cancelled', assigned_agent=NULL, lease_until=NULL,
                  updated_at=CURRENT_TIMESTAMP
@@ -694,6 +696,14 @@ impl Store {
     pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
         let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("DELETE FROM resource_reservations WHERE expires_at <= CURRENT_TIMESTAMP", [])?;
+        tx.execute(
+            "DELETE FROM resource_reservations WHERE task_id IN (
+               SELECT id FROM agent_tasks WHERE status='claimed'
+                 AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP)
+             )",
+            [],
+        )?;
         // A worker that repeatedly disappears must not keep an expired lease
         // alive forever. Exhausted leases become terminal before new claims.
         tx.execute(
@@ -791,6 +801,10 @@ impl Store {
             tx.commit()?;
             return Ok(None);
         };
+        tx.execute(
+            "DELETE FROM resource_reservations WHERE task_id=?1 AND agent_id=?2",
+            params![task_id, agent_id],
+        )?;
         let terminal = attempts >= 5;
         if terminal {
             tx.execute(
@@ -814,6 +828,10 @@ impl Store {
                  updated_at=CURRENT_TIMESTAMP
                  WHERE goal_id=?1 AND id!=?2 AND status IN ('pending','claimed','review')",
                 params![goal_id, task_id],
+            )?;
+            tx.execute(
+                "DELETE FROM resource_reservations WHERE task_id IN (SELECT id FROM agent_tasks WHERE goal_id=?1)",
+                [goal_id],
             )?;
         }
         tx.commit()?;
@@ -867,8 +885,9 @@ impl Store {
     }
 
     pub fn release_task(&self, task_id: i64, agent_id: &str) -> Result<bool> {
-        let connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-        let changed = connection.execute(
+        let mut connection = self.connection.lock().map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
             "UPDATE agent_tasks
              SET status='pending', assigned_agent=NULL, lease_until=NULL,
                  attempts=MAX(attempts - 1, 0), updated_at=CURRENT_TIMESTAMP
@@ -876,6 +895,13 @@ impl Store {
                AND (status='review' OR (status='claimed' AND lease_until > CURRENT_TIMESTAMP))",
             params![task_id, agent_id],
         )?;
+        if changed == 1 {
+            tx.execute(
+                "DELETE FROM resource_reservations WHERE task_id=?1 AND agent_id=?2",
+                params![task_id, agent_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(changed == 1)
     }
 
@@ -913,6 +939,10 @@ impl Store {
             tx.commit()?;
             return Ok(false);
         }
+        tx.execute(
+            "DELETE FROM resource_reservations WHERE task_id=?1 AND agent_id=?2",
+            params![task_id, agent_id],
+        )?;
         tx.execute(
             "UPDATE goals SET status='complete'
              WHERE id=?1 AND NOT EXISTS (
