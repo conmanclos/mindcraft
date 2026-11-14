@@ -638,8 +638,28 @@ impl Store {
         task_id: i64,
         lease_seconds: u64,
     ) -> Result<bool> {
-        if resource_key.trim().is_empty() || resource_key.len() > 160
-            || resource_key.chars().any(char::is_control) {
+        self.reserve_resources(&[resource_key.to_owned()], agent_id, task_id, lease_seconds)
+    }
+
+    /// Atomically reserve a set of world resources for one live specialist task.
+    /// A conflict rolls back the entire set, so multi-block builds and furnace
+    /// queues never leave a partial collection of locks behind.
+    pub fn reserve_resources(
+        &self,
+        resource_keys: &[String],
+        agent_id: &str,
+        task_id: i64,
+        lease_seconds: u64,
+    ) -> Result<bool> {
+        if resource_keys.is_empty() {
+            return Ok(true);
+        }
+        if resource_keys.len() > 512 {
+            anyhow::bail!("a task cannot reserve more than 512 world resources");
+        }
+        if resource_keys.iter().any(|key| {
+            key.trim().is_empty() || key.len() > 160 || key.chars().any(char::is_control)
+        }) {
             anyhow::bail!("resource reservation keys must contain 1-160 non-control bytes");
         }
         if agent_id.is_empty() || agent_id.len() > 64
@@ -666,18 +686,24 @@ impl Store {
             "DELETE FROM resource_reservations WHERE expires_at <= CURRENT_TIMESTAMP",
             [],
         )?;
-        let changed = tx.execute(
-            "INSERT INTO resource_reservations(resource_key, agent_id, task_id, expires_at)
-             VALUES (?1, ?2, ?3, datetime('now', '+' || ?4 || ' seconds'))
-             ON CONFLICT(resource_key) DO UPDATE SET
-               agent_id=excluded.agent_id, task_id=excluded.task_id,
-               expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
-             WHERE resource_reservations.agent_id=excluded.agent_id
-               AND resource_reservations.task_id=excluded.task_id",
-            params![resource_key, agent_id, task_id, lease_seconds as i64],
-        )?;
+        for resource_key in resource_keys {
+            let changed = tx.execute(
+                "INSERT INTO resource_reservations(resource_key, agent_id, task_id, expires_at)
+                 VALUES (?1, ?2, ?3, datetime('now', '+' || ?4 || ' seconds'))
+                 ON CONFLICT(resource_key) DO UPDATE SET
+                   agent_id=excluded.agent_id, task_id=excluded.task_id,
+                   expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
+                 WHERE resource_reservations.agent_id=excluded.agent_id
+                   AND resource_reservations.task_id=excluded.task_id",
+                params![resource_key, agent_id, task_id, lease_seconds as i64],
+            )?;
+            if changed != 1 {
+                tx.rollback()?;
+                return Ok(false);
+            }
+        }
         tx.commit()?;
-        Ok(changed == 1)
+        Ok(true)
     }
 
     pub fn claim_task(&self, agent_id: &str, role: &str) -> Result<Option<AgentTask>> {
