@@ -1490,8 +1490,13 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
                         if waypoint_safe {
                             if let Some((poi_position, _, kind)) = poi {
                                 if let Some(store) = &state.store {
-                                    let subject = format!("poi:{}:{}:{}", poi_position.x, poi_position.y, poi_position.z);
-                                    let content = format!("Discovered {kind} at {}, {}, {} during exploration.", poi_position.x, poi_position.y, poi_position.z);
+                                    let dimension = if let Some(dimension) = &state.dimension {
+                                        dimension.lock().await.clone()
+                                    } else {
+                                        "minecraft:overworld".to_owned()
+                                    };
+                                    let subject = format!("poi@{}@{}:{}:{}", dimension, poi_position.x, poi_position.y, poi_position.z);
+                                    let content = format!("Discovered {kind} at {}, {}, {} in {dimension} during exploration.", poi_position.x, poi_position.y, poi_position.z);
                                     if let Err(error) = store.upsert_memory("world", &subject, &content, 0.9, 45, "exploration") {
                                         tracing::debug!(%error, "could not persist discovered point of interest");
                                     }
