@@ -569,39 +569,62 @@ async fn run_specialist_task(
         let command = crate::api::command_from_action(action.clone())
             .map_err(|(_, reason)| anyhow::anyhow!("planner produced an unsupported task action: {reason}"))?;
 
-        // Mutating actions that name a shared world target reserve that target
-        // before they enter review. This prevents two specialist bots from
-        // concurrently mining, placing, farming, trading, or manipulating the
-        // same container while the first action is awaiting player verification.
-        let action_name = action.action.to_ascii_lowercase();
-        let target_is_shared = matches!(
-            action_name.as_str(),
-            "mine" | "place" | "build" | "build_mixed" | "till" | "plant"
-                | "harvest" | "trade" | "container_transfer" | "container_deposit"
-                | "container_sort" | "smelt" | "smelt_queue"
-        );
-        if target_is_shared {
-            if let Some(target) = action.target.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
-                let dimension = status.agents.lock().await.get(&agent_id)
-                    .map(|snapshot| snapshot.dimension.clone())
-                    .unwrap_or_else(|| "unknown".to_owned());
-                // Normalize equivalent target spellings and hash the value so
-                // arbitrary schematic/build strings never inflate SQLite keys
-                // or leak raw world-target descriptions into the lock table.
-                let normalized_target = target.split_whitespace()
-                    .collect::<Vec<_>>().join(" ").to_ascii_lowercase();
+        // Reserve concrete world coordinates rather than raw planner strings.
+        // This also handles multi-furnace queues and multi-block schematics: a
+        // task must acquire every target before dispatch, or release all of its
+        // partial reservations and return to the queue without spending an attempt.
+        let mut shared_positions = HashSet::new();
+        match &command {
+            BotCommand::Mine(x, y, z)
+            | BotCommand::Place(x, y, z)
+            | BotCommand::Till(x, y, z)
+            | BotCommand::Plant(x, y, z)
+            | BotCommand::Harvest(x, y, z)
+            | BotCommand::Trade(x, y, z, _)
+            | BotCommand::EnterPortal(x, y, z)
+            | BotCommand::ContainerSort(x, y, z)
+            | BotCommand::ContainerDeposit(x, y, z, _)
+            | BotCommand::ClearFurnace(x, y, z) => {
+                shared_positions.insert((*x, *y, *z));
+            }
+            BotCommand::ContainerTransfer(x, y, z, _, _) => {
+                shared_positions.insert((*x, *y, *z));
+            }
+            BotCommand::Smelt(_, (x, y, z), _)
+            | BotCommand::SmeltCollect(_, (x, y, z), _) => {
+                shared_positions.insert((*x, *y, *z));
+            }
+            BotCommand::SmeltQueue(jobs) => {
+                shared_positions.extend(jobs.iter().map(|job| (job.x, job.y, job.z)));
+            }
+            BotCommand::Build(_, positions) => {
+                shared_positions.extend(positions.iter().copied());
+            }
+            BotCommand::BuildMixed(blocks) => {
+                shared_positions.extend(blocks.iter().map(|block| (block.x, block.y, block.z)));
+            }
+            BotCommand::Craft(_, Some(position), _) => {
+                shared_positions.insert(*position);
+            }
+            _ => {}
+        }
+        if !shared_positions.is_empty() {
+            let dimension = status.agents.lock().await.get(&agent_id)
+                .map(|snapshot| snapshot.dimension.clone())
+                .unwrap_or_else(|| "unknown".to_owned());
+            for (x, y, z) in shared_positions {
                 let mut resource_hasher = DefaultHasher::new();
-                (dimension, normalized_target).hash(&mut resource_hasher);
+                (dimension.as_str(), x, y, z).hash(&mut resource_hasher);
                 let resource_key = format!("minecraft-target:{:016x}", resource_hasher.finish());
                 if !store.reserve_resource(&resource_key, &agent_id, task.id, 900)? {
                     if store.release_task(task.id, &agent_id)? {
                         bot.chat(format!(
-                            "Specialist task #{} is waiting because another teammate has reserved the same world target. It was returned to the queue without consuming an attempt.",
+                            "Specialist task #{} is waiting because another teammate has reserved one of its world targets. All partial reservations were released and no attempt was consumed.",
                             task.id
                         ));
                         return Ok(());
                     }
-                    anyhow::bail!("shared world target is reserved by another task and this task lease could not be released");
+                    anyhow::bail!("a shared world target is reserved by another task and this task lease could not be released");
                 }
             }
         }
