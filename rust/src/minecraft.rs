@@ -4543,11 +4543,11 @@ async fn place_block_at(
                 for _ in 0..10 {
                     if cancelled() { return false; }
                     if let Some(placed) = world.read().get_block_state(target).filter(|block| !block.is_air()) {
+                        let compact: String = format!("{placed:?}").chars()
+                            .filter(|character| character.is_ascii_alphanumeric())
+                            .flat_map(char::to_lowercase)
+                            .collect();
                         if let Some(expected_axis) = axis {
-                            let compact: String = format!("{placed:?}").chars()
-                                .filter(|character| character.is_ascii_alphanumeric())
-                                .flat_map(char::to_lowercase)
-                                .collect();
                             if !compact.contains(&format!("axis{expected_axis}")) {
                                 return false;
                             }
