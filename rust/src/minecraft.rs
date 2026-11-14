@@ -812,11 +812,11 @@ async fn handle(bot: Client, event: Event, state: BotState) -> eyre::Result<()> 
             // memories. Without this hydration, every reconnect would rediscover
             // the same POIs and spend its exploration budget revisiting old sites.
             if let (Some(store), Some(visited)) = (&state.store, &state.visited_pois) {
-                match store.list_memories(Some("world"), 200) {
-                    Ok(memories) => {
+                match store.list_exploration_poi_subjects(1024) {
+                    Ok(subjects) => {
                         let mut restored = visited.lock().await;
-                        for memory in memories {
-                            let Some(coordinates) = memory.subject.strip_prefix("poi:") else { continue; };
+                        for subject in subjects {
+                            let Some(coordinates) = subject.strip_prefix("poi:") else { continue; };
                             let mut parts = coordinates.split(':');
                             let parsed = match (parts.next(), parts.next(), parts.next(), parts.next()) {
                                 (Some(x), Some(y), Some(z), None) => {
